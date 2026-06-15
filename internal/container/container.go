@@ -112,6 +112,25 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(initRedisClient))
 	must(container.Provide(initAntsPool))
 
+	logger.Debugf(ctx, "[Container] Registering task enqueuer...")
+	redisAvailable := os.Getenv("REDIS_ADDR") != ""
+	if redisAvailable {
+		must(container.Provide(router.NewAsyncqClient, dig.As(new(interfaces.TaskEnqueuer))))
+		must(container.Provide(router.NewAsynqServer))
+		// Asynq inspector for cancel-by-knowledge-id (best-effort
+		// dequeue of pending/scheduled/retry tasks + active-task cancel).
+		must(container.Provide(router.NewAsynqInspector))
+		must(container.Provide(router.NewAsynqTaskInspector))
+	} else {
+		syncExec := router.NewSyncTaskExecutor()
+		must(container.Provide(func() interfaces.TaskEnqueuer { return syncExec }))
+		must(container.Provide(func() *router.SyncTaskExecutor { return syncExec }))
+		// Lite mode: no Redis means no asynq inspector. SyncTaskExecutor
+		// dispatches inline goroutines that the checkpoint-based abort
+		// already handles.
+		must(container.Provide(router.NewNoopTaskInspector))
+	}
+
 	must(container.Invoke(registerLangfuseCleanup))
 
 	// Register goroutine pool cleanup handler
@@ -251,27 +270,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// Session service (depends on agent service)
 	// SessionService is created after AgentService and passes itself to AgentService.CreateAgentEngine when needed
 	logger.Debugf(ctx, "[Container] Registering session service...")
+	must(container.Provide(chatpipeline.NewEventManager))
 	must(container.Provide(service.NewSessionService))
 	must(container.Invoke(reconcileEvaluationRuns))
-
-	logger.Debugf(ctx, "[Container] Registering task enqueuer...")
-	redisAvailable := os.Getenv("REDIS_ADDR") != ""
-	if redisAvailable {
-		must(container.Provide(router.NewAsyncqClient, dig.As(new(interfaces.TaskEnqueuer))))
-		must(container.Provide(router.NewAsynqServer))
-		// Asynq inspector for cancel-by-knowledge-id (best-effort
-		// dequeue of pending/scheduled/retry tasks + active-task cancel).
-		must(container.Provide(router.NewAsynqInspector))
-		must(container.Provide(router.NewAsynqTaskInspector))
-	} else {
-		syncExec := router.NewSyncTaskExecutor()
-		must(container.Provide(func() interfaces.TaskEnqueuer { return syncExec }))
-		must(container.Provide(func() *router.SyncTaskExecutor { return syncExec }))
-		// Lite mode: no Redis means no asynq inspector. SyncTaskExecutor
-		// dispatches inline goroutines that the checkpoint-based abort
-		// already handles.
-		must(container.Provide(router.NewNoopTaskInspector))
-	}
 
 	// Chat pipeline components for processing chat requests
 	logger.Debugf(ctx, "[Container] Registering chat pipeline plugins...")
@@ -288,7 +289,6 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewHousekeepingService))
 	must(container.Invoke(startHousekeepingService))
 	logger.Debugf(ctx, "[Container] Knowledge housekeeping runner registered")
-	must(container.Provide(chatpipeline.NewEventManager))
 	must(container.Invoke(chatpipeline.NewPluginSearch))
 	must(container.Invoke(chatpipeline.NewPluginRerank))
 	must(container.Invoke(chatpipeline.NewPluginWebFetch))
