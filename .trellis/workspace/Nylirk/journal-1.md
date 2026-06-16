@@ -108,3 +108,36 @@ Registered TaskEnqueuer and EventManager before evaluation reconciliation, added
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Fix frontend vendor chunk cycle
+
+**Date**: 2026-06-16
+**Task**: Fix frontend vendor chunk cycle
+**Branch**: `codex/rag-evaluation-v2`
+
+### Summary
+
+Merged TDesign packages into the Vue vendor chunk, normalized manual chunk path matching, verified frontend tests and production build, and noted unrelated existing type-check failures.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2ea770f1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
