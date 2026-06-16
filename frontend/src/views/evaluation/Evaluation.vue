@@ -189,7 +189,7 @@ const selectedDataset = computed(() => datasets.value.find(dataset => dataset.id
 const datasetRuns = computed(() => runs.value.filter(run => run.dataset_id === datasetId.value))
 
 function routeQuery(query: Record<string, string | undefined>) {
-  return router.push({ path: '/evaluation', query })
+  return router.push({ path: route.path, query })
 }
 
 function openDataset(dataset: EvaluationDataset) {
