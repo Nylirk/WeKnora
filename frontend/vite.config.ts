@@ -81,7 +81,6 @@ export default defineConfig({
             dep.includes('vendor-mermaid')
             || dep.includes('vendor-highlight')
             || dep.includes('vendor-markdown')
-            || dep.includes('vendor-tdesign')
             || dep.includes('botmsg')
             || dep.includes('usermsg')
             || dep.includes('EmbedBotMessage')
@@ -102,24 +101,24 @@ export default defineConfig({
       },
       output: {
         manualChunks(id) {
-          if (!id.includes('node_modules')) return
-          if (id.includes('mermaid') || id.includes('/dagre') || id.includes('cytoscape')) {
+          const normalizedId = id.replaceAll('\\', '/')
+          if (!normalizedId.includes('node_modules')) return
+          if (normalizedId.includes('mermaid') || normalizedId.includes('/dagre') || normalizedId.includes('cytoscape')) {
             return 'vendor-mermaid'
           }
-          if (id.includes('marked') || id.includes('katex')) {
+          if (normalizedId.includes('marked') || normalizedId.includes('katex')) {
             return 'vendor-markdown'
           }
-          if (id.includes('highlight.js')) {
+          if (normalizedId.includes('highlight.js')) {
             return 'vendor-highlight'
           }
-          if (id.includes('tdesign-vue-next')) {
-            return 'vendor-tdesign'
-          }
           if (
-            id.includes('/vue/') ||
-            id.includes('/vue-router/') ||
-            id.includes('/pinia/') ||
-            id.includes('/vue-i18n/')
+            normalizedId.includes('/vue/') ||
+            normalizedId.includes('/vue-router/') ||
+            normalizedId.includes('/pinia/') ||
+            normalizedId.includes('/vue-i18n/') ||
+            normalizedId.includes('tdesign-vue-next') ||
+            normalizedId.includes('tdesign-icons-vue-next')
           ) {
             return 'vendor-vue'
           }
