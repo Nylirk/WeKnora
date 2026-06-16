@@ -8,7 +8,7 @@ on:
       - "frontend/**"
       - "internal/application/repository/evaluation*.go"
       - "internal/application/service/evaluation*.go"
-      - "internal/container/container.go"
+      - "internal/container/container*.go"
       - "internal/handler/evaluation*.go"
       - "internal/router/router.go"
       - "internal/types/evaluation.go"
@@ -25,7 +25,7 @@ on:
       - "frontend/**"
       - "internal/application/repository/evaluation*.go"
       - "internal/application/service/evaluation*.go"
-      - "internal/container/container.go"
+      - "internal/container/container*.go"
       - "internal/handler/evaluation*.go"
       - "internal/router/router.go"
       - "internal/types/evaluation.go"
@@ -74,6 +74,9 @@ jobs:
       - name: Run Go client V1 projection tests
         working-directory: client
         run: go test ./... -run '^(TestStartEvaluationParsesV1Projection|TestGetEvaluationResultParsesV1Projection)$'
+
+      - name: Run container dependency graph test
+        run: go test ./internal/container -run '^TestBuildContainerResolvesEvaluationReconciliationDependencies$'
 
       - name: Compile related packages
         run: go test ./internal/types ./internal/types/interfaces ./internal/router ./internal/container -run '^$'
