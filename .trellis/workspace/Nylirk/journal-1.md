@@ -141,3 +141,37 @@ Merged TDesign packages into the Vue vendor chunk, normalized manual chunk path 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Align evaluation UI with knowledge base cards
+
+**Date**: 2026-06-16
+**Task**: Align evaluation UI with knowledge base cards
+
+### Summary
+
+Reworked evaluation UI into knowledge-base-style dataset cards, query-driven detail/history views, sample editing/import flows, run creation, and refined card/table context preview styling for PR #6.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d1300a0e` | (see git log) |
+| `e0e716a1` | (see git log) |
+| `abb8a68a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

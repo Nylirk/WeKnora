@@ -45,6 +45,8 @@ defineEmits<{
 
 <style scoped lang="less">
 .evaluation-dataset-card {
+  width: 100%;
+  max-width: 320px;
   border: 1px solid var(--td-component-stroke);
   border-radius: 8px;
   overflow: hidden;
@@ -57,8 +59,8 @@ defineEmits<{
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  height: 136px;
-  min-height: 136px;
+  height: 120px;
+  min-height: 120px;
   outline: none;
 
   &::after {
@@ -93,7 +95,7 @@ defineEmits<{
   justify-content: space-between;
   align-items: center;
   gap: 4px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .card-title {
@@ -147,8 +149,8 @@ defineEmits<{
 .card-description {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
   color: var(--td-text-color-secondary);
   font-family: var(--app-font-family);

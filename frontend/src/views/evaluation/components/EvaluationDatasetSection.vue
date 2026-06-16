@@ -99,14 +99,16 @@ defineEmits<{
 
 .dataset-card-grid {
   display: grid;
-  gap: 12px;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 320px));
+  justify-content: start;
+  gap: 16px;
+  margin-top: 16px;
   animation: contentFadeIn 0.32s ease-out;
 }
 
 .dataset-card-skeleton {
-  height: 136px;
-  min-height: 136px;
+  height: 120px;
+  min-height: 120px;
   border: 1px solid var(--td-component-stroke);
   border-radius: 8px;
   padding: 14px;
@@ -116,6 +118,7 @@ defineEmits<{
 
 .empty-state {
   min-height: 260px;
+  margin-top: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -133,27 +136,9 @@ defineEmits<{
   }
 }
 
-@media (min-width: 900px) {
+@media (max-width: 640px) {
   .dataset-card-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (min-width: 1250px) {
-  .dataset-card-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (min-width: 1600px) {
-  .dataset-card-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
-@media (min-width: 1900px) {
-  .dataset-card-grid {
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: 1fr;
   }
 }
 </style>
