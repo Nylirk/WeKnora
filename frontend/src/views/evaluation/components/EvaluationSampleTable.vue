@@ -11,19 +11,42 @@
           </tr>
         </thead>
         <tbody v-if="samples.length > 0">
-          <template v-for="sample in samples" :key="sample.id">
-            <tr>
+          <tr v-for="sample in samples" :key="sample.id">
               <td><div class="cell-text">{{ sample.question }}</div></td>
               <td><div class="cell-text">{{ sample.reference_answer }}</div></td>
               <td>
+                <t-popup
+                  v-if="sample.reference_contexts?.length"
+                  trigger="click"
+                  placement="bottom"
+                  destroy-on-close
+                  overlayClassName="sample-context-popup"
+                >
                 <button
                   type="button"
                   class="contexts-toggle"
-                  :disabled="!sample.reference_contexts?.length"
-                  @click="toggleContexts(sample.id)"
                 >
                   {{ sample.reference_contexts?.length || 0 }} 条上下文
-                  <t-icon :name="expandedIds.has(sample.id) ? 'chevron-up' : 'chevron-down'" size="13px" />
+                  <t-icon name="chevron-down" size="13px" />
+                </button>
+                <template #content>
+                  <div class="contexts-popover">
+                    <div
+                      v-for="(context, index) in sample.reference_contexts"
+                      :key="`${sample.id}-${index}`"
+                      class="context-item"
+                    >
+                      <p>{{ context.text }}</p>
+                      <div v-if="context.knowledge_id || context.chunk_id" class="context-meta">
+                        <span v-if="context.knowledge_id">knowledge_id: {{ context.knowledge_id }}</span>
+                        <span v-if="context.chunk_id">chunk_id: {{ context.chunk_id }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                </t-popup>
+                <button v-else type="button" class="contexts-toggle" disabled>
+                  0 条上下文
                 </button>
               </td>
               <td>
@@ -34,21 +57,7 @@
                   </t-popconfirm>
                 </t-space>
               </td>
-            </tr>
-            <tr v-if="expandedIds.has(sample.id)" class="contexts-row">
-              <td colspan="4">
-                <ol class="contexts-list">
-                  <li v-for="(context, index) in sample.reference_contexts" :key="`${sample.id}-${index}`">
-                    <p>{{ context.text }}</p>
-                    <div v-if="context.knowledge_id || context.chunk_id" class="context-meta">
-                      <span v-if="context.knowledge_id">knowledge_id: {{ context.knowledge_id }}</span>
-                      <span v-if="context.chunk_id">chunk_id: {{ context.chunk_id }}</span>
-                    </div>
-                  </li>
-                </ol>
-              </td>
-            </tr>
-          </template>
+          </tr>
         </tbody>
       </table>
       <div v-if="!loading && samples.length === 0" class="empty-state">
@@ -59,7 +68,6 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
 import type { EvaluationSample } from '@/api/evaluation'
 
 defineProps<{
@@ -73,17 +81,6 @@ defineEmits<{
   (event: 'delete', sample: EvaluationSample): void
 }>()
 
-const expandedIds = ref(new Set<string>())
-
-function toggleContexts(id: string) {
-  const next = new Set(expandedIds.value)
-  if (next.has(id)) {
-    next.delete(id)
-  } else {
-    next.add(id)
-  }
-  expandedIds.value = next
-}
 </script>
 
 <style scoped lang="less">
@@ -104,18 +101,32 @@ function toggleContexts(id: string) {
     height: 40px;
     padding: 0 14px;
     border-bottom: 1px solid var(--td-component-stroke);
+    border-right: 1px solid var(--td-component-stroke);
     background: var(--td-bg-color-secondarycontainer);
     color: var(--td-text-color-secondary);
     font-weight: 600;
     text-align: left;
+
+    &:last-child {
+      border-right: none;
+    }
   }
 
   td {
     height: 48px;
     padding: 10px 14px;
     border-bottom: 1px solid var(--td-component-stroke);
+    border-right: 1px solid var(--td-component-stroke);
     color: var(--td-text-color-primary);
     vertical-align: top;
+
+    &:last-child {
+      border-right: none;
+    }
+  }
+
+  tbody tr:hover td {
+    background: var(--td-bg-color-container-hover);
   }
 
   tr:last-child td {
@@ -166,16 +177,21 @@ function toggleContexts(id: string) {
   }
 }
 
-.contexts-row td {
-  background: var(--td-bg-color-secondarycontainer);
+.contexts-popover {
+  width: min(520px, calc(100vw - 48px));
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 4px 0;
+  background: var(--td-bg-color-container);
 }
 
-.contexts-list {
-  margin: 0;
-  padding-left: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.context-item {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--td-component-stroke);
+
+  &:last-child {
+    border-bottom: none;
+  }
 
   p {
     margin: 0;
