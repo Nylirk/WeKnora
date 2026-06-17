@@ -1216,7 +1216,6 @@ const doSubmit = async () => {
           description: data.description,
         })
         MessagePlugin.success(t('knowledgeEditor.messages.updateSuccess'))
-        emit('success', props.kbId)
       } else {
         // 1. 更新基本信息（名称、描述）和 FAQ/Wiki 配置
         const updateConfig: any = {}
