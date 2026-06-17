@@ -39,8 +39,8 @@ func NewQuestionService(
 }
 
 func (s *QuestionService) CreateQuestionSet(ctx context.Context, kbID string, req *types.CreateQuestionSetRequest) (*types.QuestionSet, error) {
-	if _, err := s.knowledgeBaseSvc.GetKnowledgeBaseByID(ctx, kbID); err != nil {
-		return nil, apperrors.NewBadRequestError("knowledge base: " + err.Error())
+	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
+		return nil, err
 	}
 	qs := &types.QuestionSet{
 		TenantID:         tenantID(ctx),
@@ -58,6 +58,17 @@ func (s *QuestionService) CreateQuestionSet(ctx context.Context, kbID string, re
 	return qs, nil
 }
 
+func (s *QuestionService) ensureQuestionBankKB(ctx context.Context, kbID string) error {
+	kb, err := s.knowledgeBaseSvc.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil {
+		return apperrors.NewBadRequestError("knowledge base: " + err.Error())
+	}
+	if !kb.IsQuestionBank() {
+		return apperrors.NewBadRequestError("question bank APIs only support question_bank knowledge bases")
+	}
+	return nil
+}
+
 func (s *QuestionService) GetQuestionSet(ctx context.Context, kbID, setID string) (*types.QuestionSet, error) {
 	qs, err := s.repository.GetQuestionSet(ctx, tenantID(ctx), setID)
 	if err != nil {
@@ -70,6 +81,9 @@ func (s *QuestionService) GetQuestionSet(ctx context.Context, kbID, setID string
 }
 
 func (s *QuestionService) ListQuestionSets(ctx context.Context, kbID string, page *types.Pagination) (*types.PageResult, error) {
+	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
+		return nil, err
+	}
 	return s.repository.ListQuestionSets(ctx, tenantID(ctx), kbID, page)
 }
 
@@ -407,8 +421,8 @@ func (s *QuestionService) ExportToEvaluationDataset(ctx context.Context, kbID, s
 }
 
 func (s *QuestionService) GenerateQuestions(ctx context.Context, kbID string, req *types.GenerateQuestionsRequest) (*types.QuestionSet, error) {
-	if _, err := s.knowledgeBaseSvc.GetKnowledgeBaseByID(ctx, kbID); err != nil {
-		return nil, apperrors.NewBadRequestError("knowledge base: " + err.Error())
+	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
+		return nil, err
 	}
 	genConfig := normalizeJSONObject(req.GenerationConfig)
 	genScope := normalizeJSONObject(req.GenerationScope)
