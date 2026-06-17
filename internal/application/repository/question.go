@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -139,10 +140,12 @@ func applyQuestionFilters(q *gorm.DB, filter *types.QuestionListFilter) *gorm.DB
 		q = q.Where("status = ?", filter.Status)
 	}
 	if filter.KnowledgePoint != "" {
-		q = q.Where("knowledge_points @> ?", types.JSON([]byte(`"`+filter.KnowledgePoint+`"`)))
+		b, _ := json.Marshal([]string{filter.KnowledgePoint})
+		q = q.Where("knowledge_points @> ?::jsonb", string(b))
 	}
 	if filter.Tag != "" {
-		q = q.Where("tags @> ?", types.JSON([]byte(`"`+filter.Tag+`"`)))
+		b, _ := json.Marshal([]string{filter.Tag})
+		q = q.Where("tags @> ?::jsonb", string(b))
 	}
 	if filter.Keyword != "" {
 		pattern := "%" + filter.Keyword + "%"
