@@ -3,12 +3,12 @@
     <template v-if="!selectedSetId">
       <div class="question-bank-header">
         <div>
-          <h2>{{ $t('questionBank.title', '题库') }}</h2>
-          <p>{{ $t('questionBank.description', '管理结构化题库，导入题目，导出评测集。') }}</p>
+          <h2>{{ $t('questionBank.title', '题集') }}</h2>
+          <p>{{ $t('questionBank.description', '管理题集与题目，导入题目，导出评测集。') }}</p>
         </div>
         <t-button theme="primary" @click="openCreateSetDialog">
           <template #icon><t-icon name="add" /></template>
-          {{ $t('questionBank.createSet', '创建题库') }}
+          {{ $t('questionBank.createSet', '创建题集') }}
         </t-button>
       </div>
 
@@ -19,7 +19,7 @@
         hover
         @row-click="openSet"
       >
-        <t-table-column :title="$t('questionBank.setName', '题库名称')" prop="name" />
+        <t-table-column :title="$t('questionBank.setName', '题集名称')" prop="name" />
         <t-table-column :title="$t('questionBank.sourceType', '来源')" prop="source_type" :width="100">
           <template #default="{ row }">
             <t-tag :theme="sourceTypeTheme(row.source_type)" size="small">

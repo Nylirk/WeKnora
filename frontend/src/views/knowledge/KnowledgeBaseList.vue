@@ -188,6 +188,7 @@
               'uninitialized': !isInitialized(kb),
               'kb-type-document': (kb.type || 'document') === 'document',
               'kb-type-faq': kb.type === 'faq',
+              'kb-type-question-bank': kb.type === 'question_bank',
               'highlight-flash': highlightedKbId !== null && highlightedKbId === kb.id
             }"
               :ref="el => { if (highlightedKbId !== null && highlightedKbId === kb.id && el) highlightedCardRef = el as HTMLElement }"
@@ -243,12 +244,12 @@
                 <div class="bottom-left">
                   <div class="feature-badges">
                     <t-tooltip
-                      :content="kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')"
+                      :content="kb.type === 'question_bank' ? '题库型' : kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')"
                       placement="top">
                       <div class="feature-badge"
-                        :class="{ 'type-document': (kb.type || 'document') === 'document', 'type-faq': kb.type === 'faq' }">
-                        <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
-                        <span class="badge-count">{{ kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count ||
+                        :class="{ 'type-document': (kb.type || 'document') === 'document', 'type-faq': kb.type === 'faq', 'type-question-bank': kb.type === 'question_bank' }">
+                        <t-icon :name="kb.type === 'question_bank' ? 'assignment' : kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
+                        <span class="badge-count">{{ kb.type === 'question_bank' ? (kb.question_count || 0) : kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count ||
                           0) }}</span>
                         <t-icon v-if="kb.isProcessing" name="loading" size="12px" class="processing-icon" />
                       </div>
@@ -288,7 +289,8 @@
             <!-- 共享知识库卡片 -->
             <div v-else v-show="!isKbSectionCollapsed(kbSectionOf(kb))" class="kb-card shared-kb-card" :class="{
               'kb-type-document': (kb.type || 'document') === 'document',
-              'kb-type-faq': kb.type === 'faq'
+              'kb-type-faq': kb.type === 'faq',
+              'kb-type-question-bank': kb.type === 'question_bank'
             }" @click="handleSharedKbClickFromAll(kb)">
               <button type="button" class="kb-favorite-star" :class="{ 'is-favorited': isKbFavorited(kb.id) }"
                 @click.stop="toggleFavoriteKb(kb.id, $event)">
@@ -317,11 +319,11 @@
                 <div class="bottom-left">
                   <div class="feature-badges">
                     <t-tooltip
-                      :content="kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')"
+                      :content="kb.type === 'question_bank' ? '题库型' : kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')"
                       placement="top">
                       <div class="feature-badge"
-                        :class="{ 'type-document': (kb.type || 'document') === 'document', 'type-faq': kb.type === 'faq' }">
-                        <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
+                        :class="{ 'type-document': (kb.type || 'document') === 'document', 'type-faq': kb.type === 'faq', 'type-question-bank': kb.type === 'question_bank' }">
+                        <t-icon :name="kb.type === 'question_bank' ? 'assignment' : kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
                         <span class="badge-count">{{ kb.type === 'faq' ? (kb.chunk_count || '-') : (kb.knowledge_count
                           || '-')
                         }}</span>
@@ -414,6 +416,7 @@
               'uninitialized': !isInitialized(kb),
               'kb-type-document': (kb.type || 'document') === 'document',
               'kb-type-faq': kb.type === 'faq',
+              'kb-type-question-bank': kb.type === 'question_bank',
               'highlight-flash': highlightedKbId !== null && highlightedKbId === kb.id
             }"
               :ref="el => { if (highlightedKbId !== null && highlightedKbId === kb.id && el) highlightedCardRef = el as HTMLElement }"
@@ -466,12 +469,12 @@
                 <div class="bottom-left">
                   <div class="feature-badges">
                     <t-tooltip
-                      :content="kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')"
+                      :content="kb.type === 'question_bank' ? '题库型' : kb.type === 'faq' ? $t('knowledgeEditor.basic.typeFAQ') : $t('knowledgeEditor.basic.typeDocument')"
                       placement="top">
                       <div class="feature-badge"
-                        :class="{ 'type-document': (kb.type || 'document') === 'document', 'type-faq': kb.type === 'faq' }">
-                        <t-icon :name="kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
-                        <span class="badge-count">{{ kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count ||
+                        :class="{ 'type-document': (kb.type || 'document') === 'document', 'type-faq': kb.type === 'faq', 'type-question-bank': kb.type === 'question_bank' }">
+                        <t-icon :name="kb.type === 'question_bank' ? 'assignment' : kb.type === 'faq' ? 'chat-bubble-help' : 'folder'" size="14px" />
+                        <span class="badge-count">{{ kb.type === 'question_bank' ? (kb.question_count || 0) : kb.type === 'faq' ? (kb.chunk_count || 0) : (kb.knowledge_count ||
                           0) }}</span>
                         <t-icon v-if="kb.isProcessing" name="loading" size="12px" class="processing-icon" />
                       </div>
@@ -2583,6 +2586,27 @@ const handleUploadFinishedEvent = (event: Event) => {
 
     &:hover {
       background: rgba(0, 82, 217, 0.12);
+    }
+
+    .badge-count {
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .processing-icon {
+      animation: spin 1s linear infinite;
+    }
+  }
+
+  &.type-question-bank {
+    background: rgba(232, 136, 0, 0.08);
+    color: #e88800;
+    width: auto;
+    padding: 0 6px;
+    gap: 3px;
+
+    &:hover {
+      background: rgba(232, 136, 0, 0.12);
     }
 
     .badge-count {
