@@ -10,6 +10,7 @@ COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 ENV MAX_FILE_SIZE_MB=50
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 EXPOSE 80
 
