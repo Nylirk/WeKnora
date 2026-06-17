@@ -33,6 +33,10 @@ func questionHandleError(c *gin.Context, err error) {
 		questionNotFoundError(c, err)
 		return
 	}
+	if appErr, ok := apperrors.IsAppError(err); ok {
+		_ = c.Error(appErr)
+		return
+	}
 	_ = c.Error(apperrors.NewInternalServerError(err.Error()))
 }
 

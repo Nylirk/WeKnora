@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -39,7 +40,7 @@ func NewQuestionService(
 
 func (s *QuestionService) CreateQuestionSet(ctx context.Context, kbID string, req *types.CreateQuestionSetRequest) (*types.QuestionSet, error) {
 	if _, err := s.knowledgeBaseSvc.GetKnowledgeBaseByID(ctx, kbID); err != nil {
-		return nil, fmt.Errorf("knowledge base: %w", err)
+		return nil, apperrors.NewBadRequestError("knowledge base: " + err.Error())
 	}
 	qs := &types.QuestionSet{
 		TenantID:         tenantID(ctx),
@@ -63,7 +64,7 @@ func (s *QuestionService) GetQuestionSet(ctx context.Context, kbID, setID string
 		return nil, err
 	}
 	if qs.KnowledgeBaseID != kbID {
-		return nil, fmt.Errorf("question set does not belong to knowledge base %s", kbID)
+		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question set does not belong to knowledge base %s", kbID))
 	}
 	return qs, nil
 }
@@ -78,12 +79,12 @@ func (s *QuestionService) UpdateQuestionSet(ctx context.Context, kbID, setID str
 		return nil, err
 	}
 	if qs.KnowledgeBaseID != kbID {
-		return nil, fmt.Errorf("question set does not belong to knowledge base %s", kbID)
+		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question set does not belong to knowledge base %s", kbID))
 	}
 	if req.Name != nil {
 		v := strings.TrimSpace(*req.Name)
 		if v == "" {
-			return nil, fmt.Errorf("name is required")
+			return nil, apperrors.NewBadRequestError("name is required")
 		}
 		qs.Name = v
 	}
@@ -105,7 +106,7 @@ func (s *QuestionService) DeleteQuestionSet(ctx context.Context, kbID, setID str
 		return err
 	}
 	if qs.KnowledgeBaseID != kbID {
-		return fmt.Errorf("question set does not belong to knowledge base %s", kbID)
+		return apperrors.NewBadRequestError(fmt.Sprintf("question set does not belong to knowledge base %s", kbID))
 	}
 	return s.repository.DeleteQuestionSet(ctx, tenantID(ctx), setID)
 }
@@ -116,7 +117,7 @@ func (s *QuestionService) CreateQuestion(ctx context.Context, kbID, setID string
 		return nil, err
 	}
 	if qs.KnowledgeBaseID != kbID {
-		return nil, fmt.Errorf("question set does not belong to knowledge base %s", kbID)
+		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question set does not belong to knowledge base %s", kbID))
 	}
 	q := &types.Question{
 		TenantID:          tenantID(ctx),
@@ -147,7 +148,7 @@ func (s *QuestionService) CreateQuestion(ctx context.Context, kbID, setID string
 	}
 	draftQ := &types.Question{QuestionType: q.QuestionType, StemText: q.StemText, QuestionBody: q.QuestionBody, AnswerBody: q.AnswerBody}
 	if errs := types.ValidateQuestionForDraft(draftQ); len(errs) > 0 {
-		return nil, fmt.Errorf("validation failed: %s", errs[0].Message)
+		return nil, apperrors.NewBadRequestError("validation failed: " + errs[0].Message)
 	}
 	if err := s.validateEvidenceReferences(ctx, qs.KnowledgeBaseID, req.SourceKnowledgeID, req.EvidenceChunkIDs); err != nil {
 		return nil, err
@@ -165,7 +166,7 @@ func (s *QuestionService) GetQuestion(ctx context.Context, kbID, setID, question
 		return nil, err
 	}
 	if q.KnowledgeBaseID != kbID {
-		return nil, fmt.Errorf("question does not belong to knowledge base %s", kbID)
+		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question does not belong to knowledge base %s", kbID))
 	}
 	return q, nil
 }
@@ -176,7 +177,7 @@ func (s *QuestionService) ListQuestions(ctx context.Context, kbID, setID string,
 		return nil, err
 	}
 	if qs.KnowledgeBaseID != kbID {
-		return nil, fmt.Errorf("question set does not belong to knowledge base %s", kbID)
+		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question set does not belong to knowledge base %s", kbID))
 	}
 	return s.repository.ListQuestions(ctx, tenantID(ctx), setID, filter, page)
 }
@@ -187,7 +188,7 @@ func (s *QuestionService) UpdateQuestion(ctx context.Context, kbID, setID, quest
 		return nil, err
 	}
 	if q.KnowledgeBaseID != kbID {
-		return nil, fmt.Errorf("question does not belong to knowledge base %s", kbID)
+		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question does not belong to knowledge base %s", kbID))
 	}
 	if req.QuestionType != nil {
 		q.QuestionType = *req.QuestionType
@@ -243,7 +244,7 @@ func (s *QuestionService) DeleteQuestion(ctx context.Context, kbID, setID, quest
 		return err
 	}
 	if q.KnowledgeBaseID != kbID {
-		return fmt.Errorf("question does not belong to knowledge base %s", kbID)
+		return apperrors.NewBadRequestError(fmt.Sprintf("question does not belong to knowledge base %s", kbID))
 	}
 	if err := s.repository.DeleteQuestion(ctx, tenantID(ctx), setID, questionID); err != nil {
 		return err
@@ -258,7 +259,7 @@ func (s *QuestionService) UpdateQuestionStatus(ctx context.Context, kbID, setID,
 		return nil, err
 	}
 	if q.KnowledgeBaseID != kbID {
-		return nil, fmt.Errorf("question does not belong to knowledge base %s", kbID)
+		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question does not belong to knowledge base %s", kbID))
 	}
 	newStatus := types.QuestionStatus(req.Status)
 	if newStatus == types.QuestionStatusReviewed {
@@ -268,7 +269,7 @@ func (s *QuestionService) UpdateQuestionStatus(ctx context.Context, kbID, setID,
 			for _, e := range errs {
 				messages = append(messages, e.Message)
 			}
-			return nil, fmt.Errorf("review validation failed: %s", strings.Join(messages, "; "))
+			return nil, apperrors.NewBadRequestError("review validation failed: " + strings.Join(messages, "; "))
 		}
 	}
 	q.Status = newStatus
@@ -284,7 +285,7 @@ func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID strin
 		return nil, err
 	}
 	if qs.KnowledgeBaseID != kbID {
-		return nil, fmt.Errorf("question set does not belong to knowledge base %s", kbID)
+		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question set does not belong to knowledge base %s", kbID))
 	}
 	result := &types.ImportQuestionsResult{}
 	var created []*types.Question
@@ -352,7 +353,7 @@ func (s *QuestionService) ExportToEvaluationDataset(ctx context.Context, kbID, s
 		return nil, err
 	}
 	if qs.KnowledgeBaseID != kbID {
-		return nil, fmt.Errorf("question set does not belong to knowledge base %s", kbID)
+		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question set does not belong to knowledge base %s", kbID))
 	}
 	filter := &types.QuestionListFilter{Status: string(types.QuestionStatusReviewed)}
 	pageSize := 1000
@@ -363,7 +364,7 @@ func (s *QuestionService) ExportToEvaluationDataset(ctx context.Context, kbID, s
 	}
 	allQuestions := result.Data.([]*types.Question)
 	if len(allQuestions) == 0 {
-		return nil, fmt.Errorf("no reviewed questions found for export")
+		return nil, apperrors.NewBadRequestError("no reviewed questions found for export")
 	}
 	evalReq := &types.CreateEvaluationDatasetRequest{
 		Name:        strings.TrimSpace(req.Name),
@@ -377,12 +378,12 @@ func (s *QuestionService) ExportToEvaluationDataset(ctx context.Context, kbID, s
 	for _, q := range allQuestions {
 		if errs := types.ValidateQuestionForExport(q); len(errs) > 0 {
 			_ = s.evaluationService.DeleteDataset(ctx, dataset.ID)
-			return nil, fmt.Errorf("question %s export validation failed: %s", q.ID, errs[0].Message)
+			return nil, apperrors.NewBadRequestError(fmt.Sprintf("question %s export validation failed: %s", q.ID, errs[0].Message))
 		}
 		contexts, err := s.buildReferenceContexts(ctx, q)
 		if err != nil {
 			_ = s.evaluationService.DeleteDataset(ctx, dataset.ID)
-			return nil, fmt.Errorf("failed to build reference contexts for question %s: %w", q.ID, err)
+			return nil, apperrors.NewBadRequestError(fmt.Sprintf("failed to build reference contexts for question %s: %s", q.ID, err.Error()))
 		}
 		refCtx, err := jsonValue(contexts)
 		if err != nil {
@@ -407,7 +408,7 @@ func (s *QuestionService) ExportToEvaluationDataset(ctx context.Context, kbID, s
 
 func (s *QuestionService) GenerateQuestions(ctx context.Context, kbID string, req *types.GenerateQuestionsRequest) (*types.QuestionSet, error) {
 	if _, err := s.knowledgeBaseSvc.GetKnowledgeBaseByID(ctx, kbID); err != nil {
-		return nil, fmt.Errorf("knowledge base: %w", err)
+		return nil, apperrors.NewBadRequestError("knowledge base: " + err.Error())
 	}
 	genConfig := normalizeJSONObject(req.GenerationConfig)
 	genScope := normalizeJSONObject(req.GenerationScope)
@@ -431,25 +432,25 @@ func (s *QuestionService) validateEvidenceReferences(ctx context.Context, kbID, 
 	if sourceKnowledgeID != "" {
 		knowledge, err := s.knowledgeService.GetKnowledgeByID(ctx, sourceKnowledgeID)
 		if err != nil {
-			return fmt.Errorf("source_knowledge_id not found: %w", err)
+			return apperrors.NewBadRequestError("source_knowledge_id not found: " + err.Error())
 		}
 		if knowledge.KnowledgeBaseID != kbID {
-			return fmt.Errorf("source_knowledge_id does not belong to knowledge base %s", kbID)
+			return apperrors.NewBadRequestError(fmt.Sprintf("source_knowledge_id does not belong to knowledge base %s", kbID))
 		}
 	}
 	var chunkIDs []string
 	if len(evidenceChunkIDs) > 0 {
 		if err := json.Unmarshal(evidenceChunkIDs, &chunkIDs); err != nil {
-			return fmt.Errorf("invalid evidence_chunk_ids: %w", err)
+			return apperrors.NewBadRequestError("invalid evidence_chunk_ids: " + err.Error())
 		}
 	}
 	for _, chunkID := range chunkIDs {
 		chunk, err := s.chunkService.GetChunkByIDOnly(ctx, chunkID)
 		if err != nil {
-			return fmt.Errorf("evidence_chunk_id %s not found: %w", chunkID, err)
+			return apperrors.NewBadRequestError(fmt.Sprintf("evidence_chunk_id %s not found", chunkID))
 		}
 		if chunk.KnowledgeBaseID != kbID {
-			return fmt.Errorf("evidence_chunk_id %s does not belong to knowledge base %s", chunkID, kbID)
+			return apperrors.NewBadRequestError(fmt.Sprintf("evidence_chunk_id %s does not belong to knowledge base %s", chunkID, kbID))
 		}
 	}
 	return nil
