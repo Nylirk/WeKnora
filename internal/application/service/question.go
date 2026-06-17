@@ -69,7 +69,10 @@ func (s *QuestionService) ensureQuestionBankKB(ctx context.Context, kbID string)
 	return nil
 }
 
-func (s *QuestionService) GetQuestionSet(ctx context.Context, kbID, setID string) (*types.QuestionSet, error) {
+func (s *QuestionService) getQuestionSetForKB(ctx context.Context, kbID, setID string) (*types.QuestionSet, error) {
+	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
+		return nil, err
+	}
 	qs, err := s.repository.GetQuestionSet(ctx, tenantID(ctx), setID)
 	if err != nil {
 		return nil, err
@@ -80,6 +83,10 @@ func (s *QuestionService) GetQuestionSet(ctx context.Context, kbID, setID string
 	return qs, nil
 }
 
+func (s *QuestionService) GetQuestionSet(ctx context.Context, kbID, setID string) (*types.QuestionSet, error) {
+	return s.getQuestionSetForKB(ctx, kbID, setID)
+}
+
 func (s *QuestionService) ListQuestionSets(ctx context.Context, kbID string, page *types.Pagination) (*types.PageResult, error) {
 	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
 		return nil, err
@@ -88,12 +95,9 @@ func (s *QuestionService) ListQuestionSets(ctx context.Context, kbID string, pag
 }
 
 func (s *QuestionService) UpdateQuestionSet(ctx context.Context, kbID, setID string, req *types.UpdateQuestionSetRequest) (*types.QuestionSet, error) {
-	qs, err := s.repository.GetQuestionSet(ctx, tenantID(ctx), setID)
+	qs, err := s.getQuestionSetForKB(ctx, kbID, setID)
 	if err != nil {
 		return nil, err
-	}
-	if qs.KnowledgeBaseID != kbID {
-		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question set does not belong to knowledge base %s", kbID))
 	}
 	if req.Name != nil {
 		v := strings.TrimSpace(*req.Name)
@@ -115,23 +119,16 @@ func (s *QuestionService) UpdateQuestionSet(ctx context.Context, kbID, setID str
 }
 
 func (s *QuestionService) DeleteQuestionSet(ctx context.Context, kbID, setID string) error {
-	qs, err := s.repository.GetQuestionSet(ctx, tenantID(ctx), setID)
-	if err != nil {
+	if _, err := s.getQuestionSetForKB(ctx, kbID, setID); err != nil {
 		return err
-	}
-	if qs.KnowledgeBaseID != kbID {
-		return apperrors.NewBadRequestError(fmt.Sprintf("question set does not belong to knowledge base %s", kbID))
 	}
 	return s.repository.DeleteQuestionSet(ctx, tenantID(ctx), setID)
 }
 
 func (s *QuestionService) CreateQuestion(ctx context.Context, kbID, setID string, req *types.CreateQuestionRequest) (*types.Question, error) {
-	qs, err := s.repository.GetQuestionSet(ctx, tenantID(ctx), setID)
+	qs, err := s.getQuestionSetForKB(ctx, kbID, setID)
 	if err != nil {
 		return nil, err
-	}
-	if qs.KnowledgeBaseID != kbID {
-		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question set does not belong to knowledge base %s", kbID))
 	}
 	q := &types.Question{
 		TenantID:          tenantID(ctx),
@@ -175,6 +172,9 @@ func (s *QuestionService) CreateQuestion(ctx context.Context, kbID, setID string
 }
 
 func (s *QuestionService) GetQuestion(ctx context.Context, kbID, setID, questionID string) (*types.Question, error) {
+	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
+		return nil, err
+	}
 	q, err := s.repository.GetQuestion(ctx, tenantID(ctx), setID, questionID)
 	if err != nil {
 		return nil, err
@@ -186,6 +186,9 @@ func (s *QuestionService) GetQuestion(ctx context.Context, kbID, setID, question
 }
 
 func (s *QuestionService) ListQuestions(ctx context.Context, kbID, setID string, filter *types.QuestionListFilter, page *types.Pagination) (*types.PageResult, error) {
+	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
+		return nil, err
+	}
 	qs, err := s.repository.GetQuestionSet(ctx, tenantID(ctx), setID)
 	if err != nil {
 		return nil, err
@@ -197,6 +200,9 @@ func (s *QuestionService) ListQuestions(ctx context.Context, kbID, setID string,
 }
 
 func (s *QuestionService) UpdateQuestion(ctx context.Context, kbID, setID, questionID string, req *types.UpdateQuestionRequest) (*types.Question, error) {
+	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
+		return nil, err
+	}
 	q, err := s.repository.GetQuestion(ctx, tenantID(ctx), setID, questionID)
 	if err != nil {
 		return nil, err
@@ -253,6 +259,9 @@ func (s *QuestionService) UpdateQuestion(ctx context.Context, kbID, setID, quest
 }
 
 func (s *QuestionService) DeleteQuestion(ctx context.Context, kbID, setID, questionID string) error {
+	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
+		return err
+	}
 	q, err := s.repository.GetQuestion(ctx, tenantID(ctx), setID, questionID)
 	if err != nil {
 		return err
@@ -268,6 +277,9 @@ func (s *QuestionService) DeleteQuestion(ctx context.Context, kbID, setID, quest
 }
 
 func (s *QuestionService) UpdateQuestionStatus(ctx context.Context, kbID, setID, questionID string, req *types.UpdateQuestionStatusRequest) (*types.Question, error) {
+	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
+		return nil, err
+	}
 	q, err := s.repository.GetQuestion(ctx, tenantID(ctx), setID, questionID)
 	if err != nil {
 		return nil, err
@@ -294,12 +306,9 @@ func (s *QuestionService) UpdateQuestionStatus(ctx context.Context, kbID, setID,
 }
 
 func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID string, req *types.ImportQuestionsRequest) (*types.ImportQuestionsResult, error) {
-	qs, err := s.repository.GetQuestionSet(ctx, tenantID(ctx), setID)
+	qs, err := s.getQuestionSetForKB(ctx, kbID, setID)
 	if err != nil {
 		return nil, err
-	}
-	if qs.KnowledgeBaseID != kbID {
-		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question set does not belong to knowledge base %s", kbID))
 	}
 	result := &types.ImportQuestionsResult{}
 	var created []*types.Question
@@ -362,12 +371,8 @@ func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID strin
 }
 
 func (s *QuestionService) ExportToEvaluationDataset(ctx context.Context, kbID, setID string, req *types.ExportToEvaluationRequest) (*types.EvaluationDataset, error) {
-	qs, err := s.repository.GetQuestionSet(ctx, tenantID(ctx), setID)
-	if err != nil {
+	if _, err := s.getQuestionSetForKB(ctx, kbID, setID); err != nil {
 		return nil, err
-	}
-	if qs.KnowledgeBaseID != kbID {
-		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question set does not belong to knowledge base %s", kbID))
 	}
 	filter := &types.QuestionListFilter{Status: string(types.QuestionStatusReviewed)}
 	pageSize := 1000

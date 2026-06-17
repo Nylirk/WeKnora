@@ -2019,7 +2019,7 @@ async function createNewSession(value: string): Promise<void> {
               <t-icon name="chevron-right" class="breadcrumb-separator" />
               <template v-if="isQuestionBank">
                 <span :class="['breadcrumb-tab', { active: activeKbTab === 'questions' }]"
-                  @click="activeKbTab = 'questions'">题库</span>
+                  @click="activeKbTab = 'questions'">题集</span>
               </template>
               <template v-else-if="isWiki">
                 <span :class="['breadcrumb-tab', { active: activeKbTab === 'documents' }]"

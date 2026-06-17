@@ -50,12 +50,12 @@
 
       <t-dialog
         v-model:visible="createSetVisible"
-        :header="$t('questionBank.createSet', '创建题库')"
+        :header="$t('questionBank.createSet', '创建题集')"
         @confirm="createSet"
       >
         <t-form>
-          <t-form-item :label="$t('questionBank.setName', '题库名称')">
-            <t-input v-model="newSetName" :placeholder="$t('questionBank.setNamePlaceholder', '请输入题库名称')" />
+          <t-form-item :label="$t('questionBank.setName', '题集名称')">
+            <t-input v-model="newSetName" :placeholder="$t('questionBank.setNamePlaceholder', '请输入题集名称')" />
           </t-form-item>
           <t-form-item :label="$t('questionBank.description', '描述')">
             <t-textarea v-model="newSetDescription" :placeholder="$t('questionBank.descPlaceholder', '可选描述')" />
@@ -100,7 +100,7 @@ async function loadSets() {
     const res = await listQuestionSets(props.knowledgeBaseId, 1, 200)
     questionSets.value = res.data || []
   } catch (e: any) {
-    MessagePlugin.error(e?.message || '加载题库列表失败')
+    MessagePlugin.error(e?.message || '加载题集列表失败')
   } finally {
     loadingSets.value = false
   }
@@ -114,7 +114,7 @@ function openCreateSetDialog() {
 
 async function createSet() {
   if (!newSetName.value.trim()) {
-    MessagePlugin.warning('请输入题库名称')
+    MessagePlugin.warning('请输入题集名称')
     return
   }
   try {
@@ -123,10 +123,10 @@ async function createSet() {
       description: newSetDescription.value.trim(),
     })
     createSetVisible.value = false
-    MessagePlugin.success('题库创建成功')
+    MessagePlugin.success('题集创建成功')
     await loadSets()
   } catch (e: any) {
-    MessagePlugin.error(e?.message || '创建题库失败')
+    MessagePlugin.error(e?.message || '创建题集失败')
   }
 }
 

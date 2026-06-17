@@ -526,13 +526,12 @@ const navItems = computed(() => {
   const items: { key: string; icon: string; label: string; badge?: number }[] = [
     { key: 'basic', icon: 'info-circle', label: t('knowledgeEditor.sidebar.basic') },
     { key: 'models', icon: 'control-platform', label: t('knowledgeEditor.sidebar.models') },
-    // VectorStore binding section — present in both create and edit
-    // modes. Create mode shows a dropdown; edit mode shows the bound
-    // store read-only with an immutability hint.
     { key: 'vectorStore', icon: 'data-base', label: t('knowledgeEditor.sidebar.vectorStore') }
   ]
   if (formData.value?.type === 'faq') {
     items.push({ key: 'faq', icon: 'help-circle', label: t('knowledgeEditor.sidebar.faq') })
+  } else if (formData.value?.type === 'question_bank') {
+    // question_bank type: no parser/chunking/multimodal/asr/graph sections
   } else {
     items.push(
       { key: 'parser', icon: 'file-search', label: t('settings.parserEngine') },
@@ -1002,14 +1001,21 @@ const handleNodeExtractUpdate = (config: any) => {
 const validateForm = (): boolean => {
   if (!formData.value) return false
 
-  // 验证基本信息
   if (!formData.value.name || !formData.value.name.trim()) {
     MessagePlugin.warning(t('knowledgeEditor.messages.nameRequired'))
     currentSection.value = 'basic'
     return false
   }
 
-  // 验证索引策略 — 文档类型至少需要开启一种
+  if (formData.value.type === 'question_bank') {
+    if (!formData.value.modelConfig.llmModelId) {
+      MessagePlugin.warning(t('knowledgeEditor.messages.summaryRequired'))
+      currentSection.value = 'models'
+      return false
+    }
+    return true
+  }
+
   if (formData.value.type !== 'faq') {
     const s = formData.value.indexingStrategy
     if (s && !s.vectorEnabled && !s.keywordEnabled && !s.wikiEnabled && !s.graphEnabled) {
@@ -1019,7 +1025,6 @@ const validateForm = (): boolean => {
     }
   }
 
-  // 验证模型配置 - embedding 模型仅在检索索引启用时必须
   const needsEmbedding = formData.value.indexingStrategy?.vectorEnabled || formData.value.indexingStrategy?.keywordEnabled
   if (needsEmbedding && !formData.value.modelConfig.embeddingModelId) {
     MessagePlugin.warning(t('knowledgeEditor.indexing.embeddingRequired'))
@@ -1033,7 +1038,6 @@ const validateForm = (): boolean => {
     return false
   }
 
-  // 验证多模态配置（如果启用）
   if (formData.value.multimodalConfig.enabled && !formData.value.multimodalConfig.vllmModelId) {
     MessagePlugin.warning(t('knowledgeEditor.messages.multimodalInvalid'))
     currentSection.value = 'multimodal'
@@ -1057,37 +1061,41 @@ const buildSubmitData = () => {
     name: formData.value.name,
     description: formData.value.description,
     type: formData.value.type,
-    chunking_config: {
-      chunk_size: formData.value.chunkingConfig.chunkSize,
-      chunk_overlap: formData.value.chunkingConfig.chunkOverlap,
-      separators: formData.value.chunkingConfig.separators,
-      enable_parent_child: formData.value.chunkingConfig.enableParentChild,
-      parent_chunk_size: formData.value.chunkingConfig.parentChunkSize,
-      child_chunk_size: formData.value.chunkingConfig.childChunkSize,
-      // Adaptive chunking fields are always sent (empty/zero values
-      // included) so the user can clear them — backend uses pointer DTOs
-      // to distinguish "not in payload" from "explicitly empty".
-      strategy: formData.value.chunkingConfig.strategy ?? '',
-      token_limit: formData.value.chunkingConfig.tokenLimit ?? 0,
-      languages: formData.value.chunkingConfig.languages ?? [],
-      ...(formData.value.chunkingConfig.parserEngineRules?.length
-        ? { parser_engine_rules: formData.value.chunkingConfig.parserEngineRules }
-        : {})
-    },
-    embedding_model_id: formData.value.modelConfig.embeddingModelId,
-    summary_model_id: formData.value.modelConfig.llmModelId
   }
 
-  // Vector-store binding. Only attach the field when the user actively
-  // selected a non-default store. The server treats an empty string as
-  // NULL, but keeping the field absent on the wire matches what a
-  // client that doesn't know about this binding would send — which
-  // makes A/B response diffs easier to read.
+  if (formData.value.type === 'question_bank') {
+    data.embedding_model_id = formData.value.modelConfig.embeddingModelId
+    data.summary_model_id = formData.value.modelConfig.llmModelId
+    if (formData.value.vectorStoreId) {
+      data.vector_store_id = formData.value.vectorStoreId
+    }
+    const storageProvider = resolvedStorageProvider()
+    data.storage_provider_config = { provider: storageProvider }
+    data.storage_config = { provider: storageProvider }
+    return data
+  }
+
+  data.chunking_config = {
+    chunk_size: formData.value.chunkingConfig.chunkSize,
+    chunk_overlap: formData.value.chunkingConfig.chunkOverlap,
+    separators: formData.value.chunkingConfig.separators,
+    enable_parent_child: formData.value.chunkingConfig.enableParentChild,
+    parent_chunk_size: formData.value.chunkingConfig.parentChunkSize,
+    child_chunk_size: formData.value.chunkingConfig.childChunkSize,
+    strategy: formData.value.chunkingConfig.strategy ?? '',
+    token_limit: formData.value.chunkingConfig.tokenLimit ?? 0,
+    languages: formData.value.chunkingConfig.languages ?? [],
+    ...(formData.value.chunkingConfig.parserEngineRules?.length
+      ? { parser_engine_rules: formData.value.chunkingConfig.parserEngineRules }
+      : {})
+  }
+  data.embedding_model_id = formData.value.modelConfig.embeddingModelId
+  data.summary_model_id = formData.value.modelConfig.llmModelId
+
   if (formData.value.vectorStoreId) {
     data.vector_store_id = formData.value.vectorStoreId
   }
 
-  // 添加多模态配置
   data.vlm_config = {
     enabled: formData.value.multimodalConfig.enabled,
     model_id: formData.value.multimodalConfig.enabled
@@ -1095,7 +1103,6 @@ const buildSubmitData = () => {
       : ''
   }
 
-  // 添加ASR语音识别配置
   data.asr_config = {
     enabled: formData.value.asrConfig?.enabled || false,
     model_id: formData.value.asrConfig?.enabled
@@ -1104,20 +1111,10 @@ const buildSubmitData = () => {
     language: formData.value.asrConfig?.language || ''
   }
 
-  // 存储引擎：仅传 provider，参数从全局设置读取
-  // Write to storage_provider_config (authoritative) + storage_config (legacy dual-write)
   const storageProvider = resolvedStorageProvider()
-  data.storage_provider_config = {
-    provider: storageProvider
-  }
-  data.storage_config = {
-    provider: storageProvider
-  }
+  data.storage_provider_config = { provider: storageProvider }
+  data.storage_config = { provider: storageProvider }
 
-  // 添加知识图谱配置 — now synced via indexingStrategy.graphEnabled
-  // extract_config is sent below along with indexing_strategy
-
-  // 添加问题生成配置
   if (formData.value.questionGenerationConfig?.enabled) {
     data.question_generation_config = {
       enabled: true,
@@ -1132,8 +1129,6 @@ const buildSubmitData = () => {
     }
   }
 
-  // Wiki enablement is carried solely by indexing_strategy.wiki_enabled.
-  // wiki_config only holds wiki-specific tunables.
   if (formData.value.type !== 'faq') {
     data.wiki_config = {
       synthesis_model_id: formData.value.modelConfig?.wikiSynthesisModelId || '',
@@ -1142,7 +1137,6 @@ const buildSubmitData = () => {
     }
   }
 
-  // Send indexing strategy
   if (formData.value.type !== 'faq') {
     data.indexing_strategy = {
       vector_enabled: formData.value.indexingStrategy?.vectorEnabled ?? true,
@@ -1152,8 +1146,6 @@ const buildSubmitData = () => {
     }
   }
 
-  // Always persist extract_config so the toggle state from GraphSettings is saved,
-  // regardless of whether the graph indexing strategy is currently enabled.
   if (formData.value.nodeExtractConfig) {
     data.extract_config = {
       enabled: !!formData.value.nodeExtractConfig.enabled,
