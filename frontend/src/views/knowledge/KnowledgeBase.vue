@@ -47,6 +47,7 @@ import KbUploadSourceDropdown from './components/KbUploadSourceDropdown.vue';
 import type { KnowledgeProcessOverrides } from '@/types/knowledgeProcess';
 import { useUploadConfirmStore, type UploadConfirmResult } from '@/stores/uploadConfirm';
 import WikiBrowser from './wiki/WikiBrowser.vue';
+import QuestionBank from './components/QuestionBank.vue';
 import { getWikiStats } from '@/api/wiki';
 import {
   isKnowledgeParseInFlight,
@@ -69,7 +70,7 @@ const kbLoading = ref(false);
 const docListLoading = ref(true);
 const isFAQ = computed(() => (kbInfo.value?.type || '') === 'faq');
 const isWiki = computed(() => !!kbInfo.value?.indexing_strategy?.wiki_enabled);
-const validTabs = ['documents', 'wiki', 'graph'] as const
+const validTabs = ['documents', 'wiki', 'graph', 'questions'] as const
 type KbTab = typeof validTabs[number]
 const initTab = validTabs.includes(route.query.tab as any) ? (route.query.tab as KbTab) : 'documents'
 const activeKbTab = ref<KbTab>(initTab);
@@ -2026,8 +2027,16 @@ async function createNewSession(value: string): Promise<void> {
                     </t-tooltip>
                   </span>
                 </t-tooltip>
+                <span class="breadcrumb-tab-sep">/</span>
+                <span :class="['breadcrumb-tab', { active: activeKbTab === 'questions' }]"
+                  @click="activeKbTab = 'questions'">题库</span>
               </template>
-              <span v-else class="breadcrumb-current">{{ $t('knowledgeEditor.document.title') }}</span>
+              <template v-else>
+                <span class="breadcrumb-current">{{ $t('knowledgeEditor.document.title') }}</span>
+                <span class="breadcrumb-tab-sep">/</span>
+                <span :class="['breadcrumb-tab', { active: activeKbTab === 'questions' }]"
+                  @click="activeKbTab = 'questions'">题库</span>
+              </template>
             </h2>
             <!-- 标题行右侧的动作锚点：聚拢"信息"和"设置"两个圆形按钮。 -->
             <div class="kb-title-actions">
@@ -2063,6 +2072,9 @@ async function createNewSession(value: string): Promise<void> {
           :can-edit="canEdit" @open-source-doc="openSourceDoc" @status-change="onWikiStatusChange"
           @view-graph="onViewWikiInGraph" />
       </div>
+
+      <!-- Questions tab -->
+      <QuestionBank v-if="activeKbTab === 'questions' && kbId" :knowledge-base-id="kbId" />
 
       <template v-if="activeKbTab === 'documents' || !isWiki">
         <div class="knowledge-main">
