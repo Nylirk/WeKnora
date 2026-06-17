@@ -44,6 +44,12 @@ type QuestionOption struct {
 	Content string `json:"content"`
 }
 
+type ChoiceQuestionBody struct {
+	Options   []QuestionOption `json:"options"`
+	MinSelect int              `json:"min_select,omitempty"`
+	MaxSelect int              `json:"max_select,omitempty"`
+}
+
 type CompositeSubQuestion struct {
 	QuestionType string `json:"question_type"`
 	StemText     string `json:"stem_text"`
@@ -141,16 +147,16 @@ func ValidateQuestionForExport(q *Question) []ValidateForReviewError {
 
 func validateChoiceBody(q *Question) []ValidateForReviewError {
 	var errs []ValidateForReviewError
-	var options []QuestionOption
-	if err := jsonUnmarshal(q.QuestionBody, &options); err != nil {
-		errs = append(errs, ValidateForReviewError{Field: "question_body", Message: "invalid question_body: " + err.Error()})
+	var body ChoiceQuestionBody
+	if err := jsonUnmarshal(q.QuestionBody, &body); err != nil {
+		errs = append(errs, ValidateForReviewError{Field: "question_body", Message: "invalid question_body: expected {\"options\": [...]}: " + err.Error()})
 		return errs
 	}
-	if len(options) < 2 {
+	if len(body.Options) < 2 {
 		errs = append(errs, ValidateForReviewError{Field: "question_body", Message: "choice questions must have at least 2 options"})
 		return errs
 	}
-	for i, opt := range options {
+	for i, opt := range body.Options {
 		if strings.TrimSpace(opt.Label) == "" {
 			errs = append(errs, ValidateForReviewError{Field: "question_body", Message: "option label cannot be empty"})
 		}
@@ -160,7 +166,7 @@ func validateChoiceBody(q *Question) []ValidateForReviewError {
 		_ = i
 	}
 	seen := make(map[string]bool)
-	for _, opt := range options {
+	for _, opt := range body.Options {
 		if seen[opt.Label] {
 			errs = append(errs, ValidateForReviewError{Field: "question_body", Message: "duplicate option label: " + opt.Label})
 			break
@@ -180,9 +186,9 @@ func validateSingleChoiceAnswer(q *Question) []ValidateForReviewError {
 	if strings.TrimSpace(q.AnswerText) == "" {
 		errs = append(errs, ValidateForReviewError{Field: "answer_text", Message: "answer_text is required for single_choice"})
 	}
-	var options []QuestionOption
-	_ = jsonUnmarshal(q.QuestionBody, &options)
-	if ans.SelectedIndex < 0 || (len(options) > 0 && ans.SelectedIndex >= len(options)) {
+	var body ChoiceQuestionBody
+	_ = jsonUnmarshal(q.QuestionBody, &body)
+	if ans.SelectedIndex < 0 || (len(body.Options) > 0 && ans.SelectedIndex >= len(body.Options)) {
 		errs = append(errs, ValidateForReviewError{Field: "answer_body", Message: "selected_index out of range"})
 	}
 	return errs
@@ -198,10 +204,10 @@ func validateMultipleChoiceAnswer(q *Question) []ValidateForReviewError {
 	if len(ans.SelectedIndices) == 0 {
 		errs = append(errs, ValidateForReviewError{Field: "answer_body", Message: "multiple_choice must have at least one selected index"})
 	}
-	var options []QuestionOption
-	_ = jsonUnmarshal(q.QuestionBody, &options)
+	var body ChoiceQuestionBody
+	_ = jsonUnmarshal(q.QuestionBody, &body)
 	for _, idx := range ans.SelectedIndices {
-		if idx < 0 || (len(options) > 0 && idx >= len(options)) {
+		if idx < 0 || (len(body.Options) > 0 && idx >= len(body.Options)) {
 			errs = append(errs, ValidateForReviewError{Field: "answer_body", Message: "selected_indices out of range"})
 			break
 		}

@@ -19,6 +19,7 @@ func ResolveProcessConfig(kb *types.KnowledgeBase, overrides *types.KnowledgePro
 		QuestionGenerationConfig: defaultQuestionGenerationConfig(kb),
 		GraphEnabled:             kb.IsGraphEnabled(),
 		ExtractConfig:            derefExtractConfig(kb.ExtractConfig),
+		ProcessingMode:           "standard",
 	}
 	if overrides == nil {
 		return eff

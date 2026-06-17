@@ -10,17 +10,19 @@ import (
 type QuestionSetSourceType string
 
 const (
-	QuestionSetSourceManual   QuestionSetSourceType = "manual"
-	QuestionSetSourceImported QuestionSetSourceType = "imported"
+	QuestionSetSourceManual    QuestionSetSourceType = "manual"
+	QuestionSetSourceImport    QuestionSetSourceType = "import"
 	QuestionSetSourceGenerated QuestionSetSourceType = "generated"
+	QuestionSetSourceExamPaper QuestionSetSourceType = "exam_paper"
 )
 
 type QuestionSetStatus string
 
 const (
 	QuestionSetStatusActive   QuestionSetStatus = "active"
-	QuestionSetStatusArchived QuestionSetStatus = "archived"
+	QuestionSetStatusCompleted QuestionSetStatus = "completed"
 	QuestionSetStatusPending  QuestionSetStatus = "pending"
+	QuestionSetStatusFailed   QuestionSetStatus = "failed"
 )
 
 type QuestionSet struct {
@@ -33,7 +35,8 @@ type QuestionSet struct {
 	Status           QuestionSetStatus `json:"status" gorm:"type:varchar(32);not null;default:'active'"`
 	QuestionCount    int               `json:"question_count" gorm:"column:question_count;not null;default:0"`
 	GenerationConfig JSON             `json:"generation_config" gorm:"type:jsonb;not null"`
-	Metadata         JSON             `json:"metadata" gorm:"type:jsonb;not null"`
+	GenerationScope  JSON             `json:"generation_scope" gorm:"type:jsonb;not null"`
+	ErrorMessage     string           `json:"error_message" gorm:"type:text;not null;default:''"`
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
 	DeletedAt        gorm.DeletedAt    `json:"-" gorm:"index"`
@@ -67,6 +70,7 @@ type Question struct {
 	ID                 string          `json:"id" gorm:"type:varchar(36);primaryKey"`
 	TenantID           uint64          `json:"tenant_id" gorm:"index;not null"`
 	QuestionSetID      string          `json:"question_set_id" gorm:"type:varchar(36);index;not null"`
+	KnowledgeBaseID    string          `json:"knowledge_base_id" gorm:"type:varchar(36);index;not null"`
 	QuestionType       string          `json:"question_type" gorm:"type:varchar(64);not null;default:'single_choice'"`
 	SchemaVersion      string          `json:"schema_version" gorm:"type:varchar(16);not null;default:'v1'"`
 	StemText           string          `json:"stem_text" gorm:"type:text;not null;default:''"`
@@ -107,9 +111,8 @@ type QuestionListFilter struct {
 }
 
 type CreateQuestionSetRequest struct {
-	Name            string `json:"name" binding:"required"`
-	Description     string `json:"description"`
-	KnowledgeBaseID string `json:"knowledge_base_id" binding:"required"`
+	Name        string `json:"name" binding:"required"`
+	Description string `json:"description"`
 }
 
 type UpdateQuestionSetRequest struct {
@@ -192,6 +195,6 @@ type ExportToEvaluationRequest struct {
 type GenerateQuestionsRequest struct {
 	Name              string `json:"name" binding:"required"`
 	Description       string `json:"description"`
-	KnowledgeBaseID   string `json:"knowledge_base_id" binding:"required"`
 	GenerationConfig  JSON   `json:"generation_config"`
+	GenerationScope   JSON   `json:"generation_scope"`
 }

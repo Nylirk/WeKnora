@@ -6,29 +6,28 @@ import (
 )
 
 func RegisterQuestionRoutes(r *gin.RouterGroup, h *handler.QuestionHandler, g *rbacGuards) {
-	questionSets := r.Group("/knowledge-bases/:id/question-sets")
+	kb := r.Group("/knowledge-bases/:id")
 	{
-		questionSets.GET("", g.Viewer(), g.KBAccessRead("id"), h.ListQuestionSets)
-		questionSets.POST("", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.CreateQuestionSet)
-		questionSets.POST("/generate", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.GenerateQuestions)
-	}
-
-	sets := r.Group("/question-sets/:set_id")
-	{
-		sets.GET("", g.Viewer(), h.GetQuestionSet)
-		sets.PUT("", g.Admin(), h.UpdateQuestionSet)
-		sets.DELETE("", g.Admin(), h.DeleteQuestionSet)
-
-		questions := sets.Group("/questions")
+		qs := kb.Group("/question-sets")
 		{
-			questions.GET("", g.Viewer(), h.ListQuestions)
-			questions.POST("", g.Admin(), h.CreateQuestion)
-			questions.GET("/:question_id", g.Viewer(), h.GetQuestion)
-			questions.PUT("/:question_id", g.Admin(), h.UpdateQuestion)
-			questions.DELETE("/:question_id", g.Admin(), h.DeleteQuestion)
-			questions.PUT("/:question_id/status", g.Admin(), h.UpdateQuestionStatus)
-			questions.POST("/import", g.Admin(), h.ImportQuestions)
-			questions.POST("/export", g.Admin(), h.ExportToEvaluationDataset)
+			qs.GET("", g.Viewer(), g.KBAccessRead("id"), h.ListQuestionSets)
+			qs.POST("", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.CreateQuestionSet)
+			qs.POST("/generate", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.GenerateQuestions)
+			qs.GET("/:set_id", g.Viewer(), g.KBAccessRead("id"), h.GetQuestionSet)
+			qs.PUT("/:set_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.UpdateQuestionSet)
+			qs.DELETE("/:set_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.DeleteQuestionSet)
+
+			questions := qs.Group("/:set_id/questions")
+			{
+				questions.GET("", g.Viewer(), g.KBAccessRead("id"), h.ListQuestions)
+				questions.POST("", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.CreateQuestion)
+				questions.GET("/:question_id", g.Viewer(), g.KBAccessRead("id"), h.GetQuestion)
+				questions.PUT("/:question_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.UpdateQuestion)
+				questions.DELETE("/:question_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.DeleteQuestion)
+				questions.PUT("/:question_id/status", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.UpdateQuestionStatus)
+				questions.POST("/import", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.ImportQuestions)
+				questions.POST("/export", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.ExportToEvaluationDataset)
+			}
 		}
 	}
 }

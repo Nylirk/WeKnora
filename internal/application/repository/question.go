@@ -28,6 +28,14 @@ func (r *questionRepository) GetQuestionSet(ctx context.Context, tenantID uint64
 	return &qs, nil
 }
 
+func (r *questionRepository) GetQuestionSetByKB(ctx context.Context, tenantID uint64, kbID string) (*types.QuestionSet, error) {
+	var qs types.QuestionSet
+	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID).First(&qs).Error; err != nil {
+		return nil, err
+	}
+	return &qs, nil
+}
+
 func (r *questionRepository) ListQuestionSets(ctx context.Context, tenantID uint64, kbID string, page *types.Pagination) (*types.PageResult, error) {
 	var total int64
 	var sets []*types.QuestionSet
@@ -85,20 +93,21 @@ func (r *questionRepository) ListQuestions(ctx context.Context, tenantID uint64,
 	var total int64
 	var questions []*types.Question
 	q := r.db.WithContext(ctx).Model(&types.Question{}).Where("tenant_id = ? AND question_set_id = ?", tenantID, setID)
-	if filter != nil {
-		if filter.QuestionType != "" {
-			q = q.Where("question_type = ?", filter.QuestionType)
-		}
-		if filter.Difficulty != "" {
-			q = q.Where("difficulty = ?", filter.Difficulty)
-		}
-		if filter.Status != "" {
-			q = q.Where("status = ?", filter.Status)
-		}
-		if filter.Keyword != "" {
-			q = q.Where("stem_text ILIKE ?", "%"+filter.Keyword+"%")
-		}
+	q = applyQuestionFilters(q, filter)
+	if err := q.Count(&total).Error; err != nil {
+		return nil, err
 	}
+	if err := q.Order("sort_order ASC, created_at ASC").Offset(page.Offset()).Limit(page.Limit()).Find(&questions).Error; err != nil {
+		return nil, err
+	}
+	return types.NewPageResult(total, page, questions), nil
+}
+
+func (r *questionRepository) ListQuestionsByKB(ctx context.Context, tenantID uint64, kbID string, filter *types.QuestionListFilter, page *types.Pagination) (*types.PageResult, error) {
+	var total int64
+	var questions []*types.Question
+	q := r.db.WithContext(ctx).Model(&types.Question{}).Where("tenant_id = ? AND knowledge_base_id = ?", tenantID, kbID)
+	q = applyQuestionFilters(q, filter)
 	if err := q.Count(&total).Error; err != nil {
 		return nil, err
 	}
@@ -114,4 +123,30 @@ func (r *questionRepository) UpdateQuestion(ctx context.Context, q *types.Questi
 
 func (r *questionRepository) DeleteQuestion(ctx context.Context, tenantID uint64, setID, id string) error {
 	return r.db.WithContext(ctx).Where("tenant_id = ? AND question_set_id = ? AND id = ?", tenantID, setID, id).Delete(&types.Question{}).Error
+}
+
+func applyQuestionFilters(q *gorm.DB, filter *types.QuestionListFilter) *gorm.DB {
+	if filter == nil {
+		return q
+	}
+	if filter.QuestionType != "" {
+		q = q.Where("question_type = ?", filter.QuestionType)
+	}
+	if filter.Difficulty != "" {
+		q = q.Where("difficulty = ?", filter.Difficulty)
+	}
+	if filter.Status != "" {
+		q = q.Where("status = ?", filter.Status)
+	}
+	if filter.KnowledgePoint != "" {
+		q = q.Where("knowledge_points @> ?", types.JSON([]byte(`"`+filter.KnowledgePoint+`"`)))
+	}
+	if filter.Tag != "" {
+		q = q.Where("tags @> ?", types.JSON([]byte(`"`+filter.Tag+`"`)))
+	}
+	if filter.Keyword != "" {
+		pattern := "%" + filter.Keyword + "%"
+		q = q.Where("stem_text ILIKE ? OR answer_text ILIKE ? OR analysis_text ILIKE ?", pattern, pattern, pattern)
+	}
+	return q
 }

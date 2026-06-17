@@ -42,7 +42,8 @@ func (h *QuestionHandler) CreateQuestionSet(c *gin.Context) {
 		questionBadRequest(c, err)
 		return
 	}
-	result, err := h.questionService.CreateQuestionSet(c.Request.Context(), &req)
+	kbID := c.Param("id")
+	result, err := h.questionService.CreateQuestionSet(c.Request.Context(), kbID, &req)
 	if err != nil {
 		questionHandleError(c, err)
 		return
@@ -51,7 +52,9 @@ func (h *QuestionHandler) CreateQuestionSet(c *gin.Context) {
 }
 
 func (h *QuestionHandler) GetQuestionSet(c *gin.Context) {
-	result, err := h.questionService.GetQuestionSet(c.Request.Context(), c.Param("set_id"))
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	result, err := h.questionService.GetQuestionSet(c.Request.Context(), kbID, setID)
 	if err != nil {
 		questionHandleError(c, err)
 		return
@@ -80,7 +83,9 @@ func (h *QuestionHandler) UpdateQuestionSet(c *gin.Context) {
 		questionBadRequest(c, err)
 		return
 	}
-	result, err := h.questionService.UpdateQuestionSet(c.Request.Context(), c.Param("set_id"), &req)
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	result, err := h.questionService.UpdateQuestionSet(c.Request.Context(), kbID, setID, &req)
 	if err != nil {
 		questionHandleError(c, err)
 		return
@@ -89,7 +94,9 @@ func (h *QuestionHandler) UpdateQuestionSet(c *gin.Context) {
 }
 
 func (h *QuestionHandler) DeleteQuestionSet(c *gin.Context) {
-	if err := h.questionService.DeleteQuestionSet(c.Request.Context(), c.Param("set_id")); err != nil {
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	if err := h.questionService.DeleteQuestionSet(c.Request.Context(), kbID, setID); err != nil {
 		questionHandleError(c, err)
 		return
 	}
@@ -102,7 +109,9 @@ func (h *QuestionHandler) CreateQuestion(c *gin.Context) {
 		questionBadRequest(c, err)
 		return
 	}
-	result, err := h.questionService.CreateQuestion(c.Request.Context(), c.Param("set_id"), &req)
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	result, err := h.questionService.CreateQuestion(c.Request.Context(), kbID, setID, &req)
 	if err != nil {
 		questionHandleError(c, err)
 		return
@@ -111,7 +120,10 @@ func (h *QuestionHandler) CreateQuestion(c *gin.Context) {
 }
 
 func (h *QuestionHandler) GetQuestion(c *gin.Context) {
-	result, err := h.questionService.GetQuestion(c.Request.Context(), c.Param("set_id"), c.Param("question_id"))
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	questionID := c.Param("question_id")
+	result, err := h.questionService.GetQuestion(c.Request.Context(), kbID, setID, questionID)
 	if err != nil {
 		questionHandleError(c, err)
 		return
@@ -130,7 +142,9 @@ func (h *QuestionHandler) ListQuestions(c *gin.Context) {
 		questionBadRequest(c, err)
 		return
 	}
-	result, err := h.questionService.ListQuestions(c.Request.Context(), c.Param("set_id"), &filter, &page)
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	result, err := h.questionService.ListQuestions(c.Request.Context(), kbID, setID, &filter, &page)
 	if err != nil {
 		questionHandleError(c, err)
 		return
@@ -144,7 +158,10 @@ func (h *QuestionHandler) UpdateQuestion(c *gin.Context) {
 		questionBadRequest(c, err)
 		return
 	}
-	result, err := h.questionService.UpdateQuestion(c.Request.Context(), c.Param("set_id"), c.Param("question_id"), &req)
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	questionID := c.Param("question_id")
+	result, err := h.questionService.UpdateQuestion(c.Request.Context(), kbID, setID, questionID, &req)
 	if err != nil {
 		questionHandleError(c, err)
 		return
@@ -153,7 +170,10 @@ func (h *QuestionHandler) UpdateQuestion(c *gin.Context) {
 }
 
 func (h *QuestionHandler) DeleteQuestion(c *gin.Context) {
-	if err := h.questionService.DeleteQuestion(c.Request.Context(), c.Param("set_id"), c.Param("question_id")); err != nil {
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	questionID := c.Param("question_id")
+	if err := h.questionService.DeleteQuestion(c.Request.Context(), kbID, setID, questionID); err != nil {
 		questionHandleError(c, err)
 		return
 	}
@@ -166,7 +186,10 @@ func (h *QuestionHandler) UpdateQuestionStatus(c *gin.Context) {
 		questionBadRequest(c, err)
 		return
 	}
-	result, err := h.questionService.UpdateQuestionStatus(c.Request.Context(), c.Param("set_id"), c.Param("question_id"), &req)
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	questionID := c.Param("question_id")
+	result, err := h.questionService.UpdateQuestionStatus(c.Request.Context(), kbID, setID, questionID, &req)
 	if err != nil {
 		questionHandleError(c, err)
 		return
@@ -180,7 +203,9 @@ func (h *QuestionHandler) ImportQuestions(c *gin.Context) {
 		questionBadRequest(c, err)
 		return
 	}
-	result, err := h.questionService.ImportQuestions(c.Request.Context(), c.Param("set_id"), &req)
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	result, err := h.questionService.ImportQuestions(c.Request.Context(), kbID, setID, &req)
 	if err != nil {
 		questionHandleError(c, err)
 		return
@@ -194,7 +219,9 @@ func (h *QuestionHandler) ExportToEvaluationDataset(c *gin.Context) {
 		questionBadRequest(c, err)
 		return
 	}
-	result, err := h.questionService.ExportToEvaluationDataset(c.Request.Context(), c.Param("set_id"), &req)
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	result, err := h.questionService.ExportToEvaluationDataset(c.Request.Context(), kbID, setID, &req)
 	if err != nil {
 		questionHandleError(c, err)
 		return
@@ -208,7 +235,8 @@ func (h *QuestionHandler) GenerateQuestions(c *gin.Context) {
 		questionBadRequest(c, err)
 		return
 	}
-	result, err := h.questionService.GenerateQuestions(c.Request.Context(), c.Param("id"), &req)
+	kbID := c.Param("id")
+	result, err := h.questionService.GenerateQuestions(c.Request.Context(), kbID, &req)
 	if err != nil {
 		questionHandleError(c, err)
 		return
