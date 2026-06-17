@@ -1,10 +1,12 @@
+name: SelKnora
+
 services:
   frontend:
     image: nylirk/weknora-ui:${WEKNORA_VERSION:-latest}
     # Requires frontend/dist — run ./scripts/build_frontend_dist.sh before --build
     build:
       context: ./frontend
-    container_name: WeKnora-frontend
+    container_name: SelKnora-frontend
     ports:
       - "${FRONTEND_PORT:-80}:80"
     environment:
@@ -21,7 +23,7 @@ services:
       app:
         condition: service_healthy
     networks:
-      - WeKnora-network
+      - SelKnora-network
     restart: unless-stopped
 
   app:
@@ -31,7 +33,7 @@ services:
       dockerfile: docker/Dockerfile.app
       args:
         - APK_MIRROR_ARG=${APK_MIRROR_ARG:-}
-    container_name: WeKnora-app
+    container_name: SelKnora-app
     ports:
       - "${APP_PORT:-8080}:8080"
     volumes:
@@ -203,7 +205,7 @@ services:
       docreader:
         condition: service_healthy
     networks:
-      - WeKnora-network
+      - SelKnora-network
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -211,7 +213,7 @@ services:
   # Sandbox 镜像：仅用于 build/pull，非常驻服务；app 执行 Skills 时按需 docker run 该镜像，用毕即释
   sandbox:
     image: nylirk/weknora-sandbox:${WEKNORA_VERSION:-latest}
-    container_name: WeKnora-sandbox
+    container_name: SelKnora-sandbox
     build:
       context: .
       dockerfile: docker/Dockerfile.sandbox
@@ -227,9 +229,9 @@ services:
       dockerfile: docker/Dockerfile.docreader
       args:
         - APT_MIRROR=${APT_MIRROR:-}
-    container_name: WeKnora-docreader
+    container_name: SelKnora-docreader
     # docreader gRPC ships without auth/TLS and is only consumed by the app
-    # container over the WeKnora-network (DOCREADER_ADDR defaults to
+    # container over the SelKnora-network (DOCREADER_ADDR defaults to
     # docreader:50051), so we don't publish 50051 to the host. `expose` keeps
     # the port reachable inside the compose network for documentation only.
     # If you need to call docreader from outside the host (e.g. for debugging),
@@ -263,7 +265,7 @@ services:
       retries: 3
       start_period: 60s
     networks:
-      - WeKnora-network
+      - SelKnora-network
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -275,7 +277,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.odl-hybrid
     image: weknora-odl-hybrid:local
-    container_name: WeKnora-odl-hybrid
+    container_name: SelKnora-odl-hybrid
     profiles:
       - odl-hybrid
     expose:
@@ -283,13 +285,13 @@ services:
     environment:
       - ODL_HYBRID_EXTRA_ARGS=${ODL_HYBRID_EXTRA_ARGS:---no-ocr}
     networks:
-      - WeKnora-network
+      - SelKnora-network
     restart: unless-stopped
 
   # 修改的PostgreSQL配置
   postgres:
     image: paradedb/paradedb:v0.22.2-pg17
-    container_name: WeKnora-postgres
+    container_name: SelKnora-postgres
     environment:
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
@@ -297,7 +299,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
-      - WeKnora-network
+      - SelKnora-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
       interval: 10s # 增加时间间隔
@@ -310,11 +312,11 @@ services:
 
   redis:
     image: redis:7.0-alpine
-    container_name: WeKnora-redis
+    container_name: SelKnora-redis
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     restart: always
     networks:
-      - WeKnora-network
+      - SelKnora-network
 
   # One-shot init: copy the read-only template settings.yml into a named volume
   # before searxng starts. Necessary because the searxng entrypoint sed-replaces
@@ -323,21 +325,21 @@ services:
   # working tree (and prevent re-templating on subsequent restarts).
   searxng-init:
     image: busybox:1.36
-    container_name: WeKnora-searxng-init
+    container_name: SelKnora-searxng-init
     command: ["sh", "-c", "cp /template/settings.yml /etc/searxng/settings.yml && chmod 0644 /etc/searxng/settings.yml"]
     volumes:
       - ./docker/searxng/settings.yml:/template/settings.yml:ro
       - searxng_config:/etc/searxng
     restart: "no"
     networks:
-      - WeKnora-network
+      - SelKnora-network
     profiles:
       - searxng
       - full
 
   searxng:
     image: searxng/searxng:latest
-    container_name: WeKnora-searxng
+    container_name: SelKnora-searxng
     # Bind to loopback by default; override SEARXNG_BIND=0.0.0.0 only after
     # rotating SEARXNG_SECRET and (optionally) re-enabling limiter in settings.yml.
     ports:
@@ -363,14 +365,14 @@ services:
       searxng-init:
         condition: service_completed_successfully
     networks:
-      - WeKnora-network
+      - SelKnora-network
     profiles:
       - searxng
       - full
 
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    container_name: WeKnora-minio
+    container_name: SelKnora-minio
     ports:
       - "${MINIO_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
@@ -386,14 +388,14 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      - WeKnora-network
+      - SelKnora-network
     profiles:
       - minio
       - full
 
   neo4j:
     image: neo4j:2025.10.1
-    container_name: WeKnora-neo4j
+    container_name: SelKnora-neo4j
     volumes:
       - neo4j-data:/data
     environment:
@@ -407,21 +409,21 @@ services:
       - "7687:7687"
     restart: always
     networks:
-      - WeKnora-network
+      - SelKnora-network
     profiles:
       - neo4j
       - full
 
   qdrant:
     image: qdrant/qdrant:v1.16.2
-    container_name: WeKnora-qdrant
+    container_name: SelKnora-qdrant
     ports:
       - "${QDRANT_REST_PORT:-6333}:6333"
       - "${QDRANT_PORT:-6334}:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     networks:
-      - WeKnora-network
+      - SelKnora-network
     restart: unless-stopped
     profiles:
       - qdrant
@@ -429,7 +431,7 @@ services:
 
   milvus:
     image: milvusdb/milvus:v2.6.11
-    container_name: WeKnora-milvus
+    container_name: SelKnora-milvus
     security_opt:
       - seccomp:unconfined
     command: ["milvus", "run", "standalone"]
@@ -450,14 +452,14 @@ services:
     volumes:
       - milvus_data:/var/lib/milvus
     networks:
-      - WeKnora-network
+      - SelKnora-network
     restart: unless-stopped
     profiles:
       - milvus
 
   weaviate:
     image: semitechnologies/weaviate:1.28.4
-    container_name: WeKnora-weaviate
+    container_name: SelKnora-weaviate
     environment:
       - PERSISTENCE_DATA_PATH=/var/lib/weaviate
       - CLUSTER_HOSTNAME=node1
@@ -473,7 +475,7 @@ services:
     volumes:
       - weaviate_data:/var/lib/weaviate
     networks:
-      - WeKnora-network
+      - SelKnora-network
     restart: unless-stopped
     profiles:
       - weaviate
@@ -496,7 +498,7 @@ services:
   # ---------------------------------------------------------------------------
   doris-fe:
     image: apache/doris:fe-4.1.0
-    container_name: WeKnora-doris-fe
+    container_name: SelKnora-doris-fe
     hostname: doris-fe
     environment:
       - FE_SERVERS=fe1:doris-fe:9010
@@ -508,14 +510,14 @@ services:
       - doris_fe_meta:/opt/apache-doris/fe/doris-meta
       - doris_fe_log:/opt/apache-doris/fe/log
     networks:
-      - WeKnora-network
+      - SelKnora-network
     restart: unless-stopped
     profiles:
       - doris
 
   doris-be:
     image: apache/doris:be-4.1.0
-    container_name: WeKnora-doris-be
+    container_name: SelKnora-doris-be
     hostname: doris-be
     environment:
       - FE_SERVERS=fe1:doris-fe:9010
@@ -528,7 +530,7 @@ services:
       - doris_be_storage:/opt/apache-doris/be/storage
       - doris_be_log:/opt/apache-doris/be/log
     networks:
-      - WeKnora-network
+      - SelKnora-network
     restart: unless-stopped
     profiles:
       - doris
@@ -567,7 +569,7 @@ services:
   # 复用 WeKnora-postgres 的 ParadeDB 镜像，避免多拉一个 postgres 镜像
   langfuse-db-init:
     image: paradedb/paradedb:v0.22.2-pg17
-    container_name: WeKnora-langfuse-db-init
+    container_name: SelKnora-langfuse-db-init
     depends_on:
       postgres:
         condition: service_healthy
@@ -592,7 +594,7 @@ services:
         fi
         echo "[langfuse-db-init] done."
     networks:
-      - WeKnora-network
+      - SelKnora-network
     restart: "no"
     profiles:
       - langfuse
@@ -600,7 +602,7 @@ services:
 
   langfuse-clickhouse:
     image: clickhouse/clickhouse-server:24.8
-    container_name: WeKnora-langfuse-clickhouse
+    container_name: SelKnora-langfuse-clickhouse
     restart: unless-stopped
     user: "101:101"
     environment:
@@ -617,14 +619,14 @@ services:
       retries: 10
       start_period: 10s
     networks:
-      - WeKnora-network
+      - SelKnora-network
     profiles:
       - langfuse
       - full
 
   langfuse-minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    container_name: WeKnora-langfuse-minio
+    container_name: SelKnora-langfuse-minio
     restart: unless-stopped
     entrypoint: sh
     # 启动前创建 `langfuse` 桶，Langfuse 开箱即用
@@ -645,14 +647,14 @@ services:
       timeout: 10s
       retries: 5
     networks:
-      - WeKnora-network
+      - SelKnora-network
     profiles:
       - langfuse
       - full
 
   langfuse-worker:
     image: langfuse/langfuse-worker:3
-    container_name: WeKnora-langfuse-worker
+    container_name: SelKnora-langfuse-worker
     restart: unless-stopped
     depends_on: &langfuse-depends-on
       # 复用 WeKnora 已有的 postgres/redis，需要先完成 langfuse 数据库的创建
@@ -717,14 +719,14 @@ services:
       LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
       LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
     networks:
-      - WeKnora-network
+      - SelKnora-network
     profiles:
       - langfuse
       - full
 
   langfuse-web:
     image: langfuse/langfuse:3
-    container_name: WeKnora-langfuse-web
+    container_name: SelKnora-langfuse-web
     restart: unless-stopped
     depends_on: *langfuse-depends-on
     ports:
@@ -759,7 +761,7 @@ services:
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
     networks:
-      - WeKnora-network
+      - SelKnora-network
     profiles:
       - langfuse
       - full
@@ -767,7 +769,7 @@ services:
   mcp:
     build:
       context: ./mcp-server
-    container_name: WeKnora-mcp
+    container_name: SelKnora-mcp
     ports:
       - "${MCP_PORT:-8082}:8000"
     environment:
@@ -777,13 +779,13 @@ services:
       app:
         condition: service_healthy
     networks:
-      - WeKnora-network
+      - SelKnora-network
     restart: unless-stopped
     profiles:
       - full
 
 networks:
-  WeKnora-network:
+  SelKnora-network:
     driver: bridge
 
 volumes:
