@@ -21,7 +21,7 @@ import { ref, computed } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { importQuestions, type ImportQuestionError, type ImportQuestionItem } from '@/api/question'
 
-const props = defineProps<{ visible: boolean; setId: string }>()
+const props = defineProps<{ visible: boolean; setId: string; knowledgeBaseId: string }>()
 const emit = defineEmits<{ 'update:visible': [v: boolean]; imported: [] }>()
 
 const dialogVisible = computed({
@@ -39,7 +39,7 @@ async function doImport() {
     return
   }
   try {
-    const result = await importQuestions(props.setId, { items })
+    const result = await importQuestions(props.knowledgeBaseId, props.setId, { items })
     if (result.errors && result.errors.length > 0) {
       parseErrors.value = result.errors
     }

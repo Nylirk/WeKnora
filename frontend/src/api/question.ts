@@ -3,11 +3,12 @@ import type { PageResult } from './evaluation'
 
 export type QuestionType = 'single_choice' | 'multiple_choice' | 'true_false' | 'fill_blank' | 'short_answer' | 'essay' | 'composite'
 export type QuestionDifficulty = 'easy' | 'medium' | 'hard'
-export type QuestionSetSourceType = 'manual' | 'imported' | 'generated'
-export type QuestionSetStatus = 'active' | 'archived' | 'pending'
+export type QuestionSetSourceType = 'manual' | 'import' | 'generated' | 'exam_paper'
+export type QuestionSetStatus = 'active' | 'completed' | 'pending' | 'failed'
 export type QuestionStatus = 'draft' | 'reviewed' | 'rejected'
 
 export interface QuestionOption { label: string; content: string }
+export interface ChoiceQuestionBody { options: QuestionOption[]; min_select?: number; max_select?: number }
 export interface SingleChoiceAnswer { selected_index: number; explanation?: string }
 export interface MultipleChoiceAnswer { selected_indices: number[]; explanation?: string }
 export interface TrueFalseAnswer { is_true: boolean; explanation?: string }
@@ -18,12 +19,12 @@ export interface QuestionSet {
   id: string; tenant_id: number; knowledge_base_id: string
   name: string; description: string; source_type: QuestionSetSourceType
   status: QuestionSetStatus; question_count: number
-  generation_config: Record<string, unknown>; metadata: Record<string, unknown>
-  created_at: string; updated_at: string
+  generation_config: Record<string, unknown>; generation_scope: Record<string, unknown>
+  error_message: string; created_at: string; updated_at: string
 }
 
 export interface Question {
-  id: string; tenant_id: number; question_set_id: string
+  id: string; tenant_id: number; question_set_id: string; knowledge_base_id: string
   question_type: QuestionType; schema_version: string
   stem_text: string; question_body: Record<string, unknown>
   answer_text: string; answer_body: Record<string, unknown>
@@ -58,19 +59,22 @@ const unwrap = <T>(response: any): T => response.data as T
 export const listQuestionSets = (kbId: string, page = 1, pageSize = 50) =>
   get(`/api/v1/knowledge-bases/${kbId}/question-sets?page=${page}&page_size=${pageSize}`).then(unwrap<PageResult<QuestionSet>>)
 
-export const createQuestionSet = (kbId: string, data: { name: string; description?: string; knowledge_base_id: string }) =>
+export const createQuestionSet = (kbId: string, data: { name: string; description?: string }) =>
   post(`/api/v1/knowledge-bases/${kbId}/question-sets`, data).then(unwrap<QuestionSet>)
 
-export const getQuestionSet = (setId: string) =>
-  get(`/api/v1/question-sets/${setId}`).then(unwrap<QuestionSet>)
+export const getQuestionSet = (kbId: string, setId: string) =>
+  get(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}`).then(unwrap<QuestionSet>)
 
-export const updateQuestionSet = (setId: string, data: Partial<{ name: string; description: string; status: string }>) =>
-  put(`/api/v1/question-sets/${setId}`, data).then(unwrap<QuestionSet>)
+export const updateQuestionSet = (kbId: string, setId: string, data: Partial<{ name: string; description: string; status: string }>) =>
+  put(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}`, data).then(unwrap<QuestionSet>)
 
-export const deleteQuestionSet = (setId: string) =>
-  del(`/api/v1/question-sets/${setId}`)
+export const deleteQuestionSet = (kbId: string, setId: string) =>
+  del(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}`)
 
-export const listQuestions = (setId: string, filter?: QuestionListFilter, page = 1, pageSize = 50) => {
+export const generateQuestions = (kbId: string, data: { name: string; description?: string; generation_config?: Record<string, unknown>; generation_scope?: Record<string, unknown> }) =>
+  post(`/api/v1/knowledge-bases/${kbId}/question-sets/generate`, data).then(unwrap<QuestionSet>)
+
+export const listQuestions = (kbId: string, setId: string, filter?: QuestionListFilter, page = 1, pageSize = 50) => {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
   if (filter) {
     if (filter.question_type) params.set('question_type', filter.question_type)
@@ -80,29 +84,26 @@ export const listQuestions = (setId: string, filter?: QuestionListFilter, page =
     if (filter.knowledge_point) params.set('knowledge_point', filter.knowledge_point)
     if (filter.tag) params.set('tag', filter.tag)
   }
-  return get(`/api/v1/question-sets/${setId}/questions?${params}`).then(unwrap<PageResult<Question>>)
+  return get(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions?${params}`).then(unwrap<PageResult<Question>>)
 }
 
-export const createQuestion = (setId: string, data: Record<string, unknown>) =>
-  post(`/api/v1/question-sets/${setId}/questions`, data).then(unwrap<Question>)
+export const createQuestion = (kbId: string, setId: string, data: Record<string, unknown>) =>
+  post(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions`, data).then(unwrap<Question>)
 
-export const getQuestion = (setId: string, questionId: string) =>
-  get(`/api/v1/question-sets/${setId}/questions/${questionId}`).then(unwrap<Question>)
+export const getQuestion = (kbId: string, setId: string, questionId: string) =>
+  get(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/${questionId}`).then(unwrap<Question>)
 
-export const updateQuestion = (setId: string, questionId: string, data: Record<string, unknown>) =>
-  put(`/api/v1/question-sets/${setId}/questions/${questionId}`, data).then(unwrap<Question>)
+export const updateQuestion = (kbId: string, setId: string, questionId: string, data: Record<string, unknown>) =>
+  put(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/${questionId}`, data).then(unwrap<Question>)
 
-export const deleteQuestion = (setId: string, questionId: string) =>
-  del(`/api/v1/question-sets/${setId}/questions/${questionId}`)
+export const deleteQuestion = (kbId: string, setId: string, questionId: string) =>
+  del(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/${questionId}`)
 
-export const updateQuestionStatus = (setId: string, questionId: string, data: { status: string }) =>
-  put(`/api/v1/question-sets/${setId}/questions/${questionId}/status`, data).then(unwrap<Question>)
+export const updateQuestionStatus = (kbId: string, setId: string, questionId: string, data: { status: string }) =>
+  put(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/${questionId}/status`, data).then(unwrap<Question>)
 
-export const importQuestions = (setId: string, data: ImportQuestionsRequest) =>
-  post(`/api/v1/question-sets/${setId}/questions/import`, data).then(unwrap<ImportQuestionsResult>)
+export const importQuestions = (kbId: string, setId: string, data: ImportQuestionsRequest) =>
+  post(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/import`, data).then(unwrap<ImportQuestionsResult>)
 
-export const exportToEvaluationDataset = (setId: string, data: { name: string; description?: string }) =>
-  post(`/api/v1/question-sets/${setId}/questions/export`, data).then(unwrap<any>)
-
-export const generateQuestions = (kbId: string, data: { name: string; description?: string; knowledge_base_id: string; generation_config?: Record<string, unknown> }) =>
-  post(`/api/v1/knowledge-bases/${kbId}/question-sets/generate`, data).then(unwrap<QuestionSet>)
+export const exportToEvaluationDataset = (kbId: string, setId: string, data: { name: string; description?: string }) =>
+  post(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/export`, data).then(unwrap<any>)

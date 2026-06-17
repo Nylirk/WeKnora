@@ -2076,7 +2076,7 @@ async function createNewSession(value: string): Promise<void> {
       <!-- Questions tab -->
       <QuestionBank v-if="activeKbTab === 'questions' && kbId" :knowledge-base-id="kbId" />
 
-      <template v-if="activeKbTab === 'documents' || !isWiki">
+      <template v-if="activeKbTab === 'documents' || (!isWiki && activeKbTab !== 'questions')">
         <div class="knowledge-main">
           <aside class="tag-sidebar">
             <div class="sidebar-header">

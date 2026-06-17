@@ -44,7 +44,6 @@ async function doGenerate() {
     await generateQuestions(props.knowledgeBaseId, {
       name: name.value.trim(),
       description: description.value.trim(),
-      knowledge_base_id: props.knowledgeBaseId,
       generation_config: config,
     })
     MessagePlugin.success('题库创建成功（生成功能将在后续版本实现）')

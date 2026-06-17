@@ -61,11 +61,13 @@
       v-model:visible="editVisible"
       :question="editingQuestion"
       :set-id="setId"
+      :knowledge-base-id="knowledgeBaseId"
       @saved="loadQuestions"
     />
     <QuestionImportDialog
       v-model:visible="importVisible"
       :set-id="setId"
+      :knowledge-base-id="knowledgeBaseId"
       @imported="loadQuestions"
     />
   </div>
@@ -95,7 +97,7 @@ const editingQuestion = ref<Question | null>(null)
 async function loadQuestions() {
   loading.value = true
   try {
-    const res = await listQuestions(props.setId, filter.value, 1, 200)
+    const res = await listQuestions(props.knowledgeBaseId, props.setId, filter.value, 1, 200)
     questions.value = res.data || []
   } catch (e: any) {
     MessagePlugin.error(e?.message || '加载题目失败')
@@ -116,7 +118,7 @@ function openEditDialog(q: Question) {
 
 async function reviewQuestion(q: Question) {
   try {
-    await updateQuestionStatus(props.setId, q.id, { status: 'reviewed' })
+    await updateQuestionStatus(props.knowledgeBaseId, props.setId, q.id, { status: 'reviewed' })
     MessagePlugin.success('审核通过')
     await loadQuestions()
   } catch (e: any) {
@@ -126,7 +128,7 @@ async function reviewQuestion(q: Question) {
 
 async function removeQuestion(q: Question) {
   try {
-    await apiDeleteQuestion(props.setId, q.id)
+    await apiDeleteQuestion(props.knowledgeBaseId, props.setId, q.id)
     MessagePlugin.success('删除成功')
     await loadQuestions()
   } catch (e: any) {
@@ -138,7 +140,7 @@ async function exportToEval() {
   const name = prompt('请输入评测集名称', setName.value)
   if (!name) return
   try {
-    await exportToEvaluationDataset(props.setId, { name })
+    await exportToEvaluationDataset(props.knowledgeBaseId, props.setId, { name })
     MessagePlugin.success('导出成功')
   } catch (e: any) {
     MessagePlugin.error(e?.message || '导出失败')
@@ -163,7 +165,7 @@ function statusLabel(s: string) {
 
 onMounted(async () => {
   try {
-    const set = await getQuestionSet(props.setId)
+    const set = await getQuestionSet(props.knowledgeBaseId, props.setId)
     setName.value = set.name
   } catch { /* ignore */ }
   await loadQuestions()

@@ -121,7 +121,6 @@ async function createSet() {
     await apiCreateSet(props.knowledgeBaseId, {
       name: newSetName.value.trim(),
       description: newSetDescription.value.trim(),
-      knowledge_base_id: props.knowledgeBaseId,
     })
     createSetVisible.value = false
     MessagePlugin.success('题库创建成功')
@@ -137,7 +136,7 @@ function openSet(row: QuestionSet) {
 
 async function deleteSet(row: QuestionSet) {
   try {
-    await apiDeleteSet(row.id)
+    await apiDeleteSet(props.knowledgeBaseId, row.id)
     MessagePlugin.success('删除成功')
     await loadSets()
   } catch (e: any) {
@@ -146,19 +145,19 @@ async function deleteSet(row: QuestionSet) {
 }
 
 function sourceTypeLabel(t: string) {
-  const map: Record<string, string> = { manual: '手动', imported: '导入', generated: '生成' }
+  const map: Record<string, string> = { manual: '手动', 'import': '导入', generated: '生成', exam_paper: '试卷' }
   return map[t] || t
 }
 function sourceTypeTheme(t: string) {
-  const map: Record<string, string> = { manual: 'default', imported: 'primary', generated: 'warning' }
+  const map: Record<string, string> = { manual: 'default', 'import': 'primary', generated: 'warning', exam_paper: 'primary' }
   return map[t] || 'default'
 }
 function setStatusLabel(s: string) {
-  const map: Record<string, string> = { active: '启用', archived: '归档', pending: '待定' }
+  const map: Record<string, string> = { active: '启用', completed: '完成', pending: '待定', failed: '失败' }
   return map[s] || s
 }
 function setStatusTheme(s: string) {
-  const map: Record<string, string> = { active: 'success', archived: 'default', pending: 'warning' }
+  const map: Record<string, string> = { active: 'success', completed: 'primary', pending: 'warning', failed: 'danger' }
   return map[s] || 'default'
 }
 function formatDate(d: string) {

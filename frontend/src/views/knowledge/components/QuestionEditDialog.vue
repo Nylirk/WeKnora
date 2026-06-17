@@ -40,7 +40,7 @@ import {
   createQuestion, updateQuestion, type Question, type QuestionType,
 } from '@/api/question'
 
-const props = defineProps<{ visible: boolean; question: Question | null; setId: string }>()
+const props = defineProps<{ visible: boolean; question: Question | null; setId: string; knowledgeBaseId: string }>()
 const emit = defineEmits<{ 'update:visible': [v: boolean]; saved: [] }>()
 
 const dialogVisible = computed({
@@ -114,10 +114,10 @@ async function save() {
       sort_order: form.value.sort_order,
     }
     if (isEdit.value && props.question) {
-      await updateQuestion(props.setId, props.question.id, payload)
+      await updateQuestion(props.knowledgeBaseId, props.setId, props.question.id, payload)
       MessagePlugin.success('更新成功')
     } else {
-      await createQuestion(props.setId, payload)
+      await createQuestion(props.knowledgeBaseId, props.setId, payload)
       MessagePlugin.success('添加成功')
     }
     dialogVisible.value = false
