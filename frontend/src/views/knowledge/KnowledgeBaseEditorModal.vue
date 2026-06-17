@@ -592,7 +592,7 @@ const isQuestionBank = computed(() => formData.value?.type === 'question_bank')
 const showDocumentSections = computed(() => !isFAQ.value && !isQuestionBank.value)
 
 const kbCreateNeedsEmbedding = computed(() => {
-  if (!formData.value || formData.value.type === 'faq') return false
+  if (!formData.value || formData.value.type === 'faq' || formData.value.type === 'question_bank') return false
   const s = formData.value.indexingStrategy
   return Boolean(s?.vectorEnabled || s?.keywordEnabled)
 })
@@ -1008,11 +1008,6 @@ const validateForm = (): boolean => {
   }
 
   if (formData.value.type === 'question_bank') {
-    if (!formData.value.modelConfig.llmModelId) {
-      MessagePlugin.warning(t('knowledgeEditor.messages.summaryRequired'))
-      currentSection.value = 'models'
-      return false
-    }
     return true
   }
 
@@ -1215,107 +1210,113 @@ const doSubmit = async () => {
         throw new Error(t('knowledgeEditor.messages.missingId'))
       }
 
-      // 1. 更新基本信息（名称、描述）和 FAQ/Wiki 配置
-      const updateConfig: any = {}
-      if (formData.value.type === 'faq' && formData.value.faqConfig) {
-        updateConfig.faq_config = {
-          index_mode: formData.value.faqConfig.indexMode || 'question_only',
-          question_index_mode: formData.value.faqConfig.questionIndexMode || 'separate'
+      if (formData.value.type === 'question_bank') {
+        await updateKnowledgeBase(props.kbId, {
+          name: data.name,
+          description: data.description,
+        })
+        MessagePlugin.success(t('knowledgeEditor.messages.updateSuccess'))
+        emit('success', props.kbId)
+      } else {
+        // 1. 更新基本信息（名称、描述）和 FAQ/Wiki 配置
+        const updateConfig: any = {}
+        if (formData.value.type === 'faq' && formData.value.faqConfig) {
+          updateConfig.faq_config = {
+            index_mode: formData.value.faqConfig.indexMode || 'question_only',
+            question_index_mode: formData.value.faqConfig.questionIndexMode || 'separate'
+          }
         }
-      }
-      if (formData.value.wikiConfig && formData.value.type !== 'faq') {
-        updateConfig.wiki_config = {
-          synthesis_model_id: formData.value.modelConfig?.wikiSynthesisModelId || '',
-          max_pages_per_ingest: formData.value.wikiConfig.maxPagesPerIngest || 0,
-          extraction_granularity: formData.value.wikiConfig.extractionGranularity || 'standard',
+        if (formData.value.wikiConfig && formData.value.type !== 'faq') {
+          updateConfig.wiki_config = {
+            synthesis_model_id: formData.value.modelConfig?.wikiSynthesisModelId || '',
+            max_pages_per_ingest: formData.value.wikiConfig.maxPagesPerIngest || 0,
+            extraction_granularity: formData.value.wikiConfig.extractionGranularity || 'standard',
+          }
         }
-      }
-      if (formData.value.type !== 'faq') {
-        updateConfig.indexing_strategy = {
-          vector_enabled: formData.value.indexingStrategy?.vectorEnabled ?? true,
-          keyword_enabled: formData.value.indexingStrategy?.keywordEnabled ?? true,
-          wiki_enabled: formData.value.indexingStrategy?.wikiEnabled ?? false,
-          graph_enabled: formData.value.indexingStrategy?.graphEnabled ?? false,
+        if (formData.value.type !== 'faq') {
+          updateConfig.indexing_strategy = {
+            vector_enabled: formData.value.indexingStrategy?.vectorEnabled ?? true,
+            keyword_enabled: formData.value.indexingStrategy?.keywordEnabled ?? true,
+            wiki_enabled: formData.value.indexingStrategy?.wikiEnabled ?? false,
+            graph_enabled: formData.value.indexingStrategy?.graphEnabled ?? false,
+          }
         }
-      }
-      await updateKnowledgeBase(props.kbId, {
-        name: data.name,
-        description: data.description,
-        config: updateConfig
-      })
+        await updateKnowledgeBase(props.kbId, {
+          name: data.name,
+          description: data.description,
+          config: updateConfig
+        })
 
-      // 2. 更新完整配置（模型、分块、多模态、存储引擎、知识图谱等）
-      const config: KBModelConfigRequest = {
-        llmModelId: data.summary_model_id,
-        embeddingModelId: data.embedding_model_id,
-        vlm_config: data.vlm_config,
-        asr_config: data.asr_config,
-        documentSplitting: {
-          chunkSize: data.chunking_config.chunk_size,
-          chunkOverlap: data.chunking_config.chunk_overlap,
-          separators: data.chunking_config.separators,
-          parserEngineRules: data.chunking_config.parser_engine_rules || undefined,
-          enableParentChild: data.chunking_config.enable_parent_child || false,
-          parentChunkSize: data.chunking_config.parent_chunk_size || 4096,
-          childChunkSize: data.chunking_config.child_chunk_size || 384,
-          // Always send strategy / tokenLimit / languages — backend treats
-          // empty/0/[] as a valid clear, so we must include them in the
-          // payload to let users reset back to defaults.
-          strategy: formData.value?.chunkingConfig.strategy ?? '',
-          tokenLimit: formData.value?.chunkingConfig.tokenLimit ?? 0,
-          languages: formData.value?.chunkingConfig.languages ?? []
-        },
-        multimodal: {
-          enabled: !!data.vlm_config?.enabled
-        },
-        storageProvider: data.storage_provider_config?.provider || data.storage_config?.provider || 'local',
-        nodeExtract: {
-          enabled: data.extract_config?.enabled || false,
-          text: data.extract_config?.text || '',
-          tags: data.extract_config?.tags || [],
-          nodes: data.extract_config?.nodes || [],
-          relations: data.extract_config?.relations || []
-        },
-        questionGeneration: {
-          enabled: data.question_generation_config?.enabled || false,
-          questionCount: data.question_generation_config?.question_count || 3
+        // 2. 更新完整配置（模型、分块、多模态、存储引擎、知识图谱等）
+        const config: KBModelConfigRequest = {
+          llmModelId: data.summary_model_id,
+          embeddingModelId: data.embedding_model_id,
+          vlm_config: data.vlm_config,
+          asr_config: data.asr_config,
+          documentSplitting: {
+            chunkSize: data.chunking_config.chunk_size,
+            chunkOverlap: data.chunking_config.chunk_overlap,
+            separators: data.chunking_config.separators,
+            parserEngineRules: data.chunking_config.parser_engine_rules || undefined,
+            enableParentChild: data.chunking_config.enable_parent_child || false,
+            parentChunkSize: data.chunking_config.parent_chunk_size || 4096,
+            childChunkSize: data.chunking_config.child_chunk_size || 384,
+            strategy: formData.value?.chunkingConfig.strategy ?? '',
+            tokenLimit: formData.value?.chunkingConfig.tokenLimit ?? 0,
+            languages: formData.value?.chunkingConfig.languages ?? []
+          },
+          multimodal: {
+            enabled: !!data.vlm_config?.enabled
+          },
+          storageProvider: data.storage_provider_config?.provider || data.storage_config?.provider || 'local',
+          nodeExtract: {
+            enabled: data.extract_config?.enabled || false,
+            text: data.extract_config?.text || '',
+            tags: data.extract_config?.tags || [],
+            nodes: data.extract_config?.nodes || [],
+            relations: data.extract_config?.relations || []
+          },
+          questionGeneration: {
+            enabled: data.question_generation_config?.enabled || false,
+            questionCount: data.question_generation_config?.question_count || 3
+          }
         }
-      }
 
-      await updateKBConfig(props.kbId, config)
-      MessagePlugin.success(t('knowledgeEditor.messages.updateSuccess'))
+        await updateKBConfig(props.kbId, config)
+        MessagePlugin.success(t('knowledgeEditor.messages.updateSuccess'))
 
-      // Check if indexing strategy changed and offer rebuild
-      if (hasFiles.value && initialIndexingStrategy.value && formData.value) {
-        const curr = formData.value.indexingStrategy
-        const prev = initialIndexingStrategy.value
-        const strategyChanged = (
-          curr.vectorEnabled !== prev.vectorEnabled ||
-          curr.keywordEnabled !== prev.keywordEnabled ||
-          curr.wikiEnabled !== prev.wikiEnabled ||
-          curr.graphEnabled !== prev.graphEnabled
-        )
-        if (strategyChanged) {
-          const dialog = DialogPlugin.confirm({
-            header: t('knowledgeEditor.indexing.rebuildConfirmTitle'),
-            body: t('knowledgeEditor.indexing.rebuildConfirmBody', { count: '...' }),
-            confirmBtn: t('common.confirm'),
-            cancelBtn: t('common.cancel'),
-            onConfirm: async () => {
-              dialog.destroy()
-              try {
-                const result: any = await rebuildKBIndex(props.kbId!)
-                const count = result?.data?.document_count ?? 0
-                MessagePlugin.success(t('knowledgeEditor.indexing.rebuildSuccess', { count }))
-              } catch (e) {
-                console.error('Rebuild index failed:', e)
-              }
-            },
-            onCancel: () => {
-              dialog.destroy()
-              MessagePlugin.info(t('knowledgeEditor.indexing.rebuildSkip'))
-            },
-          })
+        // Check if indexing strategy changed and offer rebuild
+        if (hasFiles.value && initialIndexingStrategy.value && formData.value) {
+          const curr = formData.value.indexingStrategy
+          const prev = initialIndexingStrategy.value
+          const strategyChanged = (
+            curr.vectorEnabled !== prev.vectorEnabled ||
+            curr.keywordEnabled !== prev.keywordEnabled ||
+            curr.wikiEnabled !== prev.wikiEnabled ||
+            curr.graphEnabled !== prev.graphEnabled
+          )
+          if (strategyChanged) {
+            const dialog = DialogPlugin.confirm({
+              header: t('knowledgeEditor.indexing.rebuildConfirmTitle'),
+              body: t('knowledgeEditor.indexing.rebuildConfirmBody', { count: '...' }),
+              confirmBtn: t('common.confirm'),
+              cancelBtn: t('common.cancel'),
+              onConfirm: async () => {
+                dialog.destroy()
+                try {
+                  const result: any = await rebuildKBIndex(props.kbId!)
+                  const count = result?.data?.document_count ?? 0
+                  MessagePlugin.success(t('knowledgeEditor.indexing.rebuildSuccess', { count }))
+                } catch (e) {
+                  console.error('Rebuild index failed:', e)
+                }
+              },
+              onCancel: () => {
+                dialog.destroy()
+                MessagePlugin.info(t('knowledgeEditor.indexing.rebuildSkip'))
+              },
+            })
+          }
         }
       }
 
