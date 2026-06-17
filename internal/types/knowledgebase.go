@@ -11,10 +11,10 @@ import (
 
 // KnowledgeBaseType represents the type of the knowledge base
 const (
-	// KnowledgeBaseTypeDocument represents the document knowledge base type
-	KnowledgeBaseTypeDocument = "document"
-	KnowledgeBaseTypeFAQ      = "faq"
-	KnowledgeBaseTypeWiki     = "wiki"
+	KnowledgeBaseTypeDocument      = "document"
+	KnowledgeBaseTypeFAQ           = "faq"
+	KnowledgeBaseTypeWiki          = "wiki"
+	KnowledgeBaseTypeQuestionBank  = "question_bank"
 )
 
 // FAQIndexMode represents the FAQ index mode: only index questions or index questions and answers
@@ -543,11 +543,9 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 	if kb.Type == "" {
 		kb.Type = KnowledgeBaseTypeDocument
 	}
-	// Clear type-specific configs that don't belong
 	if kb.Type != KnowledgeBaseTypeFAQ {
 		kb.FAQConfig = nil
 	}
-	// Set defaults for FAQ
 	if kb.Type == KnowledgeBaseTypeFAQ {
 		if kb.FAQConfig == nil {
 			kb.FAQConfig = &FAQConfig{
@@ -563,18 +561,21 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 			kb.FAQConfig.QuestionIndexMode = FAQQuestionIndexModeCombined
 		}
 	}
-
-	// Ensure IndexingStrategy has defaults.
-	// For existing rows where indexing_strategy is NULL, GORM Scan() returns
-	// DefaultIndexingStrategy() (vector+keyword=true). This block handles the
-	// case where a fresh struct was created in-memory without touching DB.
+	if kb.Type == KnowledgeBaseTypeQuestionBank {
+		kb.FAQConfig = nil
+		kb.WikiConfig = nil
+		kb.ExtractConfig = nil
+	}
 	if kb.IndexingStrategy.IsZero() {
 		kb.IndexingStrategy = DefaultIndexingStrategy()
 	}
-	// Sync legacy ExtractConfig.Enabled → IndexingStrategy.GraphEnabled
 	if kb.ExtractConfig != nil && kb.ExtractConfig.Enabled && !kb.IndexingStrategy.GraphEnabled {
 		kb.IndexingStrategy.GraphEnabled = true
 	}
+}
+
+func (kb *KnowledgeBase) IsQuestionBank() bool {
+	return kb != nil && kb.Type == KnowledgeBaseTypeQuestionBank
 }
 
 // KBCapabilities describes the functional features a knowledge base exposes.

@@ -107,6 +107,15 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		kb.CreatorID = uid
 	}
 	kb.EnsureDefaults()
+	validTypes := map[string]bool{
+		types.KnowledgeBaseTypeDocument:     true,
+		types.KnowledgeBaseTypeFAQ:          true,
+		types.KnowledgeBaseTypeWiki:         true,
+		types.KnowledgeBaseTypeQuestionBank: true,
+	}
+	if !validTypes[kb.Type] {
+		return nil, apperrors.NewBadRequestError("invalid knowledge base type: " + kb.Type)
+	}
 	applyTenantDefaultStorageProvider(ctx, kb)
 
 	// Fold empty-string vector_store_id into nil so this path and the

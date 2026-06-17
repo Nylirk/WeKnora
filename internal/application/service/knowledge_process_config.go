@@ -19,6 +19,7 @@ func ResolveProcessConfig(kb *types.KnowledgeBase, overrides *types.KnowledgePro
 		QuestionGenerationConfig: defaultQuestionGenerationConfig(kb),
 		GraphEnabled:             kb.IsGraphEnabled(),
 		ExtractConfig:            derefExtractConfig(kb.ExtractConfig),
+		ProcessingMode:           "standard",
 	}
 	if overrides == nil {
 		return eff
@@ -47,6 +48,9 @@ func ResolveProcessConfig(kb *types.KnowledgeBase, overrides *types.KnowledgePro
 	}
 	if overrides.ExtractConfig != nil {
 		eff.ExtractConfig = mergeExtractConfig(eff.ExtractConfig, overrides.ExtractConfig)
+	}
+	if overrides.ProcessingMode != nil {
+		eff.ProcessingMode = *overrides.ProcessingMode
 	}
 
 	// Match KnowledgeBase.IsGraphEnabled: graph fan-out requires extract to be on.
@@ -90,6 +94,13 @@ func ValidateProcessOverrides(
 
 	if hasAudio && !eff.ASRConfig.IsASREnabled() {
 		return werrors.NewBadRequestError("上传音频文件需要设置ASR语音识别模型")
+	}
+
+	if overrides.ProcessingMode != nil {
+		allowed := map[string]bool{"standard": true, "exam_paper": true, "question_bank": true}
+		if !allowed[*overrides.ProcessingMode] {
+			return werrors.NewBadRequestError("processing_mode must be one of: standard, exam_paper, question_bank")
+		}
 	}
 
 	return nil

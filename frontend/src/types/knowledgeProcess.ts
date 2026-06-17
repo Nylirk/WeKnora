@@ -62,4 +62,5 @@ export interface KnowledgeProcessOverrides {
   question_generation_config?: QuestionGenerationConfigOverride
   graph_enabled?: boolean
   extract_config?: ExtractConfigOverride
+  processing_mode?: 'standard' | 'exam_paper' | 'question_bank'
 }

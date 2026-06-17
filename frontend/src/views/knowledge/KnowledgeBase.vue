@@ -47,6 +47,7 @@ import KbUploadSourceDropdown from './components/KbUploadSourceDropdown.vue';
 import type { KnowledgeProcessOverrides } from '@/types/knowledgeProcess';
 import { useUploadConfirmStore, type UploadConfirmResult } from '@/stores/uploadConfirm';
 import WikiBrowser from './wiki/WikiBrowser.vue';
+import QuestionBank from './components/QuestionBank.vue';
 import { getWikiStats } from '@/api/wiki';
 import {
   isKnowledgeParseInFlight,
@@ -69,10 +70,21 @@ const kbLoading = ref(false);
 const docListLoading = ref(true);
 const isFAQ = computed(() => (kbInfo.value?.type || '') === 'faq');
 const isWiki = computed(() => !!kbInfo.value?.indexing_strategy?.wiki_enabled);
-const validTabs = ['documents', 'wiki', 'graph'] as const
-type KbTab = typeof validTabs[number]
-const initTab = validTabs.includes(route.query.tab as any) ? (route.query.tab as KbTab) : 'documents'
+const isQuestionBank = computed(() => (kbInfo.value?.type || '') === 'question_bank');
+const validTabs = computed(() => {
+  if (isQuestionBank.value) return ['questions'] as const
+  const tabs = ['documents', 'wiki', 'graph'] as const
+  return tabs
+})
+type KbTab = 'documents' | 'wiki' | 'graph' | 'questions'
+const initTab = (['documents', 'wiki', 'graph', 'questions'] as const).includes(route.query.tab as any) ? (route.query.tab as KbTab) : 'documents'
 const activeKbTab = ref<KbTab>(initTab);
+
+watch(isQuestionBank, (qb) => {
+  if (qb && activeKbTab.value !== 'questions') {
+    activeKbTab.value = 'questions'
+  }
+})
 
 // Wiki 状态用于面包屑上的索引中指示。父组件自行拉取，避免依赖 WikiBrowser 挂载状态
 // （用户切到"文档" tab 时 WikiBrowser 会卸载，这里仍需持续反映后台索引进度）。
@@ -2005,7 +2017,11 @@ async function createNewSession(value: string): Promise<void> {
                 </template>
               </button>
               <t-icon name="chevron-right" class="breadcrumb-separator" />
-              <template v-if="isWiki">
+              <template v-if="isQuestionBank">
+                <span :class="['breadcrumb-tab', { active: activeKbTab === 'questions' }]"
+                  @click="activeKbTab = 'questions'">题集</span>
+              </template>
+              <template v-else-if="isWiki">
                 <span :class="['breadcrumb-tab', { active: activeKbTab === 'documents' }]"
                   @click="activeKbTab = 'documents'">{{ $t('knowledgeEditor.wikiBrowser.tabDocuments') }}</span>
                 <span class="breadcrumb-tab-sep">/</span>
@@ -2027,7 +2043,9 @@ async function createNewSession(value: string): Promise<void> {
                   </span>
                 </t-tooltip>
               </template>
-              <span v-else class="breadcrumb-current">{{ $t('knowledgeEditor.document.title') }}</span>
+              <template v-else>
+                <span class="breadcrumb-current">{{ $t('knowledgeEditor.document.title') }}</span>
+              </template>
             </h2>
             <!-- 标题行右侧的动作锚点：聚拢"信息"和"设置"两个圆形按钮。 -->
             <div class="kb-title-actions">
@@ -2064,7 +2082,10 @@ async function createNewSession(value: string): Promise<void> {
           @view-graph="onViewWikiInGraph" />
       </div>
 
-      <template v-if="activeKbTab === 'documents' || !isWiki">
+      <!-- Questions tab -->
+      <QuestionBank v-if="isQuestionBank && kbId" :knowledge-base-id="kbId" />
+
+      <template v-if="activeKbTab === 'documents' || (!isWiki && !isQuestionBank)">
         <div class="knowledge-main">
           <aside class="tag-sidebar">
             <div class="sidebar-header">

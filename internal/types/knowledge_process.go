@@ -2,7 +2,7 @@ package types
 
 // KnowledgeProcessOverrides stores per-upload parse config overrides in knowledge metadata.
 type KnowledgeProcessOverrides struct {
-	ParserEngineRules        []ParserEngineRule        `json:"parser_engine_rules,omitempty"`
+	ParserEngineRules         []ParserEngineRule        `json:"parser_engine_rules,omitempty"`
 	ChunkingConfig           *ChunkingConfig           `json:"chunking_config,omitempty"`
 	EnableMultimodel         *bool                     `json:"enable_multimodel,omitempty"`
 	VLMConfig                *VLMConfig                `json:"vlm_config,omitempty"`
@@ -10,6 +10,7 @@ type KnowledgeProcessOverrides struct {
 	QuestionGenerationConfig *QuestionGenerationConfig `json:"question_generation_config,omitempty"`
 	GraphEnabled             *bool                     `json:"graph_enabled,omitempty"`
 	ExtractConfig            *ExtractConfig            `json:"extract_config,omitempty"`
+	ProcessingMode           *string                   `json:"processing_mode,omitempty"`
 }
 
 // EffectiveProcessConfig is the merged view used by the parse pipeline.
@@ -21,4 +22,5 @@ type EffectiveProcessConfig struct {
 	QuestionGenerationConfig QuestionGenerationConfig
 	GraphEnabled             bool
 	ExtractConfig            ExtractConfig
+	ProcessingMode           string
 }
