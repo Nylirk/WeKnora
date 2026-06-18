@@ -228,13 +228,17 @@ test('duplicate detection uses groups with raw text comparison', () => {
   assert.equal(fileImportSource.includes('忽略疑似重复题'), true)
 })
 
-test('raw text comparison dialog available on each question card', () => {
+test('raw text comparison dialog is top-level with top-bottom layout', () => {
   assert.equal(fileImportSource.includes('openRawCompare'), true)
   assert.equal(fileImportSource.includes('rawCompareVisible'), true)
   assert.equal(fileImportSource.includes('rawCompareItem'), true)
   assert.equal(fileImportSource.includes('原文对比'), true)
-  // Comparison dialog template
-  assert.equal(fileImportSource.includes('raw-compare-body'), true)
+  // Renders above drawer via attach="body" and z-index
+  assert.equal(fileImportSource.includes('attach="body"'), true)
+  assert.equal(fileImportSource.includes(':z-index="3000"'), true)
+  // Top-bottom layout (no t-row/t-col)
+  assert.equal(fileImportSource.includes('raw-compare-section'), true)
+  assert.equal(fileImportSource.includes('<t-row'), false)
   assert.equal(fileImportSource.includes('getItemRawText'), true)
   assert.equal(fileImportSource.includes('暂无原始文本'), true)
   // Does not break import or parse
