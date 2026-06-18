@@ -41,8 +41,8 @@ D. 网络协议
 	if !strings.Contains(q1.StemText, "Kubernetes") {
 		t.Errorf("item 1 stem = %q, should contain Kubernetes", q1.StemText)
 	}
-	if q1.AnswerText != "A" {
-		t.Errorf("item 1 answer = %q, want A", q1.AnswerText)
+	if !strings.Contains(q1.AnswerText, "A. 容器编排平台") {
+		t.Errorf("item 1 answer = %q, should contain A.", q1.AnswerText)
 	}
 	if len(warnings) > 0 {
 		t.Logf("warnings: %v", warnings)
@@ -356,8 +356,8 @@ E. DeferredRegister`
 	if q.QuestionType != string(types.QuestionTypeSingleChoice) {
 		t.Errorf("type = %q, want single_choice", q.QuestionType)
 	}
-	if q.AnswerText != "E" {
-		t.Errorf("answer = %q, want E", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "E. ") {
+		t.Errorf("answer = %q, should contain E.", q.AnswerText)
 	}
 	if strings.Contains(q.StemText, "（E）") || strings.Contains(q.StemText, "(E)") {
 		t.Errorf("stem should not contain answer bracket: %q", q.StemText)
@@ -389,8 +389,8 @@ E. 人体自身整体性及人与自然、社会环境的统一性`
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 	q := items[0]
-	if q.AnswerText != "E" {
-		t.Errorf("answer = %q, want E", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "E. ") {
+		t.Errorf("answer = %q, should contain E.", q.AnswerText)
 	}
 	if q.StemText != "中医学整体观念的内涵是" {
 		t.Errorf("stem = %q, want %q", q.StemText, "中医学整体观念的内涵是")
@@ -418,8 +418,8 @@ E. 辨证求因与审因论治`
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 	q := items[0]
-	if q.AnswerText != "B" {
-		t.Errorf("answer = %q, want B", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "B. ") {
+		t.Errorf("answer = %q, should contain B.", q.AnswerText)
 	}
 	if q.StemText != "中医学的基本特点，主要是" {
 		t.Errorf("stem = %q, want %q", q.StemText, "中医学的基本特点，主要是")
@@ -439,8 +439,8 @@ func TestExtractFiveInlineOptionsWithAnswerInStem(t *testing.T) {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 	q := items[0]
-	if q.AnswerText != "E" {
-		t.Errorf("answer = %q, want E", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "E. ") {
+		t.Errorf("answer = %q, should contain E.", q.AnswerText)
 	}
 
 	options := getOptionsFromBody(t, q.QuestionBody)
@@ -466,8 +466,8 @@ func TestExtractSixInlineOptions(t *testing.T) {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 	q := items[0]
-	if q.AnswerText != "F" {
-		t.Errorf("answer = %q, want F", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "F. ") {
+		t.Errorf("answer = %q, should contain F.", q.AnswerText)
 	}
 
 	options := getOptionsFromBody(t, q.QuestionBody)
@@ -494,8 +494,8 @@ E. RegisterEvent`
 	if q.QuestionType != string(types.QuestionTypeMultipleChoice) {
 		t.Errorf("type = %q, want multiple_choice, answer=%q", q.QuestionType, q.AnswerText)
 	}
-	if q.AnswerText != "ACE" {
-		t.Errorf("answer = %q, want ACE", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "A.") || !strings.Contains(q.AnswerText, "C.") {
+		t.Errorf("answer = %q, should contain multi-choice content", q.AnswerText)
 	}
 
 	options := getOptionsFromBody(t, q.QuestionBody)
@@ -518,8 +518,8 @@ E．DeferredRegister`
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 	q := items[0]
-	if q.AnswerText != "E" {
-		t.Errorf("answer = %q, want E", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "E. ") {
+		t.Errorf("answer = %q, should contain E.", q.AnswerText)
 	}
 
 	options := getOptionsFromBody(t, q.QuestionBody)
@@ -542,8 +542,8 @@ E、DeferredRegister`
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 	q := items[0]
-	if q.AnswerText != "E" {
-		t.Errorf("answer = %q, want E", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "E. ") {
+		t.Errorf("answer = %q, should contain E.", q.AnswerText)
 	}
 
 	options := getOptionsFromBody(t, q.QuestionBody)
@@ -629,8 +629,8 @@ B. 错误`
 	if q.QuestionType != string(types.QuestionTypeSingleChoice) {
 		t.Errorf("type = %q, want single_choice (2 options)", q.QuestionType)
 	}
-	if q.AnswerText != "B" {
-		t.Errorf("answer = %q, want B (bracket extraction)", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "B. ") {
+		t.Errorf("answer = %q, should contain B.", q.AnswerText)
 	}
 }
 
@@ -648,8 +648,8 @@ E. Option five`
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 	q := items[0]
-	if q.AnswerText != "E" {
-		t.Errorf("answer = %q, want E (half-width parentheses)", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "E. ") {
+		t.Errorf("answer = %q, should contain E.", q.AnswerText)
 	}
 }
 
@@ -667,8 +667,8 @@ E. e选项`
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 	q := items[0]
-	if q.AnswerText != "ACE" {
-		t.Errorf("answer = %q, want ACE (comma separated)", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "A.") || !strings.Contains(q.AnswerText, "C.") {
+		t.Errorf("answer = %q, should contain multi-choice content", q.AnswerText)
 	}
 }
 
@@ -686,8 +686,8 @@ E. e选项`
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 	q := items[0]
-	if q.AnswerText != "ACE" {
-		t.Errorf("answer = %q, want ACE (space separated)", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "A.") || !strings.Contains(q.AnswerText, "C.") {
+		t.Errorf("answer = %q, should contain multi-choice content", q.AnswerText)
 	}
 }
 
@@ -728,8 +728,8 @@ E. e选项`
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 	q := items[0]
-	if q.AnswerText != "ACE" {
-		t.Errorf("answer = %q, want ACE (Chinese comma separated)", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "A.") || !strings.Contains(q.AnswerText, "C.") {
+		t.Errorf("answer = %q, should contain multi-choice content", q.AnswerText)
 	}
 }
 
@@ -776,8 +776,8 @@ E. Rust is memory safe.`
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 	q := items[0]
-	if q.AnswerText != "B" {
-		t.Errorf("answer = %q, want B", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "B. ") {
+		t.Errorf("answer = %q, should contain B.", q.AnswerText)
 	}
 
 	options := getOptionsFromBody(t, q.QuestionBody)
@@ -820,8 +820,8 @@ func TestInlineOptionsRequireBoundaryBeforeMarker(t *testing.T) {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 	q := items[0]
-	if q.AnswerText != "E" {
-		t.Errorf("answer = %q, want E", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "E. ") {
+		t.Errorf("answer = %q, should contain E.", q.AnswerText)
 	}
 
 	options := getOptionsFromBody(t, q.QuestionBody)
@@ -945,8 +945,8 @@ func TestInlineOptionsUseSequentialLabelsOnly(t *testing.T) {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 	q := items[0]
-	if q.AnswerText != "B" {
-		t.Errorf("answer = %q, want B", q.AnswerText)
+	if !strings.Contains(q.AnswerText, "B. ") {
+		t.Errorf("answer = %q, should contain B.", q.AnswerText)
 	}
 
 	options := getOptionsFromBody(t, q.QuestionBody)
@@ -1060,5 +1060,144 @@ func TestInlineOptionsRejectsNonStartingA(t *testing.T) {
 	qtype := q.QuestionType
 	if qtype != string(types.QuestionTypeShortAnswer) && qtype != string(types.QuestionTypeFillBlank) {
 		t.Errorf("type = %q, want short_answer (no valid sequential A)", qtype)
+	}
+}
+
+func TestChoiceStemIncludesOptions(t *testing.T) {
+	svc := newTestExtractionService()
+	text := `1. 中医学的基本特点，主要是(B)
+A. 阴阳五行与藏象经络
+B. 整体观念与辨证论治
+C. 以五脏为主的整体观
+D. 望闻问切与辨证论治
+E. 辨证求因与审因论治`
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+
+	// Stem must contain the question text
+	if !strings.Contains(q.StemText, "中医学的基本特点，主要是") {
+		t.Errorf("stem = %q, should contain question text", q.StemText)
+	}
+	// Stem must NOT contain the bracket answer
+	if strings.Contains(q.StemText, "(B)") {
+		t.Errorf("stem should not contain '(B)', got %q", q.StemText)
+	}
+	// Stem must contain all options with labels
+	assertOptionInStem(t, q.StemText, "A", "阴阳五行与藏象经络")
+	assertOptionInStem(t, q.StemText, "B", "整体观念与辨证论治")
+	assertOptionInStem(t, q.StemText, "E", "辨证求因与审因论治")
+
+	// question_body.options must exist
+	options := getOptionsFromBody(t, q.QuestionBody)
+	if len(options) != 5 {
+		t.Fatalf("expected 5 options, got %d: %v", len(options), optionLabels(options))
+	}
+
+	// answer_text must be expanded to include option content
+	if q.AnswerText != "B. 整体观念与辨证论治" {
+		t.Errorf("answer = %q, want 'B. 整体观念与辨证论治'", q.AnswerText)
+	}
+}
+
+func TestChoiceAnswerIncludesOptionContent(t *testing.T) {
+	svc := newTestExtractionService()
+	text := `1. 中医学整体观念的内涵是(E)
+A. 人与自然环境的统一性
+B. 人体是一个有机整体
+C. 人与社会环境的统一性
+D. 五脏一体观
+E. 人体自身整体性及人与自然、社会环境的统一性`
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+
+	wantAnswer := "E. 人体自身整体性及人与自然、社会环境的统一性"
+	if q.AnswerText != wantAnswer {
+		t.Errorf("answer = %q, want %q", q.AnswerText, wantAnswer)
+	}
+
+	// Stem must include E option
+	if !strings.Contains(q.StemText, "E. 人体自身整体性及人与自然、社会环境的统一性") {
+		t.Errorf("stem = %q, should contain E option content", q.StemText)
+	}
+}
+
+func TestMultipleChoiceAnswerIncludesOptionContents(t *testing.T) {
+	svc := newTestExtractionService()
+	text := `1. 以下哪些属于注册相关对象？（A、C、E）
+A. RegistryObject
+B. ItemStack
+C. DeferredRegister
+D. Level
+E. RegisterEvent`
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+
+	if q.QuestionType != string(types.QuestionTypeMultipleChoice) {
+		t.Errorf("type = %q, want multiple_choice", q.QuestionType)
+	}
+
+	// Answer must contain full option content, not just "ACE"
+	if !strings.Contains(q.AnswerText, "A. RegistryObject") {
+		t.Errorf("answer = %q, should contain 'A. RegistryObject'", q.AnswerText)
+	}
+	if !strings.Contains(q.AnswerText, "C. DeferredRegister") {
+		t.Errorf("answer = %q, should contain 'C. DeferredRegister'", q.AnswerText)
+	}
+	if !strings.Contains(q.AnswerText, "E. RegisterEvent") {
+		t.Errorf("answer = %q, should contain 'E. RegisterEvent'", q.AnswerText)
+	}
+	if strings.TrimSpace(q.AnswerText) == "ACE" {
+		t.Error("answer is just 'ACE', should be expanded to full option content")
+	}
+
+	// Stem must include all options
+	assertOptionInStem(t, q.StemText, "A", "RegistryObject")
+	assertOptionInStem(t, q.StemText, "B", "ItemStack")
+	assertOptionInStem(t, q.StemText, "C", "DeferredRegister")
+	assertOptionInStem(t, q.StemText, "D", "Level")
+	assertOptionInStem(t, q.StemText, "E", "RegisterEvent")
+}
+
+func TestShortAnswerDoesNotAppendOptions(t *testing.T) {
+	svc := newTestExtractionService()
+	text := `1. DeferredRegister 是什么？
+答案：它用于延迟注册对象。`
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+
+	if q.QuestionType != string(types.QuestionTypeShortAnswer) {
+		t.Errorf("type = %q, want short_answer", q.QuestionType)
+	}
+	// Stem should not have option markers appended (it's not a choice question)
+	if strings.Contains(q.StemText, "A.") || strings.Contains(q.StemText, "B.") {
+		t.Errorf("stem = %q, should not have 'A.' appended (not a choice question)", q.StemText)
+	}
+	if q.AnswerText != "它用于延迟注册对象。" {
+		t.Errorf("answer = %q, want '它用于延迟注册对象。'", q.AnswerText)
+	}
+}
+
+// assertOptionInStem checks that a label+content pair appears in the stem text.
+func assertOptionInStem(t *testing.T, stem, label, content string) {
+	t.Helper()
+	expected := label + ". " + content
+	if !strings.Contains(stem, expected) {
+		t.Errorf("stem should contain %q", expected)
 	}
 }

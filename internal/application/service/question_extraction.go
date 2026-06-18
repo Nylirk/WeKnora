@@ -287,12 +287,20 @@ func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, c
 		qtype = string(types.QuestionTypeShortAnswer)
 	}
 
+	// For choice questions, build display-friendly stem_text and answer_text.
+	displayStem := stemText
+	displayAnswer := answerText
+	if len(options) >= 2 && (qtype == string(types.QuestionTypeSingleChoice) || qtype == string(types.QuestionTypeMultipleChoice)) {
+		displayStem = appendOptionsToStem(stemText, options)
+		displayAnswer = expandChoiceAnswerText(answerText, options)
+	}
+
 	item := &types.ImportQuestionItem{
 		LineNumber:    blockIndex,
 		QuestionType:  qtype,
-		StemText:      stemText,
+		StemText:      displayStem,
 		QuestionBody:  normalizeJSONObject(questionBody),
-		AnswerText:    answerText,
+		AnswerText:    displayAnswer,
 		AnswerBody:    normalizeJSONObject(nil),
 		AnalysisText:  analysisText,
 		GradingRubric: normalizeJSONObject(nil),
@@ -642,6 +650,63 @@ func splitStemInlineOptions(line string) (stem string, optionSource string, ok b
 	stem = strings.TrimSpace(line[:firstAccepted.labelStart])
 	optionSource = strings.TrimSpace(line[firstAccepted.labelStart:])
 	return stem, optionSource, true
+}
+
+// appendOptionsToStem appends the options list to the stem for display purposes.
+// e.g. "题干\nA. 选项一\nB. 选项二"
+func appendOptionsToStem(stem string, options []types.QuestionOption) string {
+	stem = strings.TrimSpace(stem)
+	if len(options) == 0 {
+		return stem
+	}
+
+	var lines []string
+	if stem != "" {
+		lines = append(lines, stem)
+	}
+	for _, opt := range options {
+		label := strings.ToUpper(strings.TrimSpace(opt.Label))
+		content := strings.TrimSpace(opt.Content)
+		if label == "" || content == "" {
+			continue
+		}
+		lines = append(lines, label+". "+content)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// expandChoiceAnswerText expands single-letter answers into full option text.
+// e.g. "B" → "B. 整体观念与辨证论治"
+// e.g. "ACE" → "A. xxx\nC. yyy\nE. zzz"
+func expandChoiceAnswerText(answer string, options []types.QuestionOption) string {
+	normalized := normalizeMultiChoiceAnswer(answer)
+	if normalized == "" || len(options) == 0 {
+		return strings.TrimSpace(answer)
+	}
+
+	optionMap := make(map[string]string, len(options))
+	for _, opt := range options {
+		label := strings.ToUpper(strings.TrimSpace(opt.Label))
+		content := strings.TrimSpace(opt.Content)
+		if label != "" && content != "" {
+			optionMap[label] = content
+		}
+	}
+
+	var lines []string
+	for _, r := range normalized {
+		label := string(r)
+		content, ok := optionMap[label]
+		if !ok {
+			return strings.TrimSpace(answer)
+		}
+		lines = append(lines, label+". "+content)
+	}
+
+	if len(lines) == 0 {
+		return strings.TrimSpace(answer)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func filterEmpty(lines []string) []string {
