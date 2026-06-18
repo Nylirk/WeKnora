@@ -70,9 +70,9 @@ func (s *QuestionExtractionService) Extract(ctx context.Context, text string, de
 			default:
 			}
 		}
-		item, err := s.parseBlock(block, i+1, ext)
-		if err != nil {
-			ext.errors = append(ext.errors, *err)
+		item, parseErr := s.parseBlock(block, i+1, ext)
+		if parseErr != nil {
+			ext.errors = append(ext.errors, *parseErr)
 			continue
 		}
 		if item != nil {
@@ -250,7 +250,7 @@ func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, c
 		Difficulty:    difficulty,
 	}
 
-	return item
+	return item, nil
 }
 
 func (s *QuestionExtractionService) inferQuestionType(
