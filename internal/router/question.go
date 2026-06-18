@@ -26,6 +26,7 @@ func RegisterQuestionRoutes(r *gin.RouterGroup, h *handler.QuestionHandler, g *r
 				questions.DELETE("/:question_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.DeleteQuestion)
 				questions.PUT("/:question_id/status", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.UpdateQuestionStatus)
 				questions.POST("/import", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.ImportQuestions)
+				questions.POST("/import-file/preview", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.PreviewImportQuestionsFromFile)
 				questions.POST("/export", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.ExportToEvaluationDataset)
 			}
 		}

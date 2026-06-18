@@ -293,3 +293,100 @@ func TestUpdateQuestionRecalculatesStatusWithReviewValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestImportQuestionsRejectsInvalidStatus(t *testing.T) {
+	repository := &questionStatusRepository{set: &types.QuestionSet{ID: "set-1", KnowledgeBaseID: "kb-1"}}
+	service := newQuestionStatusService(repository)
+	result, err := service.ImportQuestions(questionStatusContext(), "kb-1", "set-1", &types.ImportQuestionsRequest{
+		Items: []types.ImportQuestionItem{
+			{LineNumber: 1, QuestionType: string(types.QuestionTypeShortAnswer), StemText: "题干", AnswerText: "答案", Status: "not_a_real_status"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportQuestions() error = %v", err)
+	}
+	if result.Created != 0 {
+		t.Fatalf("ImportQuestions() created = %d, want 0 (unknown status)", result.Created)
+	}
+	if len(result.Errors) != 1 {
+		t.Fatalf("ImportQuestions() errors = %d, want 1", len(result.Errors))
+	}
+}
+
+func TestImportQuestionsStatusValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		item types.ImportQuestionItem
+		want types.QuestionStatus
+	}{
+		{
+			name: "valid question with reviewed stays reviewed",
+			item: types.ImportQuestionItem{
+				LineNumber: 1, QuestionType: string(types.QuestionTypeShortAnswer),
+				StemText: "题干", AnswerText: "答案", Status: "reviewed",
+			},
+			want: types.QuestionStatusReviewed,
+		},
+		{
+			name: "blank answer reviewed degrades to draft",
+			item: types.ImportQuestionItem{
+				LineNumber: 1, QuestionType: string(types.QuestionTypeShortAnswer),
+				StemText: "题干", AnswerText: "", Status: "reviewed",
+			},
+			want: types.QuestionStatusDraft,
+		},
+		{
+			name: "invalid choice with reviewed degrades to draft",
+			item: types.ImportQuestionItem{
+				LineNumber: 1, QuestionType: string(types.QuestionTypeSingleChoice),
+				StemText: "题干", AnswerText: "A",
+				QuestionBody: types.JSON(`{}`), AnswerBody: types.JSON(`{"selected_index":0}`),
+				Status: "reviewed",
+			},
+			want: types.QuestionStatusDraft,
+		},
+		{
+			name: "explicit draft stays draft",
+			item: types.ImportQuestionItem{
+				LineNumber: 1, QuestionType: string(types.QuestionTypeShortAnswer),
+				StemText: "题干", AnswerText: "答案", Status: "draft",
+			},
+			want: types.QuestionStatusDraft,
+		},
+		{
+			name: "explicit rejected stays rejected",
+			item: types.ImportQuestionItem{
+				LineNumber: 1, QuestionType: string(types.QuestionTypeShortAnswer),
+				StemText: "题干", AnswerText: "答案", Status: "rejected",
+			},
+			want: types.QuestionStatusRejected,
+		},
+		{
+			name: "no status auto-determines reviewed for valid",
+			item: types.ImportQuestionItem{
+				LineNumber: 1, QuestionType: string(types.QuestionTypeShortAnswer),
+				StemText: "题干", AnswerText: "答案",
+			},
+			want: types.QuestionStatusReviewed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := &questionStatusRepository{set: &types.QuestionSet{ID: "set-1", KnowledgeBaseID: "kb-1"}}
+			service := newQuestionStatusService(repository)
+			result, err := service.ImportQuestions(questionStatusContext(), "kb-1", "set-1", &types.ImportQuestionsRequest{
+				Items: []types.ImportQuestionItem{tt.item},
+			})
+			if err != nil {
+				t.Fatalf("ImportQuestions() error = %v", err)
+			}
+			if result.Created != 1 {
+				t.Fatalf("ImportQuestions() created = %d, want 1", result.Created)
+			}
+			if repository.createdQuestions[0].Status != tt.want {
+				t.Fatalf("ImportQuestions() status = %q, want %q", repository.createdQuestions[0].Status, tt.want)
+			}
+		})
+	}
+}

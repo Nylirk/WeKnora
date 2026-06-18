@@ -171,6 +171,7 @@ type ImportQuestionItem struct {
 	Tags               JSON   `json:"tags"`
 	SourceKnowledgeID  string `json:"source_knowledge_id"`
 	EvidenceChunkIDs   JSON   `json:"evidence_chunk_ids"`
+	Status             string `json:"status,omitempty"`
 }
 
 type ImportQuestionError struct {
@@ -197,4 +198,24 @@ type GenerateQuestionsRequest struct {
 	Description       string `json:"description"`
 	GenerationConfig  JSON   `json:"generation_config"`
 	GenerationScope   JSON   `json:"generation_scope"`
+}
+
+type ImportFilePreviewRequest struct {
+	DefaultQuestionType string `form:"default_question_type"`
+	DefaultDifficulty   string `form:"default_difficulty"`
+	Mode                string `form:"mode"`
+}
+
+type ImportFilePreviewStats struct {
+	DetectedQuestions int `json:"detected_questions"`
+	WithAnswer        int `json:"with_answer"`
+	WithoutAnswer     int `json:"without_answer"`
+}
+
+type ImportFilePreviewResponse struct {
+	Items          []ImportQuestionItem  `json:"items"`
+	Errors         []ImportQuestionError `json:"errors"`
+	Warnings       []string              `json:"warnings"`
+	RawTextPreview string                `json:"raw_text_preview"`
+	Stats          ImportFilePreviewStats `json:"stats"`
 }

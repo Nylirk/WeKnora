@@ -1,4 +1,4 @@
-import { del, get, post, put } from '@/utils/request'
+import { del, get, post, postUpload, put } from '@/utils/request'
 import type { PageResult } from './evaluation'
 
 export type QuestionType = 'single_choice' | 'multiple_choice' | 'true_false' | 'fill_blank' | 'short_answer' | 'essay' | 'composite'
@@ -48,6 +48,7 @@ export interface ImportQuestionItem {
   analysis_text: string; grading_rubric: Record<string, unknown>
   difficulty: QuestionDifficulty; knowledge_points: string[]; tags: string[]
   source_knowledge_id: string; evidence_chunk_ids: string[]
+  status?: QuestionStatus
 }
 
 export interface ImportQuestionError { line_number: number; message: string }
@@ -107,3 +108,77 @@ export const importQuestions = (kbId: string, setId: string, data: ImportQuestio
 
 export const exportToEvaluationDataset = (kbId: string, setId: string, data: { name: string; description?: string }) =>
   post(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/export`, data).then(unwrap<any>)
+
+export interface ImportFilePreviewStats {
+  detected_questions: number
+  with_answer: number
+  without_answer: number
+}
+
+export interface ImportFilePreviewResponse {
+  items: ImportQuestionItem[]
+  errors: ImportQuestionError[]
+  warnings: string[]
+  raw_text_preview: string
+  stats: ImportFilePreviewStats
+}
+
+export function normalizeImportFilePreviewResponse(payload: any): ImportFilePreviewResponse {
+  // Unwrap common response shapes: { data: ... }, { data: { data: ... } }
+  const source = payload?.data?.data ?? payload?.data ?? payload ?? {}
+
+  const items = Array.isArray(source.items) ? source.items : []
+  const errors = Array.isArray(source.errors) ? source.errors : []
+  const warnings = Array.isArray(source.warnings) ? source.warnings : []
+  const rawText =
+    typeof source.raw_text_preview === 'string'
+      ? source.raw_text_preview
+      : typeof source.rawTextPreview === 'string'
+        ? source.rawTextPreview
+        : ''
+
+  return {
+    items,
+    errors,
+    warnings,
+    raw_text_preview: rawText,
+    stats: {
+      detected_questions: Number(
+        source.stats?.detected_questions ?? source.stats?.detectedQuestions ?? items.length,
+      ),
+      with_answer: Number(
+        source.stats?.with_answer ??
+          source.stats?.withAnswer ??
+          items.filter((item: any) => !!String(item.answer_text || '').trim()).length,
+      ),
+      without_answer: Number(
+        source.stats?.without_answer ??
+          source.stats?.withoutAnswer ??
+          items.filter((item: any) => !String(item.answer_text || '').trim()).length,
+      ),
+    },
+  }
+}
+
+export const previewImportFile = (
+  kbId: string,
+  setId: string,
+  file: File,
+  params: { default_question_type?: string; default_difficulty?: string; mode?: string } = {},
+  config?: { signal?: AbortSignal; timeout?: number },
+): Promise<ImportFilePreviewResponse> => {
+  const fd = new FormData()
+  fd.append('file', file)
+  // Query params for the handler's ShouldBindQuery
+  const qs = new URLSearchParams()
+  if (params.default_question_type) qs.set('default_question_type', params.default_question_type)
+  if (params.default_difficulty) qs.set('default_difficulty', params.default_difficulty)
+  if (params.mode) qs.set('mode', params.mode)
+  const query = qs.toString()
+  return postUpload(
+    `/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/import-file/preview${query ? '?' + query : ''}`,
+    fd,
+    undefined,
+    config,
+  ).then((response: any) => normalizeImportFilePreviewResponse(response))
+}

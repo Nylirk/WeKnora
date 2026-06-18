@@ -7,7 +7,12 @@
           <template #icon><t-icon name="add" /></template>
           {{ $t('questionBank.addQuestion', '新增题目') }}
         </t-button>
-        <t-popup trigger="click" placement="bottom-right" overlay-class-name="question-import-type-popup">
+        <t-popup
+          v-model:visible="headerImportMenuVisible"
+          trigger="click"
+          placement="bottom-right"
+          overlay-class-name="question-import-type-popup"
+        >
           <t-button>{{ $t('questionBank.import') }}</t-button>
           <template #content>
             <div class="import-type-menu">
@@ -15,21 +20,13 @@
                 <span class="import-type-title">{{ $t('questionBank.jsonImport') }}</span>
                 <span class="import-type-description">{{ $t('questionBank.jsonImportDescription') }}</span>
               </button>
-              <button type="button" class="import-type-item" disabled>
-                <span class="import-type-title">
-                  {{ $t('questionBank.wordImport') }}
-                  <t-tag size="small" variant="light">{{ $t('questionBank.comingSoon') }}</t-tag>
-                </span>
+              <button type="button" class="import-type-item" @click="openFileImport('word')">
+                <span class="import-type-title">{{ $t('questionBank.wordImport') }}</span>
                 <span class="import-type-description">{{ $t('questionBank.wordImportDescription') }}</span>
-                <span class="import-type-help">{{ $t('questionBank.wordImportHelp') }}</span>
               </button>
-              <button type="button" class="import-type-item" disabled>
-                <span class="import-type-title">
-                  {{ $t('questionBank.pdfImport') }}
-                  <t-tag size="small" variant="light">{{ $t('questionBank.comingSoon') }}</t-tag>
-                </span>
+              <button type="button" class="import-type-item" @click="openFileImport('pdf')">
+                <span class="import-type-title">{{ $t('questionBank.pdfImport') }}</span>
                 <span class="import-type-description">{{ $t('questionBank.pdfImportDescription') }}</span>
-                <span class="import-type-help">{{ $t('questionBank.pdfImportHelp') }}</span>
               </button>
             </div>
           </template>
@@ -88,7 +85,12 @@
       <template #action>
         <t-space>
           <t-button theme="primary" @click="openCreateDialog">新增题目</t-button>
-          <t-popup trigger="click" placement="bottom" overlay-class-name="question-import-type-popup">
+          <t-popup
+            v-model:visible="emptyImportMenuVisible"
+            trigger="click"
+            placement="bottom"
+            overlay-class-name="question-import-type-popup"
+          >
             <t-button>{{ $t('questionBank.import') }}</t-button>
             <template #content>
               <div class="import-type-menu">
@@ -96,12 +98,12 @@
                   <span class="import-type-title">{{ $t('questionBank.jsonImport') }}</span>
                   <span class="import-type-description">{{ $t('questionBank.jsonImportDescription') }}</span>
                 </button>
-                <button type="button" class="import-type-item" disabled>
-                  <span class="import-type-title">{{ $t('questionBank.wordImport') }} · {{ $t('questionBank.comingSoon') }}</span>
+                <button type="button" class="import-type-item" @click="openFileImport('word')">
+                  <span class="import-type-title">{{ $t('questionBank.wordImport') }}</span>
                   <span class="import-type-description">{{ $t('questionBank.wordImportDescription') }}</span>
                 </button>
-                <button type="button" class="import-type-item" disabled>
-                  <span class="import-type-title">{{ $t('questionBank.pdfImport') }} · {{ $t('questionBank.comingSoon') }}</span>
+                <button type="button" class="import-type-item" @click="openFileImport('pdf')">
+                  <span class="import-type-title">{{ $t('questionBank.pdfImport') }}</span>
                   <span class="import-type-description">{{ $t('questionBank.pdfImportDescription') }}</span>
                 </button>
               </div>
@@ -122,6 +124,15 @@
       v-model:visible="importVisible"
       :set-id="setId"
       :knowledge-base-id="knowledgeBaseId"
+      :current-questions="questions"
+      @imported="refreshAfterMutation"
+    />
+    <QuestionFileImportDialog
+      :key="`${fileImportType}-${fileImportSession}`"
+      v-model:visible="fileImportVisible"
+      :set-id="setId"
+      :knowledge-base-id="knowledgeBaseId"
+      :import-type="fileImportType"
       :current-questions="questions"
       @imported="refreshAfterMutation"
     />
@@ -150,7 +161,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, nextTick, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import {
   getQuestionSet, listQuestions, deleteQuestion as apiDeleteQuestion,
@@ -177,6 +188,11 @@ const loading = ref(false)
 const filter = ref<QuestionListFilter>({})
 const editVisible = ref(false)
 const importVisible = ref(false)
+const fileImportVisible = ref(false)
+const fileImportType = ref<'word' | 'pdf'>('word')
+const fileImportSession = ref(0)
+const headerImportMenuVisible = ref(false)
+const emptyImportMenuVisible = ref(false)
 const generateVisible = ref(false)
 const exportVisible = ref(false)
 const exportName = ref('')
@@ -210,13 +226,36 @@ function openEditDialog(q: Question) {
   editVisible.value = true
 }
 
-function openJsonImport() {
+async function closeAllImportMenus() {
+  headerImportMenuVisible.value = false
+  emptyImportMenuVisible.value = false
+  await nextTick()
+}
+
+async function openJsonImport() {
+  await closeAllImportMenus()
   importVisible.value = true
 }
 
-// TODO: Word/PDF import: upload document -> docreader text extraction ->
-// QuestionExtractionService structure recognition -> preview -> confirmed import.
-// docreader extracts text only; it does not identify question structure.
+async function openFileImport(type: 'word' | 'pdf') {
+  await closeAllImportMenus()
+
+  // Destroy previous dialog instance so a fresh session starts
+  fileImportVisible.value = false
+  await nextTick()
+
+  fileImportType.value = type
+  fileImportSession.value += 1
+  fileImportVisible.value = true
+}
+
+// Guard: if any import dialog opens, close the popup menus
+watch([fileImportVisible, importVisible], ([fileVisible, jsonVisible]) => {
+  if (fileVisible || jsonVisible) {
+    headerImportMenuVisible.value = false
+    emptyImportMenuVisible.value = false
+  }
+})
 
 function handleGenerated() {
   emit('generated')
@@ -293,6 +332,7 @@ onMounted(async () => {
 
 import QuestionEditDialog from './QuestionEditDialog.vue'
 import QuestionImportDialog from './QuestionImportDialog.vue'
+import QuestionFileImportDialog from './QuestionFileImportDialog.vue'
 import QuestionGenerateDialog from './QuestionGenerateDialog.vue'
 </script>
 

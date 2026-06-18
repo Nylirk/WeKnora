@@ -6,6 +6,14 @@ import zhCN from '../../i18n/locales/zh-CN.ts'
 const source = readFileSync(new URL('./components/QuestionSetDetail.vue', import.meta.url), 'utf8')
 const bankSource = readFileSync(new URL('./components/QuestionBank.vue', import.meta.url), 'utf8')
 const importSource = readFileSync(new URL('./components/QuestionImportDialog.vue', import.meta.url), 'utf8')
+const fileImportSource = readFileSync(
+  new URL('./components/QuestionFileImportDialog.vue', import.meta.url),
+  'utf8',
+)
+const questionApiSource = readFileSync(
+  new URL('../../api/question.ts', import.meta.url),
+  'utf8',
+)
 
 test('uses supported TDesign columns and named cell slots', () => {
   assert.equal(source.includes('<t-table-column'), false)
@@ -51,12 +59,29 @@ test('renders the question set sidebar as a four-column list with a popup menu',
   assert.equal(bankSource.includes('class="set-meta"'), false)
 })
 
-test('offers JSON import while keeping Word and PDF imports disabled', () => {
+test('offers JSON, Word, and PDF import entry points', () => {
   assert.equal(source.includes('openJsonImport'), true)
+  assert.equal(source.includes("openFileImport('word')"), true)
+  assert.equal(source.includes("openFileImport('pdf')"), true)
   assert.equal(source.includes("questionBank.jsonImport"), true)
   assert.equal(source.includes("questionBank.wordImport"), true)
   assert.equal(source.includes("questionBank.pdfImport"), true)
-  assert.equal((source.match(/class="import-type-item" disabled/g) || []).length >= 2, true)
+  assert.equal(source.includes('QuestionFileImportDialog'), true)
+  assert.equal(source.includes(':import-type="fileImportType"'), true)
+  assert.equal(source.includes(':key="`${fileImportType}-${fileImportSession}`"'), true)
+  assert.equal((source.match(/class="import-type-item" disabled/g) || []).length, 0)
+})
+
+test('closes import type menu before opening import dialogs', () => {
+  assert.equal(source.includes('headerImportMenuVisible'), true)
+  assert.equal(source.includes('emptyImportMenuVisible'), true)
+  assert.equal(source.includes('closeAllImportMenus'), true)
+  assert.equal(source.includes('await closeAllImportMenus()'), true)
+  assert.equal(source.includes('v-model:visible="headerImportMenuVisible"'), true)
+  assert.equal(source.includes('v-model:visible="emptyImportMenuVisible"'), true)
+  // openFileImport must close menu, destroy old dialog, then open fresh session
+  assert.equal(source.includes("fileImportVisible.value = false"), true)
+  assert.equal(source.includes("fileImportSession.value += 1"), true)
 })
 
 test('uses a compact JSON import dialog with local file parsing', () => {
@@ -69,8 +94,39 @@ test('uses a compact JSON import dialog with local file parsing', () => {
   assert.equal(importSource.includes('parseErrorCount'), true)
 })
 
+test('file import dialog disables overlay close and resets cancellable preview sessions', () => {
+  assert.equal(fileImportSource.includes(':close-on-overlay-click="false"'), true)
+  assert.equal(fileImportSource.includes('new AbortController()'), true)
+  assert.equal(fileImportSource.includes('abortCurrentRequest'), true)
+  assert.equal(fileImportSource.includes('cleanupDialogState'), true)
+  assert.equal(fileImportSource.includes('closeAndReset'), true)
+  assert.equal(fileImportSource.includes('activePreviewRequestId'), true)
+  assert.equal(fileImportSource.includes('previewImportFile('), true)
+  assert.equal(fileImportSource.includes('signal: controller.signal'), true)
+  assert.equal(fileImportSource.includes('timeout: 120000'), true)
+})
+
+test('file import preview handles nullable arrays safely', () => {
+  assert.equal(fileImportSource.includes('previewWarnings'), true)
+  assert.equal(fileImportSource.includes('previewWarnings.length'), true)
+  // Must use safe computed, not raw null-unsafe property
+  assert.equal(fileImportSource.includes('previewResult.warnings.length'), false)
+  assert.equal(fileImportSource.includes('previewStats'), true)
+  assert.equal(fileImportSource.includes('rawTextPreview'), true)
+  assert.equal(fileImportSource.includes('Array.isArray(previewResult.value?.warnings)'), true)
+  assert.equal(fileImportSource.includes('Array.isArray(previewResult.value?.items)'), true)
+  assert.equal(fileImportSource.includes('Array.isArray(previewResult.value?.errors)'), true)
+})
+
+test('normalizes import file preview response arrays', () => {
+  assert.equal(questionApiSource.includes('normalizeImportFilePreviewResponse'), true)
+  assert.equal(questionApiSource.includes('Array.isArray(source.items)'), true)
+  assert.equal(questionApiSource.includes('Array.isArray(source.errors)'), true)
+  assert.equal(questionApiSource.includes('Array.isArray(source.warnings)'), true)
+})
+
 test('does not use native browser dialogs in question bank components', () => {
-  for (const component of [source, bankSource, importSource]) {
+  for (const component of [source, bankSource, importSource, fileImportSource]) {
     assert.equal(/window\.(alert|prompt|confirm)\s*\(/.test(component), false)
   }
 })
@@ -81,6 +137,7 @@ test('defines every questionBank locale key used by question components', () => 
     'QuestionEditDialog.vue',
     'QuestionGenerateDialog.vue',
     'QuestionImportDialog.vue',
+    'QuestionFileImportDialog.vue',
     'QuestionSetDetail.vue',
   ]
   const usedKeys = new Set<string>()

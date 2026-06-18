@@ -5,19 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 type QuestionService struct {
-	repository        interfaces.QuestionRepository
-	evaluationService interfaces.EvaluationService
-	evaluationRepo    interfaces.EvaluationRepository
-	knowledgeBaseSvc  interfaces.KnowledgeBaseService
-	chunkService      interfaces.ChunkService
-	knowledgeService  interfaces.KnowledgeService
+	repository         interfaces.QuestionRepository
+	evaluationService  interfaces.EvaluationService
+	evaluationRepo     interfaces.EvaluationRepository
+	knowledgeBaseSvc   interfaces.KnowledgeBaseService
+	chunkService       interfaces.ChunkService
+	knowledgeService   interfaces.KnowledgeService
+	docReader          interfaces.DocumentReader
+	extractionService  *QuestionExtractionService
 }
 
 func NewQuestionService(
@@ -27,6 +32,8 @@ func NewQuestionService(
 	kbSvc interfaces.KnowledgeBaseService,
 	chunkSvc interfaces.ChunkService,
 	knowledgeSvc interfaces.KnowledgeService,
+	docReader interfaces.DocumentReader,
+	extractionSvc *QuestionExtractionService,
 ) interfaces.QuestionService {
 	return &QuestionService{
 		repository:        repo,
@@ -35,6 +42,8 @@ func NewQuestionService(
 		knowledgeBaseSvc:  kbSvc,
 		chunkService:      chunkSvc,
 		knowledgeService:  knowledgeSvc,
+		docReader:         docReader,
+		extractionService: extractionSvc,
 	}
 }
 
@@ -355,7 +364,31 @@ func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID strin
 		if q.Difficulty == "" {
 			q.Difficulty = types.QuestionDifficultyMedium
 		}
-		q.Status = structuredQuestionStatus(q)
+		// Respect caller-supplied status; otherwise auto-determine.
+		if item.Status != "" {
+			switch types.QuestionStatus(item.Status) {
+			case types.QuestionStatusDraft:
+				q.Status = types.QuestionStatusDraft
+			case types.QuestionStatusRejected:
+				q.Status = types.QuestionStatusRejected
+			case types.QuestionStatusReviewed:
+				// When caller requests reviewed, validate structurally first.
+				// On failure, degrade to draft so the data still lands safely.
+				if errs := types.ValidateQuestionForReview(q); len(errs) == 0 {
+					q.Status = types.QuestionStatusReviewed
+				} else {
+					q.Status = types.QuestionStatusDraft
+				}
+			default:
+				result.Errors = append(result.Errors, types.ImportQuestionError{
+					LineNumber: item.LineNumber,
+					Message:    fmt.Sprintf("不支持的状态值: %s，仅允许 draft / reviewed / rejected", item.Status),
+				})
+				continue
+			}
+		} else {
+			q.Status = structuredQuestionStatus(q)
+		}
 		draftQ := &types.Question{QuestionType: q.QuestionType, StemText: q.StemText}
 		if errs := types.ValidateQuestionForDraft(draftQ); len(errs) > 0 {
 			for _, e := range errs {
@@ -536,6 +569,180 @@ func (s *QuestionService) buildReferenceContexts(ctx context.Context, q *types.Q
 		}
 	}
 	return contexts, nil
+}
+
+var validImportFileExtensions = map[string]bool{
+	".doc":  true,
+	".docx": true,
+	".pdf":  true,
+}
+
+func isValidImportFileExtension(name string) bool {
+	lower := strings.ToLower(name)
+	for ext := range validImportFileExtensions {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *QuestionExtractionService) fileExtension(name string) string {
+	lower := strings.ToLower(name)
+	for ext := range validImportFileExtensions {
+		if strings.HasSuffix(lower, ext) {
+			return ext
+		}
+	}
+	return ""
+}
+
+// PreviewImportQuestionsFromFile extracts text from a document file and parses
+// questions from it without persisting to the database.
+// It does NOT create knowledge, chunks, or embeddings.
+func (s *QuestionService) PreviewImportQuestionsFromFile(
+	ctx context.Context,
+	kbID, setID string,
+	fileData []byte,
+	fileName string,
+	req *types.ImportFilePreviewRequest,
+) (*types.ImportFilePreviewResponse, error) {
+	log := logger.GetLogger(ctx)
+	log.Infof("[import-file preview] started: kb=%s set=%s file=%s size=%d", kbID, setID, fileName, len(fileData))
+
+	// 1. Validate KB is question_bank (this also validates set belongs to kb)
+	if _, err := s.getQuestionSetForKB(ctx, kbID, setID); err != nil {
+		return nil, err
+	}
+
+	// 2. Validate file extension
+	if !isValidImportFileExtension(fileName) {
+		return nil, apperrors.NewBadRequestError("仅支持 DOC、DOCX、PDF 文件。")
+	}
+
+	// 3. Validate file size
+	maxSize := secutils.GetMaxFileSize()
+	if int64(len(fileData)) > maxSize {
+		return nil, apperrors.NewBadRequestError(
+			fmt.Sprintf("文件大小超过限制 (%d MB)", maxSize/(1024*1024)),
+		)
+	}
+
+	// 4. Determine file type for docreader
+	fileType := strings.TrimPrefix(
+		strings.ToLower(fileName[strings.LastIndex(fileName, "."):]),
+		".",
+	)
+
+	// 5. Extract text using docreader with a timeout
+	if s.docReader == nil || !s.docReader.IsConnected() {
+		return nil, apperrors.NewBadRequestError("文档解析服务不可用，请稍后重试。")
+	}
+
+	readCtx, readCancel := context.WithTimeout(ctx, 120*time.Second)
+	defer readCancel()
+
+	log.Infof("[import-file preview] docreader read started: file=%s type=%s", fileName, fileType)
+	readResp, err := s.docReader.Read(readCtx, &types.ReadRequest{
+		FileContent: fileData,
+		FileName:    fileName,
+		FileType:    fileType,
+	})
+	if err != nil {
+		if readCtx.Err() == context.DeadlineExceeded {
+			log.Warnf("[import-file preview] docreader timed out: file=%s", fileName)
+			return nil, apperrors.NewBadRequestError("文档解析超时，请尝试拆分文件或使用 JSON/JSONL 导入。")
+		}
+		log.Errorf("[import-file preview] docreader read failed: file=%s err=%v", fileName, err)
+		return nil, apperrors.NewBadRequestError(
+			fmt.Sprintf("文档解析失败: %s", err.Error()),
+		)
+	}
+	if readResp.Error != "" {
+		log.Errorf("[import-file preview] docreader returned error: file=%s err=%s", fileName, readResp.Error)
+		return nil, apperrors.NewBadRequestError(
+			fmt.Sprintf("文档解析失败: %s", readResp.Error),
+		)
+	}
+	log.Infof("[import-file preview] docreader read finished: file=%s markdown_len=%d", fileName, len(readResp.MarkdownContent))
+
+	extractedText := strings.TrimSpace(readResp.MarkdownContent)
+	if extractedText == "" {
+		// Return an empty preview response instead of a hard error,
+		// so the frontend can show the warning without getting stuck.
+		log.Warnf("[import-file preview] empty text extracted: file=%s", fileName)
+		return &types.ImportFilePreviewResponse{
+			Items:   nil,
+			Errors:  nil,
+			Warnings: []string{"未能从文件中抽取文本，请确认文件内容可复制，或等待 OCR 支持。"},
+			RawTextPreview: "",
+			Stats: types.ImportFilePreviewStats{},
+		}, nil
+	}
+
+	// 6. Parse questions from extracted text
+	defaultType := req.DefaultQuestionType
+	if defaultType == "" {
+		defaultType = string(types.QuestionTypeShortAnswer)
+	}
+	defaultDifficulty := req.DefaultDifficulty
+	if defaultDifficulty == "" {
+		defaultDifficulty = string(types.QuestionDifficultyMedium)
+	}
+
+	// Check context cancellation before extraction
+	select {
+	case <-ctx.Done():
+		log.Infof("[import-file preview] cancelled before extraction: file=%s", fileName)
+		return nil, apperrors.NewBadRequestError("请求已取消")
+	default:
+	}
+
+	items, parseErrors, parseWarnings := s.extractionService.Extract(
+		ctx, extractedText, defaultType, defaultDifficulty,
+	)
+	log.Infof("[import-file preview] extraction finished: items=%d errors=%d warnings=%d",
+		len(items), len(parseErrors), len(parseWarnings))
+
+	// 7. Build response stats
+	withAnswer := 0
+	withoutAnswer := 0
+	for _, item := range items {
+		if strings.TrimSpace(item.AnswerText) != "" {
+			withAnswer++
+		} else {
+			withoutAnswer++
+		}
+	}
+
+	// Truncate raw text for preview (first 4000 chars is enough to verify content)
+	rawText := extractedText
+	if len([]rune(rawText)) > 4000 {
+		rawText = string([]rune(rawText)[:4000]) + "\n... (truncated)"
+	}
+
+	// Normalize nil slices to empty arrays so the JSON never contains null.
+	if items == nil {
+		items = []types.ImportQuestionItem{}
+	}
+	if parseErrors == nil {
+		parseErrors = []types.ImportQuestionError{}
+	}
+	if parseWarnings == nil {
+		parseWarnings = []string{}
+	}
+
+	return &types.ImportFilePreviewResponse{
+		Items:          items,
+		Errors:         parseErrors,
+		Warnings:       parseWarnings,
+		RawTextPreview: rawText,
+		Stats: types.ImportFilePreviewStats{
+			DetectedQuestions: len(items),
+			WithAnswer:        withAnswer,
+			WithoutAnswer:     withoutAnswer,
+		},
+	}, nil
 }
 
 func normalizeJSONObject(val types.JSON) types.JSON {
