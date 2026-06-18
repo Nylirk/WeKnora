@@ -707,6 +707,98 @@ E. E选项`
 	}
 }
 
+func TestDoesNotSplitOptionContentOnEnglishPunctuation(t *testing.T) {
+	svc := newTestExtractionService()
+	text := `1. 以下哪个描述正确？（B）
+A. Node.js is a JavaScript runtime.
+B. Go. language example should stay in option B.
+C. Java is also valid.
+D. Python is popular.
+E. Rust is memory safe.`
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+	if q.AnswerText != "B" {
+		t.Errorf("answer = %q, want B", q.AnswerText)
+	}
+
+	options := getOptionsFromBody(t, q.QuestionBody)
+	if len(options) != 5 {
+		t.Fatalf("expected 5 options, got %d: %v", len(options), optionLabels(options))
+	}
+
+	// A content must not be cut at "e." in "Node.js is a JavaScript runtime."
+	aOpt := getOption(options, "A")
+	if aOpt == nil {
+		t.Fatal("option A not found")
+	}
+	if !strings.Contains(aOpt.Content, "Node.js") {
+		t.Errorf("A content = %q, should contain 'Node.js'", aOpt.Content)
+	}
+
+	// B content must not be cut at "o." in "Go. language example"
+	bOpt := getOption(options, "B")
+	if bOpt == nil {
+		t.Fatal("option B not found")
+	}
+	if !strings.Contains(bOpt.Content, "Go. language") {
+		t.Errorf("B content = %q, should contain 'Go. language'", bOpt.Content)
+	}
+
+	// No spurious labels from English punctuation
+	for _, opt := range options {
+		if opt.Label != "A" && opt.Label != "B" && opt.Label != "C" && opt.Label != "D" && opt.Label != "E" {
+			t.Errorf("unexpected option label %q from English punctuation", opt.Label)
+		}
+	}
+}
+
+func TestInlineOptionsRequireBoundaryBeforeMarker(t *testing.T) {
+	svc := newTestExtractionService()
+	text := "1. 以下哪个描述正确？（E） A. Node.js runtime B. Go. language C. Java D. Python E. Rust"
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+	if q.AnswerText != "E" {
+		t.Errorf("answer = %q, want E", q.AnswerText)
+	}
+
+	options := getOptionsFromBody(t, q.QuestionBody)
+	if len(options) != 5 {
+		t.Fatalf("expected 5 options, got %d: %v", len(options), optionLabels(options))
+	}
+
+	assertOption(t, options, "A", "Node.js runtime")
+	assertOption(t, options, "B", "Go. language")
+	assertOption(t, options, "C", "Java")
+	assertOption(t, options, "D", "Python")
+	assertOption(t, options, "E", "Rust")
+
+	// A content must not be truncated at "e." in "Node.js"
+	aOpt := getOption(options, "A")
+	if aOpt == nil {
+		t.Fatal("option A not found")
+	}
+	if !strings.Contains(aOpt.Content, "Node.js") {
+		t.Errorf("A content = %q, should contain 'Node.js' (not cut at e.)", aOpt.Content)
+	}
+
+	// B content must not be truncated at "o." in "Go."
+	bOpt := getOption(options, "B")
+	if bOpt == nil {
+		t.Fatal("option B not found")
+	}
+	if !strings.Contains(bOpt.Content, "Go. language") {
+		t.Errorf("B content = %q, should contain 'Go. language' (not cut at o.)", bOpt.Content)
+	}
+}
+
 func TestNormalizeMultiChoiceAnswer(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"A、C、E", "ACE"},

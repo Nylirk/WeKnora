@@ -36,8 +36,10 @@ var questionNumPattern = regexp.MustCompile(
 var optionLabelPattern = regexp.MustCompile(`^\s*([A-Za-z])[.．)、）：:]\s*`)
 
 // inlineOptionPattern matches option markers anywhere in a line (not just start).
+// Requires whitespace or line-start before the marker so it doesn't match
+// ordinary English punctuation like "Node.js", "Go.", "e.g.", "U.S.".
 // Used to split inline options like "A. foo B. bar C. baz".
-var inlineOptionPattern = regexp.MustCompile(`([A-Za-z])[.．)、）：:]\s*`)
+var inlineOptionPattern = regexp.MustCompile(`(?:^|[\s　]+)([A-Za-z])[.．)、）：:]\s*`)
 
 // bracketAnswerPattern matches answer letters in parentheses at end of stem.
 // Examples: （B）, (E), （A、C、E）, (A,C,E), （a、c、e）
