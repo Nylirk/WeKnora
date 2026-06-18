@@ -12,12 +12,12 @@ import (
 )
 
 type QuestionService struct {
-	repository       interfaces.QuestionRepository
+	repository        interfaces.QuestionRepository
 	evaluationService interfaces.EvaluationService
-	evaluationRepo   interfaces.EvaluationRepository
-	knowledgeBaseSvc interfaces.KnowledgeBaseService
-	chunkService     interfaces.ChunkService
-	knowledgeService interfaces.KnowledgeService
+	evaluationRepo    interfaces.EvaluationRepository
+	knowledgeBaseSvc  interfaces.KnowledgeBaseService
+	chunkService      interfaces.ChunkService
+	knowledgeService  interfaces.KnowledgeService
 }
 
 func NewQuestionService(
@@ -29,13 +29,27 @@ func NewQuestionService(
 	knowledgeSvc interfaces.KnowledgeService,
 ) interfaces.QuestionService {
 	return &QuestionService{
-		repository:       repo,
+		repository:        repo,
 		evaluationService: evalSvc,
-		evaluationRepo:  evalRepo,
-		knowledgeBaseSvc: kbSvc,
-		chunkService:     chunkSvc,
-		knowledgeService: knowledgeSvc,
+		evaluationRepo:    evalRepo,
+		knowledgeBaseSvc:  kbSvc,
+		chunkService:      chunkSvc,
+		knowledgeService:  knowledgeSvc,
 	}
+}
+
+func structuredQuestionStatus(q *types.Question) types.QuestionStatus {
+	if len(types.ValidateQuestionForReview(q)) > 0 {
+		return types.QuestionStatusDraft
+	}
+	return types.QuestionStatusReviewed
+}
+
+func statusAfterStructuredEdit(current types.QuestionStatus, q *types.Question) types.QuestionStatus {
+	if current == types.QuestionStatusRejected {
+		return current
+	}
+	return structuredQuestionStatus(q)
 }
 
 func (s *QuestionService) CreateQuestionSet(ctx context.Context, kbID string, req *types.CreateQuestionSetRequest) (*types.QuestionSet, error) {
@@ -131,25 +145,25 @@ func (s *QuestionService) CreateQuestion(ctx context.Context, kbID, setID string
 		return nil, err
 	}
 	q := &types.Question{
-		TenantID:          tenantID(ctx),
-		QuestionSetID:     setID,
-		KnowledgeBaseID:   qs.KnowledgeBaseID,
-		QuestionType:      req.QuestionType,
-		StemText:          strings.TrimSpace(req.StemText),
-		QuestionBody:      normalizeJSONObject(req.QuestionBody),
-		AnswerText:        strings.TrimSpace(req.AnswerText),
-		AnswerBody:        normalizeJSONObject(req.AnswerBody),
-		AnalysisText:      strings.TrimSpace(req.AnalysisText),
-		GradingRubric:     normalizeJSONObject(req.GradingRubric),
+		TenantID:           tenantID(ctx),
+		QuestionSetID:      setID,
+		KnowledgeBaseID:    qs.KnowledgeBaseID,
+		QuestionType:       req.QuestionType,
+		StemText:           strings.TrimSpace(req.StemText),
+		QuestionBody:       normalizeJSONObject(req.QuestionBody),
+		AnswerText:         strings.TrimSpace(req.AnswerText),
+		AnswerBody:         normalizeJSONObject(req.AnswerBody),
+		AnalysisText:       strings.TrimSpace(req.AnalysisText),
+		GradingRubric:      normalizeJSONObject(req.GradingRubric),
 		Difficulty:         types.QuestionDifficulty(req.Difficulty),
-		Status:            types.QuestionStatusDraft,
-		KnowledgePoints:   normalizeJSONArray(req.KnowledgePoints),
+		Status:             types.QuestionStatusDraft,
+		KnowledgePoints:    normalizeJSONArray(req.KnowledgePoints),
 		Tags:               normalizeJSONArray(req.Tags),
-		SourceKnowledgeID: req.SourceKnowledgeID,
-		EvidenceChunkIDs:  normalizeJSONArray(req.EvidenceChunkIDs),
+		SourceKnowledgeID:  req.SourceKnowledgeID,
+		EvidenceChunkIDs:   normalizeJSONArray(req.EvidenceChunkIDs),
 		SourcePayload:      normalizeJSONMap(nil),
 		ExtractionMetadata: normalizeJSONMap(nil),
-		SortOrder:         req.SortOrder,
+		SortOrder:          req.SortOrder,
 	}
 	if q.QuestionType == "" {
 		q.QuestionType = string(types.QuestionTypeSingleChoice)
@@ -157,6 +171,7 @@ func (s *QuestionService) CreateQuestion(ctx context.Context, kbID, setID string
 	if q.Difficulty == "" {
 		q.Difficulty = types.QuestionDifficultyMedium
 	}
+	q.Status = structuredQuestionStatus(q)
 	draftQ := &types.Question{QuestionType: q.QuestionType, StemText: q.StemText, QuestionBody: q.QuestionBody, AnswerBody: q.AnswerBody}
 	if errs := types.ValidateQuestionForDraft(draftQ); len(errs) > 0 {
 		return nil, apperrors.NewBadRequestError("validation failed: " + errs[0].Message)
@@ -249,6 +264,7 @@ func (s *QuestionService) UpdateQuestion(ctx context.Context, kbID, setID, quest
 	if req.SortOrder != nil {
 		q.SortOrder = *req.SortOrder
 	}
+	q.Status = statusAfterStructuredEdit(q.Status, q)
 	if err := s.validateEvidenceReferences(ctx, q.KnowledgeBaseID, q.SourceKnowledgeID, q.EvidenceChunkIDs); err != nil {
 		return nil, err
 	}
@@ -314,22 +330,22 @@ func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID strin
 	var created []*types.Question
 	for _, item := range req.Items {
 		q := &types.Question{
-			TenantID:          tenantID(ctx),
-			QuestionSetID:     setID,
-			KnowledgeBaseID:   qs.KnowledgeBaseID,
-			QuestionType:      item.QuestionType,
-			StemText:          strings.TrimSpace(item.StemText),
-			QuestionBody:      normalizeJSONObject(item.QuestionBody),
-			AnswerText:        strings.TrimSpace(item.AnswerText),
-			AnswerBody:        normalizeJSONObject(item.AnswerBody),
-			AnalysisText:      strings.TrimSpace(item.AnalysisText),
-			GradingRubric:     normalizeJSONObject(item.GradingRubric),
+			TenantID:           tenantID(ctx),
+			QuestionSetID:      setID,
+			KnowledgeBaseID:    qs.KnowledgeBaseID,
+			QuestionType:       item.QuestionType,
+			StemText:           strings.TrimSpace(item.StemText),
+			QuestionBody:       normalizeJSONObject(item.QuestionBody),
+			AnswerText:         strings.TrimSpace(item.AnswerText),
+			AnswerBody:         normalizeJSONObject(item.AnswerBody),
+			AnalysisText:       strings.TrimSpace(item.AnalysisText),
+			GradingRubric:      normalizeJSONObject(item.GradingRubric),
 			Difficulty:         types.QuestionDifficulty(item.Difficulty),
-			Status:            types.QuestionStatusDraft,
-			KnowledgePoints:   normalizeJSONArray(item.KnowledgePoints),
+			Status:             types.QuestionStatusDraft,
+			KnowledgePoints:    normalizeJSONArray(item.KnowledgePoints),
 			Tags:               normalizeJSONArray(item.Tags),
-			SourceKnowledgeID: item.SourceKnowledgeID,
-			EvidenceChunkIDs:  normalizeJSONArray(item.EvidenceChunkIDs),
+			SourceKnowledgeID:  item.SourceKnowledgeID,
+			EvidenceChunkIDs:   normalizeJSONArray(item.EvidenceChunkIDs),
 			SourcePayload:      normalizeJSONMap(nil),
 			ExtractionMetadata: normalizeJSONMap(nil),
 		}
@@ -339,6 +355,7 @@ func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID strin
 		if q.Difficulty == "" {
 			q.Difficulty = types.QuestionDifficultyMedium
 		}
+		q.Status = structuredQuestionStatus(q)
 		draftQ := &types.Question{QuestionType: q.QuestionType, StemText: q.StemText}
 		if errs := types.ValidateQuestionForDraft(draftQ); len(errs) > 0 {
 			for _, e := range errs {
@@ -364,9 +381,20 @@ func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID strin
 		}
 		result.Created = len(created)
 	}
-	_ = s.repository.UpdateQuestionCount(ctx, tenantID(ctx), setID)
-	qs.SourceType = types.QuestionSetSourceImport
-	_ = s.repository.UpdateQuestionSet(ctx, qs)
+	if len(created) == 0 {
+		return result, nil
+	}
+	if err := s.repository.UpdateQuestionSetSourceType(
+		ctx,
+		tenantID(ctx),
+		setID,
+		types.QuestionSetSourceImport,
+	); err != nil {
+		return nil, err
+	}
+	if err := s.repository.UpdateQuestionCount(ctx, tenantID(ctx), setID); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 

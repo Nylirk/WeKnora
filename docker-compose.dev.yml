@@ -1,9 +1,11 @@
 # 开发环境配置 - 只启动基础设施服务，app 和 frontend 在本地运行
+name: selknora-dev
+
 services:
   # 只启动依赖的基础设施服务
   postgres:
     image: paradedb/paradedb:v0.22.2-pg17
-    container_name: WeKnora-postgres-dev
+    container_name: SelKnora-postgres-dev
     ports:
       - "${DB_PORT:-5432}:5432"
     environment:
@@ -13,7 +15,7 @@ services:
     volumes:
       - postgres-data-dev:/var/lib/postgresql/data
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
       interval: 10s
@@ -25,7 +27,7 @@ services:
 
   redis:
     image: redis:7.0-alpine
-    container_name: WeKnora-redis-dev
+    container_name: SelKnora-redis-dev
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
@@ -33,27 +35,27 @@ services:
     command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     restart: always
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
 
   # See docker-compose.yml searxng-init for rationale (avoid in-place rewrite of
   # the repo-tracked settings.yml by the searxng entrypoint).
   searxng-init:
     image: busybox:1.36
-    container_name: WeKnora-searxng-init-dev
+    container_name: SelKnora-searxng-init-dev
     command: ["sh", "-c", "cp /template/settings.yml /etc/searxng/settings.yml && chmod 0644 /etc/searxng/settings.yml"]
     volumes:
       - ./docker/searxng/settings.yml:/template/settings.yml:ro
       - searxng_config_dev:/etc/searxng
     restart: "no"
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     profiles:
       - searxng
       - full
 
   searxng:
     image: searxng/searxng:latest
-    container_name: WeKnora-searxng-dev
+    container_name: SelKnora-searxng-dev
     # Local dev: bind to loopback by default; the host-side WeKnora process
     # reaches it at http://127.0.0.1:${SEARXNG_PORT}.
     ports:
@@ -76,14 +78,14 @@ services:
       searxng-init:
         condition: service_completed_successfully
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     profiles:
       - searxng
       - full
 
   minio:
     image: minio/minio:latest
-    container_name: WeKnora-minio-dev
+    container_name: SelKnora-minio-dev
     ports:
       - "${MINIO_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
@@ -99,21 +101,21 @@ services:
       timeout: 20s
       retries: 3
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     profiles:
       - minio
       - full
 
   qdrant:
     image: qdrant/qdrant:v1.16.2
-    container_name: WeKnora-qdrant-dev
+    container_name: SelKnora-qdrant-dev
     ports:
       - "${QDRANT_REST_PORT:-6333}:6333"
       - "${QDRANT_PORT:-6334}:6334"
     volumes:
       - qdrant_data_dev:/qdrant/storage
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     restart: unless-stopped
     profiles:
       - qdrant
@@ -125,7 +127,7 @@ services:
   # multi-node cluster. See docs/dev/opensearch-integration-test.md.
   opensearch:
     image: opensearchproject/opensearch:3.3.2
-    container_name: WeKnora-opensearch-dev
+    container_name: SelKnora-opensearch-dev
     environment:
       - discovery.type=single-node
       # dev only: plain HTTP on :9200, no TLS/auth. The entrypoint script
@@ -144,7 +146,7 @@ services:
     volumes:
       - opensearch_data_dev:/usr/share/opensearch/data
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     restart: unless-stopped
     profiles:
       - opensearch
@@ -160,14 +162,14 @@ services:
   # (depends_on pulls the cluster in automatically).
   opensearch-dashboards:
     image: opensearchproject/opensearch-dashboards:3.3.0
-    container_name: WeKnora-opensearch-dashboards-dev
+    container_name: SelKnora-opensearch-dashboards-dev
     environment:
       - OPENSEARCH_HOSTS=["http://opensearch:9200"]
       - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
     ports:
       - "${OPENSEARCH_DASHBOARDS_PORT:-5601}:5601"
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     depends_on:
       - opensearch
     restart: unless-stopped
@@ -176,7 +178,7 @@ services:
 
   milvus:
     image: milvusdb/milvus:v2.6.11
-    container_name: WeKnora-milvus-dev
+    container_name: SelKnora-milvus-dev
     security_opt:
       - seccomp:unconfined
     command: ["milvus", "run", "standalone"]
@@ -197,7 +199,7 @@ services:
     volumes:
       - milvus_data_dev:/var/lib/milvus
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     restart: unless-stopped
     profiles:
       - milvus
@@ -205,7 +207,7 @@ services:
 
   neo4j:
     image: neo4j:latest
-    container_name: WeKnora-neo4j-dev
+    container_name: SelKnora-neo4j-dev
     volumes:
       - neo4j-data-dev:/data
     environment:
@@ -219,7 +221,7 @@ services:
       - "7687:7687"
     restart: always
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     profiles:
       - neo4j
       - full
@@ -227,7 +229,7 @@ services:
   # Sandbox 镜像：仅用于 build/pull，非常驻服务；本地 app 执行 Skills 时按需 docker run 该镜像，用毕即释
   sandbox:
     image: wechatopenai/weknora-sandbox:${WEKNORA_VERSION:-latest}
-    container_name: WeKnora-sandbox-dev
+    container_name: SelKnora-sandbox-dev
     build:
       context: .
       dockerfile: docker/Dockerfile.sandbox
@@ -241,7 +243,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.docreader
     image: wechatopenai/weknora-docreader:${WEKNORA_VERSION:-latest}
-    container_name: WeKnora-docreader-dev
+    container_name: SelKnora-docreader-dev
     ports:
       - "${DOCREADER_PORT:-50051}:50051"
     volumes:
@@ -272,7 +274,7 @@ services:
       retries: 3
       start_period: 60s
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -285,7 +287,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.odl-hybrid
     image: weknora-odl-hybrid:local
-    container_name: WeKnora-odl-hybrid
+    container_name: SelKnora-odl-hybrid
     profiles:
       - odl-hybrid
     ports:
@@ -295,12 +297,12 @@ services:
       # ODL_HYBRID_EXTRA_ARGS="--force-ocr" (needs EasyOCR + libGL in image).
       - ODL_HYBRID_EXTRA_ARGS=${ODL_HYBRID_EXTRA_ARGS:---no-ocr}
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     restart: unless-stopped
 
   dex:
     image: dexidp/dex:latest
-    container_name: WeKnora-dex-dev
+    container_name: SelKnora-dex-dev
     ports:
       - "5556:5556"
     volumes:
@@ -327,7 +329,7 @@ services:
   # 复用 dev 已有的 ParadeDB 镜像，不额外拉 postgres 镜像
   langfuse-db-init:
     image: paradedb/paradedb:v0.22.2-pg17
-    container_name: WeKnora-langfuse-db-init-dev
+    container_name: SelKnora-langfuse-db-init-dev
     depends_on:
       postgres:
         condition: service_healthy
@@ -351,7 +353,7 @@ services:
         fi
         echo "[langfuse-db-init] done."
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     restart: "no"
     profiles:
       - langfuse
@@ -359,7 +361,7 @@ services:
 
   langfuse-clickhouse:
     image: clickhouse/clickhouse-server:24.8
-    container_name: WeKnora-langfuse-clickhouse-dev
+    container_name: SelKnora-langfuse-clickhouse-dev
     restart: unless-stopped
     user: "101:101"
     environment:
@@ -376,14 +378,14 @@ services:
       retries: 10
       start_period: 10s
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     profiles:
       - langfuse
       - full
 
   langfuse-minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    container_name: WeKnora-langfuse-minio-dev
+    container_name: SelKnora-langfuse-minio-dev
     restart: unless-stopped
     entrypoint: sh
     command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
@@ -401,14 +403,14 @@ services:
       timeout: 10s
       retries: 5
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     profiles:
       - langfuse
       - full
 
   langfuse-worker:
     image: langfuse/langfuse-worker:3
-    container_name: WeKnora-langfuse-worker-dev
+    container_name: SelKnora-langfuse-worker-dev
     restart: unless-stopped
     depends_on: &langfuse-dev-depends-on
       langfuse-db-init:
@@ -467,14 +469,14 @@ services:
       LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
       LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     profiles:
       - langfuse
       - full
 
   langfuse-web:
     image: langfuse/langfuse:3
-    container_name: WeKnora-langfuse-web-dev
+    container_name: SelKnora-langfuse-web-dev
     restart: unless-stopped
     depends_on: *langfuse-dev-depends-on
     ports:
@@ -507,14 +509,14 @@ services:
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
     networks:
-      - WeKnora-network-dev
+      - SelKnora-network-dev
     profiles:
       - langfuse
       - full
 
 
 networks:
-  WeKnora-network-dev:
+  SelKnora-network-dev:
     driver: bridge
 
 volumes:

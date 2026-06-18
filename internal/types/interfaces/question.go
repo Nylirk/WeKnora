@@ -12,6 +12,7 @@ type QuestionRepository interface {
 	GetQuestionSetByKB(context.Context, uint64, string) (*types.QuestionSet, error)
 	ListQuestionSets(context.Context, uint64, string, *types.Pagination) (*types.PageResult, error)
 	UpdateQuestionSet(context.Context, *types.QuestionSet) error
+	UpdateQuestionSetSourceType(context.Context, uint64, string, types.QuestionSetSourceType) error
 	DeleteQuestionSet(context.Context, uint64, string) error
 	UpdateQuestionCount(context.Context, uint64, string) error
 

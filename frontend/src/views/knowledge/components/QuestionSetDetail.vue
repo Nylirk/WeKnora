@@ -1,106 +1,200 @@
 <template>
   <div class="question-set-detail">
     <div class="detail-header">
-      <t-button variant="text" @click="$emit('back')">
-        <template #icon><t-icon name="chevron-left" /></template>
-        {{ $t('common.back', '返回') }}
-      </t-button>
-      <h2>{{ setName }}</h2>
+      <h2>{{ displaySetName }}</h2>
       <div class="header-actions">
         <t-button theme="primary" @click="openCreateDialog">
           <template #icon><t-icon name="add" /></template>
-          {{ $t('questionBank.addQuestion', '添加题目') }}
+          {{ $t('questionBank.addQuestion', '新增题目') }}
         </t-button>
-        <t-button @click="importVisible = true">{{ $t('questionBank.import', '导入') }}</t-button>
-        <t-button theme="success" @click="exportToEval">{{ $t('questionBank.export', '导出评测集') }}</t-button>
+        <t-popup trigger="click" placement="bottom-right" overlay-class-name="question-import-type-popup">
+          <t-button>{{ $t('questionBank.import') }}</t-button>
+          <template #content>
+            <div class="import-type-menu">
+              <button type="button" class="import-type-item" @click="openJsonImport">
+                <span class="import-type-title">{{ $t('questionBank.jsonImport') }}</span>
+                <span class="import-type-description">{{ $t('questionBank.jsonImportDescription') }}</span>
+              </button>
+              <button type="button" class="import-type-item" disabled>
+                <span class="import-type-title">
+                  {{ $t('questionBank.wordImport') }}
+                  <t-tag size="small" variant="light">{{ $t('questionBank.comingSoon') }}</t-tag>
+                </span>
+                <span class="import-type-description">{{ $t('questionBank.wordImportDescription') }}</span>
+                <span class="import-type-help">{{ $t('questionBank.wordImportHelp') }}</span>
+              </button>
+              <button type="button" class="import-type-item" disabled>
+                <span class="import-type-title">
+                  {{ $t('questionBank.pdfImport') }}
+                  <t-tag size="small" variant="light">{{ $t('questionBank.comingSoon') }}</t-tag>
+                </span>
+                <span class="import-type-description">{{ $t('questionBank.pdfImportDescription') }}</span>
+                <span class="import-type-help">{{ $t('questionBank.pdfImportHelp') }}</span>
+              </button>
+            </div>
+          </template>
+        </t-popup>
+        <t-button @click="generateVisible = true">{{ $t('questionBank.generateTitle', '生成题目') }}</t-button>
+        <t-button theme="success" @click="openExportDialog">{{ $t('questionBank.export', '导出评测集') }}</t-button>
       </div>
     </div>
 
     <div class="filter-bar">
-      <t-select v-model="filter.question_type" :placeholder="$t('questionBank.typeFilter', '题目类型')" clearable style="width: 140px" @change="loadQuestions">
+      <t-select v-model="filter.question_type" :placeholder="$t('questionBank.typeFilter', '题型')" clearable style="width: 120px" @change="loadQuestions">
         <t-option v-for="qt in questionTypes" :key="qt" :value="qt" :label="questionTypeLabel(qt)" />
-      </t-select>
-      <t-select v-model="filter.difficulty" :placeholder="$t('questionBank.difficultyFilter', '难度')" clearable style="width: 100px" @change="loadQuestions">
-        <t-option value="easy" :label="$t('questionBank.easy', '简单')" />
-        <t-option value="medium" :label="$t('questionBank.medium', '中等')" />
-        <t-option value="hard" :label="$t('questionBank.hard', '困难')" />
       </t-select>
       <t-select v-model="filter.status" :placeholder="$t('questionBank.statusFilter', '状态')" clearable style="width: 100px" @change="loadQuestions">
         <t-option value="draft" :label="$t('questionBank.draft', '草稿')" />
         <t-option value="reviewed" :label="$t('questionBank.reviewed', '已审')" />
         <t-option value="rejected" :label="$t('questionBank.rejected', '已拒')" />
       </t-select>
-      <t-input v-model="filter.keyword" :placeholder="$t('questionBank.searchPlaceholder', '搜索题干...')" clearable style="width: 200px" @enter="loadQuestions" />
+      <t-select v-model="filter.difficulty" :placeholder="$t('questionBank.difficultyFilter', '难度')" clearable style="width: 100px" @change="loadQuestions">
+        <t-option value="easy" :label="$t('questionBank.easy', '简单')" />
+        <t-option value="medium" :label="$t('questionBank.medium', '中等')" />
+        <t-option value="hard" :label="$t('questionBank.hard', '困难')" />
+      </t-select>
+      <t-input v-model="filter.knowledge_point" placeholder="知识点" clearable style="width: 140px" @clear="loadQuestions" @enter="loadQuestions" />
+      <t-input v-model="filter.tag" placeholder="标签" clearable style="width: 120px" @clear="loadQuestions" @enter="loadQuestions" />
+      <t-input v-model="filter.keyword" :placeholder="$t('questionBank.searchPlaceholder', '搜索题干...')" clearable style="width: 180px" @clear="loadQuestions" @enter="loadQuestions" />
     </div>
 
-    <t-table :data="questions" :loading="loading" row-key="id" hover>
-      <t-table-column :title="$t('questionBank.type', '类型')" :width="100">
-        <template #default="{ row }">{{ questionTypeLabel(row.question_type) }}</template>
-      </t-table-column>
-      <t-table-column :title="$t('questionBank.stem', '题干')" prop="stem_text" ellipsis />
-      <t-table-column :title="$t('questionBank.difficulty', '难度')" :width="80">
-        <template #default="{ row }">{{ difficultyLabel(row.difficulty) }}</template>
-      </t-table-column>
-      <t-table-column :title="$t('questionBank.status', '状态')" :width="80">
-        <template #default="{ row }">
+    <t-table
+      v-if="loading || questions.length > 0"
+      :data="questions"
+      :columns="questionColumns"
+      :loading="loading"
+      row-key="id"
+      hover
+    >
+      <template #question_type="{ row }">
+        {{ questionTypeLabel(row.question_type) }}
+      </template>
+      <template #difficulty="{ row }">
+        {{ difficultyLabel(row.difficulty) }}
+      </template>
+      <template #status="{ row }">
           <t-tag :theme="row.status === 'reviewed' ? 'success' : row.status === 'rejected' ? 'danger' : 'default'" size="small">
             {{ statusLabel(row.status) }}
           </t-tag>
-        </template>
-      </t-table-column>
-      <t-table-column :title="$t('common.action', '操作')" :width="200" fixed="right">
-        <template #default="{ row }">
+      </template>
+      <template #operation="{ row }">
+        <t-space size="small">
           <t-link theme="primary" @click="openEditDialog(row)">{{ $t('common.edit', '编辑') }}</t-link>
-          <t-link v-if="row.status === 'draft'" theme="success" @click="reviewQuestion(row)">{{ $t('questionBank.review', '审核') }}</t-link>
           <t-link theme="danger" @click="removeQuestion(row)">{{ $t('common.delete', '删除') }}</t-link>
-        </template>
-      </t-table-column>
+        </t-space>
+      </template>
     </t-table>
+    <t-empty v-else description="当前题集暂无题目" class="question-empty">
+      <template #action>
+        <t-space>
+          <t-button theme="primary" @click="openCreateDialog">新增题目</t-button>
+          <t-popup trigger="click" placement="bottom" overlay-class-name="question-import-type-popup">
+            <t-button>{{ $t('questionBank.import') }}</t-button>
+            <template #content>
+              <div class="import-type-menu">
+                <button type="button" class="import-type-item" @click="openJsonImport">
+                  <span class="import-type-title">{{ $t('questionBank.jsonImport') }}</span>
+                  <span class="import-type-description">{{ $t('questionBank.jsonImportDescription') }}</span>
+                </button>
+                <button type="button" class="import-type-item" disabled>
+                  <span class="import-type-title">{{ $t('questionBank.wordImport') }} · {{ $t('questionBank.comingSoon') }}</span>
+                  <span class="import-type-description">{{ $t('questionBank.wordImportDescription') }}</span>
+                </button>
+                <button type="button" class="import-type-item" disabled>
+                  <span class="import-type-title">{{ $t('questionBank.pdfImport') }} · {{ $t('questionBank.comingSoon') }}</span>
+                  <span class="import-type-description">{{ $t('questionBank.pdfImportDescription') }}</span>
+                </button>
+              </div>
+            </template>
+          </t-popup>
+        </t-space>
+      </template>
+    </t-empty>
 
     <QuestionEditDialog
       v-model:visible="editVisible"
       :question="editingQuestion"
       :set-id="setId"
       :knowledge-base-id="knowledgeBaseId"
-      @saved="loadQuestions"
+      @saved="refreshAfterMutation"
     />
     <QuestionImportDialog
       v-model:visible="importVisible"
       :set-id="setId"
       :knowledge-base-id="knowledgeBaseId"
-      @imported="loadQuestions"
+      :current-questions="questions"
+      @imported="refreshAfterMutation"
     />
+    <QuestionGenerateDialog
+      v-model:visible="generateVisible"
+      :knowledge-base-id="knowledgeBaseId"
+      @generated="handleGenerated"
+    />
+    <t-dialog
+      v-model:visible="exportVisible"
+      header="导出评测集"
+      :confirm-btn="{ content: '确认导出', loading: exporting }"
+      :cancel-btn="{ content: '取消', disabled: exporting }"
+      @confirm="confirmExport"
+    >
+      <t-form label-align="top">
+        <t-form-item label="评测集名称" :required="true">
+          <t-input v-model="exportName" placeholder="请输入评测集名称" />
+        </t-form-item>
+        <t-form-item label="描述">
+          <t-textarea v-model="exportDescription" placeholder="可选描述" :autosize="{ minRows: 3, maxRows: 6 }" />
+        </t-form-item>
+      </t-form>
+    </t-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import {
   getQuestionSet, listQuestions, deleteQuestion as apiDeleteQuestion,
-  updateQuestionStatus, exportToEvaluationDataset,
+  exportToEvaluationDataset,
   type Question, type QuestionListFilter, type QuestionType,
 } from '@/api/question'
+import { resolveQuestionRows, resolveQuestionTotal } from '../questionData'
 
-const props = defineProps<{ setId: string; knowledgeBaseId: string }>()
-defineEmits<{ back: [] }>()
+const props = defineProps<{ setId: string; knowledgeBaseId: string; setName?: string }>()
+const emit = defineEmits<{ generated: []; changed: [total: number] }>()
 
 const questionTypes: QuestionType[] = ['single_choice', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer', 'essay', 'composite']
-const setName = ref('')
+const questionColumns = computed(() => [
+  { colKey: 'question_type', title: '类型', width: 100, cell: 'question_type' },
+  { colKey: 'stem_text', title: '题干', ellipsis: true },
+  { colKey: 'difficulty', title: '难度', width: 80, cell: 'difficulty' },
+  { colKey: 'status', title: '状态', width: 90, cell: 'status' },
+  { colKey: 'operation', title: '操作', width: 120, fixed: 'right', cell: 'operation' },
+])
+const fetchedSetName = ref('')
+const displaySetName = computed(() => props.setName?.trim() || fetchedSetName.value)
 const questions = ref<Question[]>([])
 const loading = ref(false)
 const filter = ref<QuestionListFilter>({})
 const editVisible = ref(false)
 const importVisible = ref(false)
+const generateVisible = ref(false)
+const exportVisible = ref(false)
+const exportName = ref('')
+const exportDescription = ref('')
+const exporting = ref(false)
 const editingQuestion = ref<Question | null>(null)
 
-async function loadQuestions() {
+async function loadQuestions(): Promise<number | null> {
   loading.value = true
   try {
     const res = await listQuestions(props.knowledgeBaseId, props.setId, filter.value, 1, 200)
-    questions.value = res.data || []
+    const rows = resolveQuestionRows<Question>(res)
+    questions.value = rows
+    return resolveQuestionTotal(res, rows)
   } catch (e: any) {
     MessagePlugin.error(e?.message || '加载题目失败')
+    questions.value = []
+    return null
   } finally {
     loading.value = false
   }
@@ -116,34 +210,58 @@ function openEditDialog(q: Question) {
   editVisible.value = true
 }
 
-async function reviewQuestion(q: Question) {
-  try {
-    await updateQuestionStatus(props.knowledgeBaseId, props.setId, q.id, { status: 'reviewed' })
-    MessagePlugin.success('审核通过')
-    await loadQuestions()
-  } catch (e: any) {
-    MessagePlugin.error(e?.message || '审核失败')
-  }
+function openJsonImport() {
+  importVisible.value = true
+}
+
+// TODO: Word/PDF import: upload document -> docreader text extraction ->
+// QuestionExtractionService structure recognition -> preview -> confirmed import.
+// docreader extracts text only; it does not identify question structure.
+
+function handleGenerated() {
+  emit('generated')
+}
+
+async function refreshAfterMutation() {
+  filter.value = {}
+  const total = await loadQuestions()
+  if (total !== null) emit('changed', total)
 }
 
 async function removeQuestion(q: Question) {
   try {
     await apiDeleteQuestion(props.knowledgeBaseId, props.setId, q.id)
     MessagePlugin.success('删除成功')
-    await loadQuestions()
+    await refreshAfterMutation()
   } catch (e: any) {
     MessagePlugin.error(e?.message || '删除失败')
   }
 }
 
-async function exportToEval() {
-  const name = prompt('请输入评测集名称', setName.value)
-  if (!name) return
+function openExportDialog() {
+  exportName.value = displaySetName.value
+  exportDescription.value = ''
+  exportVisible.value = true
+}
+
+async function confirmExport() {
+  const name = exportName.value.trim()
+  if (!name) {
+    MessagePlugin.warning('请输入评测集名称')
+    return
+  }
+  exporting.value = true
   try {
-    await exportToEvaluationDataset(props.knowledgeBaseId, props.setId, { name })
+    await exportToEvaluationDataset(props.knowledgeBaseId, props.setId, {
+      name,
+      description: exportDescription.value.trim(),
+    })
     MessagePlugin.success('导出成功')
+    exportVisible.value = false
   } catch (e: any) {
     MessagePlugin.error(e?.message || '导出失败')
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -164,21 +282,34 @@ function statusLabel(s: string) {
 }
 
 onMounted(async () => {
-  try {
-    const set = await getQuestionSet(props.knowledgeBaseId, props.setId)
-    setName.value = set.name
-  } catch { /* ignore */ }
+  if (!props.setName) {
+    try {
+      const set = await getQuestionSet(props.knowledgeBaseId, props.setId)
+      fetchedSetName.value = set.name
+    } catch { /* ignore */ }
+  }
   await loadQuestions()
 })
 
 import QuestionEditDialog from './QuestionEditDialog.vue'
 import QuestionImportDialog from './QuestionImportDialog.vue'
+import QuestionGenerateDialog from './QuestionGenerateDialog.vue'
 </script>
 
 <style scoped>
-.question-set-detail { padding: 16px; }
+.question-set-detail { min-width: 0; }
 .detail-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .detail-header h2 { flex: 1; margin: 0; }
-.header-actions { display: flex; gap: 8px; }
+.header-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.question-empty { padding: 48px 16px; }
+.import-type-menu { width: 320px; padding: 6px; }
+.import-type-item { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; border: 0; border-radius: 6px; color: var(--td-text-color-primary); background: transparent; text-align: left; cursor: pointer; }
+.import-type-item:not(:disabled):hover { background: var(--td-bg-color-container-hover); }
+.import-type-item:disabled { color: var(--td-text-color-disabled); cursor: not-allowed; }
+.import-type-title { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.import-type-description,
+.import-type-help { color: var(--td-text-color-secondary); font-size: 12px; line-height: 1.5; }
+.import-type-item:disabled .import-type-description,
+.import-type-item:disabled .import-type-help { color: var(--td-text-color-disabled); }
 </style>

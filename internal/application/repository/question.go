@@ -54,6 +54,18 @@ func (r *questionRepository) UpdateQuestionSet(ctx context.Context, qs *types.Qu
 	return r.db.WithContext(ctx).Save(qs).Error
 }
 
+func (r *questionRepository) UpdateQuestionSetSourceType(
+	ctx context.Context,
+	tenantID uint64,
+	setID string,
+	sourceType types.QuestionSetSourceType,
+) error {
+	return r.db.WithContext(ctx).
+		Model(&types.QuestionSet{}).
+		Where("tenant_id = ? AND id = ?", tenantID, setID).
+		Update("source_type", sourceType).Error
+}
+
 func (r *questionRepository) DeleteQuestionSet(ctx context.Context, tenantID uint64, id string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("tenant_id = ? AND question_set_id = ?", tenantID, id).Delete(&types.Question{}).Error; err != nil {

@@ -70,7 +70,10 @@ const kbLoading = ref(false);
 const docListLoading = ref(true);
 const isFAQ = computed(() => (kbInfo.value?.type || '') === 'faq');
 const isWiki = computed(() => !!kbInfo.value?.indexing_strategy?.wiki_enabled);
-const isQuestionBank = computed(() => (kbInfo.value?.type || '') === 'question_bank');
+const currentKbLoaded = computed(() => kbInfo.value?.id === kbId.value);
+const isQuestionBank = computed(() =>
+  currentKbLoaded.value && (kbInfo.value?.type || '') === 'question_bank'
+);
 const validTabs = computed(() => {
   if (isQuestionBank.value) return ['questions'] as const
   const tabs = ['documents', 'wiki', 'graph'] as const
@@ -408,6 +411,19 @@ const moveSelectedTargetName = ref('');
 const moveMode = ref<'reuse_vectors' | 'reparse'>('reuse_vectors');
 const moveSubmitting = ref(false);
 let movePollTimer: ReturnType<typeof setInterval> | null = null;
+
+const stopKbScopedPolling = () => {
+  stopWikiStatusPolling();
+  clearWikiStatusProbes();
+  if (timeout !== null) {
+    clearTimeout(timeout);
+    timeout = null;
+  }
+  if (movePollTimer) {
+    clearInterval(movePollTimer);
+    movePollTimer = null;
+  }
+};
 
 // View mode (grid / list) — persisted per browser
 type DocViewMode = 'grid' | 'list';
@@ -845,14 +861,18 @@ const loadKnowledgeBaseInfo = async (targetKbId: string, force = false) => {
     selectedTagId.value = '';
     // 重置store中的标签选择状态，避免上传文档时自动带上之前选择的标签
     uiStore.setSelectedTagId('');
-    if (!isFAQ.value) {
+    if (!isFAQ.value && !isQuestionBank.value) {
       docListLoading.value = true;
       loadKnowledgeFiles(targetKbId);
     } else {
       cardList.value = [];
       total.value = 0;
     }
-    loadTags(targetKbId, true);
+    if (!isQuestionBank.value) {
+      loadTags(targetKbId, true);
+    } else {
+      tagList.value = [];
+    }
   } catch (error) {
     if (!isCurrentKb(targetKbId)) return;
 
@@ -908,8 +928,13 @@ watch(activeKbTab, (tab) => {
 })
 
 watch(() => kbId.value, (newKbId, oldKbId) => {
-  if (!newKbId) {
+  if (newKbId !== oldKbId) {
     kbInfo.value = null;
+    activeKbTab.value = 'documents';
+    stopKbScopedPolling();
+  }
+
+  if (!newKbId) {
     cardList.value = [];
     total.value = 0;
     return;
@@ -2058,8 +2083,10 @@ async function createNewSession(value: string): Promise<void> {
               </t-tooltip>
             </div>
           </div>
-          <p class="document-subtitle">{{ $t('knowledgeEditor.document.subtitle') }}</p>
-          <p v-if="unsupportedFileTypes.length" class="parser-hint" @click="goToParserSettings">
+          <p class="document-subtitle">
+            {{ isQuestionBank ? '管理题集与题目，支持新增、导入、生成和导出评测集。' : $t('knowledgeEditor.document.subtitle') }}
+          </p>
+          <p v-if="!isQuestionBank && unsupportedFileTypes.length" class="parser-hint" @click="goToParserSettings">
             <t-icon name="info-circle" class="parser-hint-icon" />
             <span>{{$t('knowledgeBase.unsupportedTypesHint', {
               types: unsupportedFileTypes.map(t => '.' + t).join('、')
@@ -2067,7 +2094,7 @@ async function createNewSession(value: string): Promise<void> {
               }}</span>
             <span class="parser-hint-link">{{ $t('knowledgeBase.goToParserSettings') }} →</span>
           </p>
-          <p v-if="missingStorageEngine" class="storage-engine-warning" @click="handleOpenKBSettings">
+          <p v-if="!isQuestionBank && missingStorageEngine" class="storage-engine-warning" @click="handleOpenKBSettings">
             <t-icon name="info-circle" class="warning-icon" />
             <span>{{ $t('knowledgeBase.missingStorageEngine') }}</span>
             <span class="warning-link">{{ $t('knowledgeBase.goToStorageSettings') }} →</span>
@@ -2083,9 +2110,14 @@ async function createNewSession(value: string): Promise<void> {
       </div>
 
       <!-- Questions tab -->
-      <QuestionBank v-if="isQuestionBank && kbId" :knowledge-base-id="kbId" />
+      <QuestionBank
+        v-if="isQuestionBank && kbId"
+        :key="kbId"
+        :knowledge-base-id="kbId"
+        :enabled="isQuestionBank"
+      />
 
-      <template v-if="activeKbTab === 'documents' || (!isWiki && !isQuestionBank)">
+      <template v-if="currentKbLoaded && !isQuestionBank && (activeKbTab === 'documents' || !isWiki)">
         <div class="knowledge-main">
           <aside class="tag-sidebar">
             <div class="sidebar-header">
