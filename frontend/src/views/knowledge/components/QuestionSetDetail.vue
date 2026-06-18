@@ -81,37 +81,7 @@
         </t-space>
       </template>
     </t-table>
-    <t-empty v-else description="当前题集暂无题目" class="question-empty">
-      <template #action>
-        <t-space>
-          <t-button theme="primary" @click="openCreateDialog">新增题目</t-button>
-          <t-popup
-            v-model:visible="emptyImportMenuVisible"
-            trigger="click"
-            placement="bottom"
-            overlay-class-name="question-import-type-popup"
-          >
-            <t-button>{{ $t('questionBank.import') }}</t-button>
-            <template #content>
-              <div class="import-type-menu">
-                <button type="button" class="import-type-item" @click="openJsonImport">
-                  <span class="import-type-title">{{ $t('questionBank.jsonImport') }}</span>
-                  <span class="import-type-description">{{ $t('questionBank.jsonImportDescription') }}</span>
-                </button>
-                <button type="button" class="import-type-item" @click="openFileImport('word')">
-                  <span class="import-type-title">{{ $t('questionBank.wordImport') }}</span>
-                  <span class="import-type-description">{{ $t('questionBank.wordImportDescription') }}</span>
-                </button>
-                <button type="button" class="import-type-item" @click="openFileImport('pdf')">
-                  <span class="import-type-title">{{ $t('questionBank.pdfImport') }}</span>
-                  <span class="import-type-description">{{ $t('questionBank.pdfImportDescription') }}</span>
-                </button>
-              </div>
-            </template>
-          </t-popup>
-        </t-space>
-      </template>
-    </t-empty>
+    <t-empty v-else description="当前题集暂无题目" class="question-empty" />
 
     <QuestionEditDialog
       v-model:visible="editVisible"
@@ -192,7 +162,6 @@ const fileImportVisible = ref(false)
 const fileImportType = ref<'word' | 'pdf'>('word')
 const fileImportSession = ref(0)
 const headerImportMenuVisible = ref(false)
-const emptyImportMenuVisible = ref(false)
 const generateVisible = ref(false)
 const exportVisible = ref(false)
 const exportName = ref('')
@@ -228,7 +197,6 @@ function openEditDialog(q: Question) {
 
 async function closeAllImportMenus() {
   headerImportMenuVisible.value = false
-  emptyImportMenuVisible.value = false
   await nextTick()
 }
 
@@ -249,11 +217,10 @@ async function openFileImport(type: 'word' | 'pdf') {
   fileImportVisible.value = true
 }
 
-// Guard: if any import dialog opens, close the popup menus
+// Guard: if any import dialog opens, close the popup menu
 watch([fileImportVisible, importVisible], ([fileVisible, jsonVisible]) => {
   if (fileVisible || jsonVisible) {
     headerImportMenuVisible.value = false
-    emptyImportMenuVisible.value = false
   }
 })
 

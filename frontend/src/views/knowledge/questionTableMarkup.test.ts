@@ -74,11 +74,9 @@ test('offers JSON, Word, and PDF import entry points', () => {
 
 test('closes import type menu before opening import dialogs', () => {
   assert.equal(source.includes('headerImportMenuVisible'), true)
-  assert.equal(source.includes('emptyImportMenuVisible'), true)
   assert.equal(source.includes('closeAllImportMenus'), true)
   assert.equal(source.includes('await closeAllImportMenus()'), true)
   assert.equal(source.includes('v-model:visible="headerImportMenuVisible"'), true)
-  assert.equal(source.includes('v-model:visible="emptyImportMenuVisible"'), true)
   // openFileImport must close menu, destroy old dialog, then open fresh session
   assert.equal(source.includes("fileImportVisible.value = false"), true)
   assert.equal(source.includes("fileImportSession.value += 1"), true)
@@ -123,6 +121,50 @@ test('normalizes import file preview response arrays', () => {
   assert.equal(questionApiSource.includes('Array.isArray(source.items)'), true)
   assert.equal(questionApiSource.includes('Array.isArray(source.errors)'), true)
   assert.equal(questionApiSource.includes('Array.isArray(source.warnings)'), true)
+})
+
+test('empty state no longer has action slot', () => {
+  assert.equal(source.includes('<template #action>'), false)
+  assert.equal(source.includes('emptyImportMenuVisible'), false)
+})
+
+test('narrows file import dialog width to 680px', () => {
+  assert.equal(fileImportSource.includes(':width="680"'), true)
+  assert.equal(fileImportSource.includes(':width="800"'), false)
+})
+
+test('opens a non-modal drawer with preview list after successful parse', () => {
+  assert.equal(fileImportSource.includes('t-drawer'), true)
+  assert.equal(fileImportSource.includes('previewDrawerVisible'), true)
+  assert.equal(fileImportSource.includes('previewDrawerTitle'), true)
+  assert.equal(fileImportSource.includes('解析预览'), true)
+  assert.equal(fileImportSource.includes('attach="body"'), true)
+  assert.equal(fileImportSource.includes(':show-overlay="false"'), true)
+  assert.equal(fileImportSource.includes('size="520px"'), true)
+})
+
+test('preview drawer opens on successful parse and closes on cleanup', () => {
+  assert.equal(fileImportSource.includes('previewDrawerVisible.value = true'), true)
+  // cleanupDialogState must close drawer
+  const cleanupBody = fileImportSource.match(/function cleanupDialogState\(\) \{([\s\S]*?)  \}/)?.[1] || ''
+  assert.equal(cleanupBody.includes('previewDrawerVisible.value = false'), true)
+  // onFileSelected must also close drawer
+  const onFileBody = fileImportSource.match(/function onFileSelected\([^)]+\) \{([\s\S]*?)  \}/)?.[1] || ''
+  assert.equal(onFileBody.includes('previewDrawerVisible.value = false'), true)
+})
+
+test('has a view-results button to reopen the drawer', () => {
+  assert.equal(fileImportSource.includes('查看解析结果'), true)
+  assert.equal(fileImportSource.includes('previewDrawerVisible = true'), true)
+})
+
+test('import button stays in dialog footer, drawer has no footer', () => {
+  assert.equal(fileImportSource.includes('doConfirmImport'), true)
+  assert.equal(fileImportSource.includes(':footer="false"'), true)
+})
+
+test('dialog shifted left when drawer open', () => {
+  assert.equal(fileImportSource.includes('dialog-shifted-left'), true)
 })
 
 test('does not use native browser dialogs in question bank components', () => {
