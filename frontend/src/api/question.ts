@@ -128,6 +128,7 @@ export const previewImportFile = (
   setId: string,
   file: File,
   params: { default_question_type?: string; default_difficulty?: string; mode?: string } = {},
+  config?: { signal?: AbortSignal; timeout?: number },
 ): Promise<ImportFilePreviewResponse> => {
   const fd = new FormData()
   fd.append('file', file)
@@ -140,5 +141,7 @@ export const previewImportFile = (
   return postUpload(
     `/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/import-file/preview${query ? '?' + query : ''}`,
     fd,
+    undefined,
+    config,
   ).then(unwrap<ImportFilePreviewResponse>)
 }

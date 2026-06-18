@@ -4,8 +4,9 @@
     :header="dialogTitle"
     :width="800"
     :confirm-btn="null"
-    :cancel-btn="{ content: $t('common.cancel'), disabled: importing }"
-    @close="resetDialog"
+    :cancel-btn="{ content: $t('common.cancel') }"
+    :close-on-overlay-click="false"
+    @close="closeAndReset"
   >
     <!-- 1. File upload area -->
     <div class="file-upload-area">
@@ -134,7 +135,7 @@
     <!-- Custom footer -->
     <template #footer>
       <t-space size="small">
-        <t-button variant="outline" @click="dialogVisible = false">
+        <t-button variant="outline" @click="closeAndReset">
           {{ $t('common.cancel', '取消') }}
         </t-button>
         <t-button
@@ -187,7 +188,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { previewImportFile, importQuestions, type ImportFilePreviewResponse, type ImportQuestionItem, type QuestionType, type QuestionDifficulty } from '@/api/question'
@@ -209,7 +210,10 @@ const emit = defineEmits<{ 'update:visible': [value: boolean]; imported: [] }>()
 
 const dialogVisible = computed({
   get: () => props.visible,
-  set: (value: boolean) => emit('update:visible', value),
+  set: (value: boolean) => {
+    if (!value) closeAndReset()
+    // When value transitions to true from parent, that's handled by the watcher
+  },
 })
 
 const accept = computed(() => {
@@ -248,13 +252,52 @@ const parseConfig = ref({
   mode: 'rule',
 })
 
-const questionItems = computed(() => {
-  const items = previewResult.value?.items ?? []
-  // Apply edited items
-  if (previewResult.value) {
-    return items
+// --- Request cancellation ---
+const previewAbortController = ref<AbortController | null>(null)
+const activePreviewRequestId = ref(0)
+const importingRequestId = ref(0)
+
+function abortCurrentRequest() {
+  if (previewAbortController.value) {
+    previewAbortController.value.abort()
+    previewAbortController.value = null
   }
-  return []
+  activePreviewRequestId.value++
+}
+
+function cleanupDialogState() {
+  abortCurrentRequest()
+  selectedFile.value = null
+  previewResult.value = null
+  parsing.value = false
+  importing.value = false
+  editVisible.value = false
+  editingIndex.value = -1
+  editingItem.value = null
+  importMode.value = 'draft'
+  parseConfig.value = {
+    default_question_type: 'short_answer',
+    default_difficulty: 'medium',
+    mode: 'rule',
+  }
+  if (fileInputRef.value) {
+    fileInputRef.value.value = ''
+  }
+  previewAbortController.value = null
+}
+
+let closeGuard = false
+function closeAndReset() {
+  if (closeGuard) return
+  closeGuard = true
+  cleanupDialogState()
+  emit('update:visible', false)
+  // Reset guard after microtask so next open can proceed cleanly
+  Promise.resolve().then(() => { closeGuard = false })
+}
+
+const questionItems = computed(() => {
+  return previewResult.value?.items ?? []
 })
 
 const previewErrors = computed(() => previewResult.value?.errors ?? [])
@@ -265,12 +308,12 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
-function questionTypeLabel(t: QuestionType) {
+function questionTypeLabel(t2: QuestionType) {
   const map: Record<QuestionType, string> = {
     single_choice: '单选', multiple_choice: '多选', true_false: '判断',
     fill_blank: '填空', short_answer: '简答', essay: '论述', composite: '复合',
   }
-  return map[t] || t
+  return map[t2] || t2
 }
 
 function difficultyLabel(d: string) {
@@ -278,41 +321,76 @@ function difficultyLabel(d: string) {
   return map[d] || d
 }
 
-async function onFileSelected(event: Event) {
+function onFileSelected(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
+
+  // Abort any in-flight preview, clear old results
+  abortCurrentRequest()
+  previewResult.value = null
+  parsing.value = false
+  importing.value = false
+
   const ext = file.name.split('.').pop()?.toLowerCase()
   if (props.importType === 'word' && !['doc', 'docx'].includes(ext || '')) {
     MessagePlugin.warning('仅支持 DOC、DOCX 文件。')
+    selectedFile.value = null
+    input.value = ''
     return
   }
   if (props.importType === 'pdf' && ext !== 'pdf') {
     MessagePlugin.warning('仅支持 PDF 文件。')
+    selectedFile.value = null
+    input.value = ''
     return
   }
   selectedFile.value = file
-  previewResult.value = null
   input.value = ''
 }
 
 async function doPreviewParse() {
   if (!selectedFile.value) return
+
+  abortCurrentRequest()
+
+  const requestId = activePreviewRequestId.value + 1
+  activePreviewRequestId.value = requestId
+
+  const controller = new AbortController()
+  previewAbortController.value = controller
+
   parsing.value = true
   previewResult.value = null
+
   try {
     const result = await previewImportFile(
       props.knowledgeBaseId,
       props.setId,
       selectedFile.value,
       parseConfig.value,
+      { signal: controller.signal, timeout: 120000 },
     )
+
+    // Guard: ignore stale responses
+    if (requestId !== activePreviewRequestId.value) return
+    if (!props.visible) return
+
     previewResult.value = result
   } catch (e: any) {
+    // Guard: ignore cancelled requests
+    if (controller.signal.aborted) return
+    if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
+    // Guard: ignore stale responses
+    if (requestId !== activePreviewRequestId.value) return
+    if (!props.visible) return
+
     MessagePlugin.error(e?.message || '预览请求失败')
-    previewResult.value = null
   } finally {
-    parsing.value = false
+    if (requestId === activePreviewRequestId.value) {
+      parsing.value = false
+      previewAbortController.value = null
+    }
   }
 }
 
@@ -372,6 +450,9 @@ async function doConfirmImport() {
     return
   }
 
+  const requestId = importingRequestId.value + 1
+  importingRequestId.value = requestId
+
   importing.value = true
   try {
     // Apply import mode status to items
@@ -381,6 +462,11 @@ async function doConfirmImport() {
     }))
     const response: any = await importQuestions(props.knowledgeBaseId, props.setId, { items: itemsWithStatus })
     const result = response?.data ?? response
+
+    // Guard: ignore response if dialog was closed
+    if (requestId !== importingRequestId.value) return
+    if (!props.visible) return
+
     const errors = Array.isArray(result?.errors) ? result.errors : []
     const created = result?.created ?? 0
 
@@ -392,27 +478,45 @@ async function doConfirmImport() {
       MessagePlugin.warning(`导入成功 ${created} 道，${errors.length} 道失败`)
     }
     if (created > 0 && !errors.length) {
-      dialogVisible.value = false
-      resetDialog()
+      // Successful import — close dialog, which triggers closeAndReset
+      closeAndReset()
     }
   } catch (e: any) {
+    if (requestId !== importingRequestId.value) return
+    if (!props.visible) return
     MessagePlugin.error(e?.message || '导入失败')
   } finally {
-    importing.value = false
+    if (requestId === importingRequestId.value) {
+      importing.value = false
+    }
   }
 }
 
-function resetDialog() {
-  selectedFile.value = null
-  previewResult.value = null
-  parseConfig.value = { default_question_type: 'short_answer', default_difficulty: 'medium', mode: 'rule' }
-  importMode.value = 'draft'
-  editingItem.value = null
-  editingIndex.value = -1
-}
+// Watch visibility
+watch(
+  () => props.visible,
+  (visible) => {
+    if (visible) {
+      // Fresh open: ensure clean state
+      abortCurrentRequest()
+      cleanupDialogState()
+    }
+    // On close, closeAndReset is already called via @close / cancel button / dialogVisible setter
+  },
+)
 
-watch(() => props.visible, (visible) => {
-  if (visible) resetDialog()
+// Watch importType changes — fully reset
+watch(
+  () => props.importType,
+  () => {
+    if (props.visible) {
+      closeAndReset()
+    }
+  },
+)
+
+onBeforeUnmount(() => {
+  abortCurrentRequest()
 })
 </script>
 

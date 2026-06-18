@@ -118,6 +118,7 @@
       @imported="refreshAfterMutation"
     />
     <QuestionFileImportDialog
+      :key="`${fileImportType}-${fileImportSession}`"
       v-model:visible="fileImportVisible"
       :set-id="setId"
       :knowledge-base-id="knowledgeBaseId"
@@ -179,6 +180,7 @@ const editVisible = ref(false)
 const importVisible = ref(false)
 const fileImportVisible = ref(false)
 const fileImportType = ref<'word' | 'pdf'>('word')
+const fileImportSession = ref(0)
 const generateVisible = ref(false)
 const exportVisible = ref(false)
 const exportName = ref('')
@@ -218,6 +220,7 @@ function openJsonImport() {
 
 function openFileImport(type: 'word' | 'pdf') {
   fileImportType.value = type
+  fileImportSession.value += 1
   fileImportVisible.value = true
 }
 
