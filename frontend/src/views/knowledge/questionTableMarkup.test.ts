@@ -128,8 +128,9 @@ test('empty state no longer has action slot', () => {
   assert.equal(source.includes('emptyImportMenuVisible'), false)
 })
 
-test('narrows file import dialog width to 680px', () => {
-  assert.equal(fileImportSource.includes(':width="680"'), true)
+test('narrows file import dialog width to 560px', () => {
+  assert.equal(fileImportSource.includes('width="560px"'), true)
+  assert.equal(fileImportSource.includes(':width="680"'), false)
   assert.equal(fileImportSource.includes(':width="800"'), false)
 })
 
@@ -140,7 +141,8 @@ test('opens a non-modal drawer with preview list after successful parse', () => 
   assert.equal(fileImportSource.includes('解析预览'), true)
   assert.equal(fileImportSource.includes('attach="body"'), true)
   assert.equal(fileImportSource.includes(':show-overlay="false"'), true)
-  assert.equal(fileImportSource.includes('size="520px"'), true)
+  assert.equal(fileImportSource.includes('size="440px"'), true)
+  assert.equal(fileImportSource.includes('size="520px"'), false)
 })
 
 test('preview drawer opens on successful parse and closes on cleanup', () => {

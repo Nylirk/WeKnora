@@ -2,7 +2,7 @@
   <t-dialog
     v-model:visible="dialogVisible"
     :header="dialogTitle"
-    :width="680"
+    width="560px"
     :class="{ 'dialog-shifted-left': previewDrawerVisible }"
     :confirm-btn="null"
     :cancel-btn="{ content: $t('common.cancel') }"
@@ -20,7 +20,7 @@
           @change="onFileSelected"
         />
         <div class="file-upload-body">
-          <t-icon name="upload" size="28px" />
+          <t-icon name="upload" size="24px" />
           <span v-if="selectedFile">{{ $t('questionBank.fileImportSelected', { name: selectedFile.name, size: formatFileSize(selectedFile.size) }) }}</span>
           <span v-else>{{ $t('questionBank.fileImportSelect') }}</span>
           <t-button size="small" variant="outline" @click.stop="fileInputRef?.click()">
@@ -171,7 +171,7 @@
   <t-drawer
     v-model:visible="previewDrawerVisible"
     :header="previewDrawerTitle"
-    size="520px"
+    size="440px"
     placement="right"
     :footer="false"
     :show-overlay="false"
@@ -583,17 +583,17 @@ onBeforeUnmount(() => {
 .file-input { display: none; }
 .file-upload-body {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 10px; min-height: 120px; border: 1px dashed var(--td-component-stroke);
+  gap: 8px; min-height: 100px; border: 1px dashed var(--td-component-stroke);
   border-radius: 6px; color: var(--td-text-color-secondary);
   background: var(--td-bg-color-secondarycontainer); cursor: pointer;
-  padding: 16px;
+  padding: 12px; max-width: 100%; overflow-wrap: anywhere;
 }
 .parse-config { margin: 16px 0; }
 .config-item { display: flex; align-items: center; gap: 6px; }
 .config-label { font-size: 13px; color: var(--td-text-color-secondary); }
 .preview-area { margin-top: 16px; }
 .preview-stats { margin-bottom: 12px; }
-.raw-text { max-height: 120px; overflow-y: auto; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; background: var(--td-bg-color-secondarycontainer); padding: 12px; border-radius: 4px; }
+.raw-text { max-height: 160px; overflow-y: auto; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; background: var(--td-bg-color-secondarycontainer); padding: 12px; border-radius: 4px; }
 .question-preview-list { margin-top: 16px; }
 .question-preview-list h4 { margin: 0 0 12px; }
 .question-preview-item {
@@ -612,9 +612,9 @@ onBeforeUnmount(() => {
 .warning-text { color: var(--td-warning-color); }
 .error-text { color: var(--td-error-color); }
 
-/* Shift dialog left when preview drawer is open so the 520px drawer
-   does not overlap the dialog footer at 1366px viewport width */
+/* Shift dialog left slightly when drawer is open so the 440px drawer
+   does not overlap dialog footer at 1366px viewport (560px dialog). */
 .dialog-shifted-left {
-  margin-left: -180px;
+  margin-left: -44px;
 }
 </style>
