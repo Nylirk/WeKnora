@@ -85,13 +85,6 @@
         </t-list>
       </t-alert>
 
-      <!-- Raw text (collapsible, capped height) -->
-      <t-collapse v-if="rawTextPreview">
-        <t-collapse-panel :header="$t('questionBank.fileImportRawText')">
-          <pre class="raw-text">{{ rawTextPreview }}</pre>
-        </t-collapse-panel>
-      </t-collapse>
-
       <!-- View parsed results button: opens the drawer -->
       <t-button
         v-if="previewResult && questionItems.length && !previewDrawerVisible"
@@ -167,7 +160,7 @@
     </t-dialog>
   </t-dialog>
 
-  <!-- Preview drawer: parsed question list (non-modal, does not block dialog footer) -->
+  <!-- Preview drawer: parsed question list + raw text tabs -->
   <t-drawer
     v-model:visible="previewDrawerVisible"
     :header="previewDrawerTitle"
@@ -177,35 +170,43 @@
     :show-overlay="false"
     attach="body"
   >
-    <div class="preview-drawer-body">
-      <div v-if="questionItems.length" class="question-preview-list">
-        <div v-for="(item, index) in questionItems" :key="index" class="question-preview-item">
-          <div class="preview-item-header">
-            <t-tag size="small">{{
-              questionTypeLabel(item.question_type as QuestionType)
-            }}</t-tag>
-            <t-tag size="small" variant="light">{{ difficultyLabel(item.difficulty) }}</t-tag>
-            <span v-if="!item.answer_text" class="no-answer-tag">{{ $t('questionBank.fileImportEmptyAnswer') }}</span>
-            <t-space size="small">
-              <t-button size="small" variant="text" @click="editPreviewItem(index)">
-                {{ $t('questionBank.fileImportEdit') }}
-              </t-button>
-              <t-button size="small" variant="text" theme="danger" @click="removePreviewItem(index)">
-                {{ $t('questionBank.fileImportDelete') }}
-              </t-button>
-            </t-space>
+    <t-tabs v-model="drawerTab" class="preview-drawer-tabs">
+      <t-tab-panel value="questions" :label="`解析题目（${questionItems.length}）`">
+        <div class="preview-drawer-body">
+          <div v-if="questionItems.length" class="question-preview-list">
+            <div v-for="(item, index) in questionItems" :key="index" class="question-preview-item">
+              <div class="preview-item-header">
+                <t-tag size="small">{{
+                  questionTypeLabel(item.question_type as QuestionType)
+                }}</t-tag>
+                <t-tag size="small" variant="light">{{ difficultyLabel(item.difficulty) }}</t-tag>
+                <span v-if="!item.answer_text" class="no-answer-tag">{{ $t('questionBank.fileImportEmptyAnswer') }}</span>
+                <t-space size="small">
+                  <t-button size="small" variant="text" @click="editPreviewItem(index)">
+                    {{ $t('questionBank.fileImportEdit') }}
+                  </t-button>
+                  <t-button size="small" variant="text" theme="danger" @click="removePreviewItem(index)">
+                    {{ $t('questionBank.fileImportDelete') }}
+                  </t-button>
+                </t-space>
+              </div>
+              <div class="preview-item-stem">{{ item.stem_text }}</div>
+              <div v-if="item.answer_text" class="preview-item-answer">
+                <span class="answer-label">答案：</span>{{ item.answer_text }}
+              </div>
+              <div v-if="item.analysis_text" class="preview-item-analysis">
+                <span class="analysis-label">解析：</span>{{ item.analysis_text }}
+              </div>
+            </div>
           </div>
-          <div class="preview-item-stem">{{ item.stem_text }}</div>
-          <div v-if="item.answer_text" class="preview-item-answer">
-            <span class="answer-label">答案：</span>{{ item.answer_text }}
-          </div>
-          <div v-if="item.analysis_text" class="preview-item-analysis">
-            <span class="analysis-label">解析：</span>{{ item.analysis_text }}
-          </div>
+          <t-empty v-else :description="$t('questionBank.fileImportNoQuestions')" />
         </div>
-      </div>
-      <t-empty v-else :description="$t('questionBank.fileImportNoQuestions')" />
-    </div>
+      </t-tab-panel>
+      <t-tab-panel value="raw" :label="$t('questionBank.fileImportRawText')" :disabled="!rawTextPreview">
+        <pre v-if="rawTextPreview" class="drawer-raw-text">{{ rawTextPreview }}</pre>
+        <t-empty v-else description="无原始文本" />
+      </t-tab-panel>
+    </t-tabs>
   </t-drawer>
 </template>
 
@@ -266,6 +267,7 @@ const parsing = ref(false)
 const importing = ref(false)
 const previewResult = ref<ImportFilePreviewResponse | null>(null)
 const previewDrawerVisible = ref(false)
+const drawerTab = ref('questions')
 const importMode = ref<'draft' | 'reviewed'>('draft')
 const editVisible = ref(false)
 const editingIndex = ref(-1)
@@ -293,6 +295,7 @@ function abortCurrentRequest() {
 function cleanupDialogState() {
   abortCurrentRequest()
   previewDrawerVisible.value = false
+  drawerTab.value = 'questions'
   selectedFile.value = null
   previewResult.value = null
   parsing.value = false
@@ -611,6 +614,18 @@ onBeforeUnmount(() => {
 .import-mode-hint { margin: 8px 0 0; font-size: 12px; color: var(--td-text-color-secondary); }
 .warning-text { color: var(--td-warning-color); }
 .error-text { color: var(--td-error-color); }
+
+.drawer-raw-text {
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--td-bg-color-secondarycontainer);
+  padding: 12px;
+  border-radius: 4px;
+}
 
 /* Shift dialog left slightly when drawer is open so the 440px drawer
    does not overlap dialog footer at 1366px viewport (560px dialog). */

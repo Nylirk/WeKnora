@@ -134,7 +134,7 @@ test('narrows file import dialog width to 560px', () => {
   assert.equal(fileImportSource.includes(':width="800"'), false)
 })
 
-test('opens a non-modal drawer with preview list after successful parse', () => {
+test('opens a non-modal drawer with tabs for questions and raw text', () => {
   assert.equal(fileImportSource.includes('t-drawer'), true)
   assert.equal(fileImportSource.includes('previewDrawerVisible'), true)
   assert.equal(fileImportSource.includes('previewDrawerTitle'), true)
@@ -143,6 +143,18 @@ test('opens a non-modal drawer with preview list after successful parse', () => 
   assert.equal(fileImportSource.includes(':show-overlay="false"'), true)
   assert.equal(fileImportSource.includes('size="440px"'), true)
   assert.equal(fileImportSource.includes('size="520px"'), false)
+  // Drawer uses t-tabs for questions + raw text
+  assert.equal(fileImportSource.includes('t-tabs'), true)
+  assert.equal(fileImportSource.includes('t-tab-panel'), true)
+  assert.equal(fileImportSource.includes('drawerTab'), true)
+  assert.equal(fileImportSource.includes('解析题目'), true)
+})
+
+test('raw text preview moved from dialog to drawer', () => {
+  // Raw text t-collapse should not be in the dialog body
+  assert.equal(fileImportSource.includes('class="raw-text"'), false)
+  // Raw text is in the drawer now
+  assert.equal(fileImportSource.includes('drawer-raw-text'), true)
 })
 
 test('preview drawer opens on successful parse and closes on cleanup', () => {
