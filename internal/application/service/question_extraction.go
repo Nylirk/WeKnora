@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -29,7 +30,19 @@ var questionNumPattern = regexp.MustCompile(
 	`^[\s]*((?:\d+)[\.\)、]|(?:\d+)\s*[\.\)、\s]|（\s*\d+\s*）|[（\(]\s*\d+\s*[）\)]|[一二三四五六七八九十]+[、.）\)]|(?:Question\s*\d+))\s*`,
 )
 
-var optionLabelPattern = regexp.MustCompile(`^[\s]*([A-Da-d])[\.\)、]\s*`)
+// optionLabelPattern matches a single option label at line start: A. / a) / B．/ etc.
+// Supports A-Z (case-insensitive), fullwidth/halfwidth markers.
+var optionLabelPattern = regexp.MustCompile(`^[\s]*([A-Za-z])[\.\．\)\）、：:]\s*`)
+
+// inlineOptionPattern matches option markers anywhere in a line (not just start).
+// Used to split inline options like "A. foo B. bar C. baz".
+var inlineOptionPattern = regexp.MustCompile(`(?:^|[\s　]+)([A-Za-z])[\.\．\)\）、：:]\s*`)
+
+// bracketAnswerPattern matches answer letters in parentheses at end of stem.
+// Examples: （B）, (E), （A、C、E）, (A,C,E), （a、c、e）
+var bracketAnswerPattern = regexp.MustCompile(
+	`[（(]\s*([A-Za-z](?:\s*[,，、\s]\s*[A-Za-z])*)\s*[）)]`,
+)
 
 var answerLabelPattern = regexp.MustCompile(
 	`(?i)^[\s]*(?:答案|参考答案|答案解析|答案部分|答案解析部分|Answer\s*(?:Key)?|Explanation)[：:]\s*`,
@@ -62,7 +75,6 @@ func (s *QuestionExtractionService) Extract(ctx context.Context, text string, de
 	}
 
 	for i, block := range blocks {
-		// Check for context cancellation periodically (every 10 blocks)
 		if i%10 == 0 {
 			select {
 			case <-ctx.Done():
@@ -166,7 +178,7 @@ func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, c
 			continue
 		}
 
-		// Detect option line (A./B./C./D. markers)
+		// Detect option line (A./B./C./... markers, A-Z)
 		if !inAnswer && !inAnalysis && optionLabelPattern.MatchString(line) {
 			hasOptionMarkers = true
 			optionLines = append(optionLines, line)
@@ -198,6 +210,14 @@ func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, c
 			continue
 		}
 
+		// Option continuation: if we've seen options and this line is not a question marker,
+		// not an answer section, not an analysis section, treat it as continuation of the
+		// last option's content (or the stem before options began).
+		if hasOptionMarkers {
+			optionLines = append(optionLines, line)
+			continue
+		}
+
 		// Remaining content: part of stem
 		stemLines = append(stemLines, line)
 	}
@@ -213,19 +233,44 @@ func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, c
 	answerText := strings.TrimSpace(strings.Join(filterEmpty(answerLines), "\n"))
 	analysisText := strings.TrimSpace(strings.Join(filterEmpty(analysisLines), "\n"))
 
+	// Parse options (with inline splitting and continuation merging)
+	var options []types.QuestionOption
+	if hasOptionMarkers {
+		options = parseOptions(optionLines)
+	}
+
+	// If we have options but no explicit answer section, try extracting the answer
+	// from bracket notation in the stem: 下列正确的是（B）, (E), etc.
+	if len(options) >= 2 && answerText == "" {
+		optionLabelSet := make(map[string]bool, len(options))
+		for _, opt := range options {
+			optionLabelSet[opt.Label] = true
+		}
+		cleanStem, extractedAnswer, ok := extractChoiceAnswerFromStem(stemText, optionLabelSet)
+		if ok {
+			stemText = cleanStem
+			answerText = extractedAnswer
+		}
+	}
+
+	// Remove any remaining answer bracket from stem if it matches an option label
+	if answerText == "" && len(options) >= 2 {
+		cleaned := bracketAnswerPattern.ReplaceAllString(stemText, "")
+		if cleaned != stemText {
+			stemText = strings.TrimSpace(cleaned)
+		}
+	}
+
 	// Infer question type
-	questionType := s.inferQuestionType(stemText, hasOptionMarkers, optionLines, answerText, ctx)
+	questionType := s.inferQuestionType(stemText, options, answerText, ctx)
 
 	// Build question body for choice questions
 	questionBody := types.JSON(nil)
-	if hasOptionMarkers && (questionType == string(types.QuestionTypeSingleChoice) || questionType == string(types.QuestionTypeMultipleChoice)) {
-		options := parseOptions(optionLines)
-		if len(options) > 0 {
-			body := types.ChoiceQuestionBody{Options: options}
-			b, err := json.Marshal(body)
-			if err == nil {
-				questionBody = b
-			}
+	if len(options) >= 2 && (questionType == string(types.QuestionTypeSingleChoice) || questionType == string(types.QuestionTypeMultipleChoice)) {
+		body := types.ChoiceQuestionBody{Options: options}
+		b, err := json.Marshal(body)
+		if err == nil {
+			questionBody = b
 		}
 	}
 
@@ -254,7 +299,7 @@ func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, c
 }
 
 func (s *QuestionExtractionService) inferQuestionType(
-	stemText string, hasOptionMarkers bool, optionLines []string, answerText string, ctx *extractionContext,
+	stemText string, options []types.QuestionOption, answerText string, ctx *extractionContext,
 ) string {
 	defaultType := ctx.defaultType
 	if defaultType == "" {
@@ -273,9 +318,9 @@ func (s *QuestionExtractionService) inferQuestionType(
 		return string(types.QuestionTypeTrueFalse)
 	}
 
-	if hasOptionMarkers && len(optionLines) >= 2 {
-		cleanAnswer := strings.ToUpper(strings.TrimSpace(answerText))
-		if len(cleanAnswer) >= 2 && isMultiChoiceAnswer(cleanAnswer) && len(optionLines) >= 4 {
+	if len(options) >= 2 {
+		cleanAnswer := normalizeMultiChoiceAnswer(answerText)
+		if len(cleanAnswer) >= 2 && isMultiChoiceAnswer(answerText) {
 			return string(types.QuestionTypeMultipleChoice)
 		}
 		return string(types.QuestionTypeSingleChoice)
@@ -285,31 +330,174 @@ func (s *QuestionExtractionService) inferQuestionType(
 }
 
 func isMultiChoiceAnswer(answer string) bool {
-	if match, _ := regexp.MatchString(`^[A-Da-d]{2,}$`, answer); match {
-		return true
+	normalized := normalizeMultiChoiceAnswer(answer)
+	if len(normalized) < 2 {
+		return false
 	}
-	if match, _ := regexp.MatchString(`^[A-Da-d][,，\s、]+[A-Da-d]`, answer); match {
-		return true
+	// All characters must be A-Z
+	for _, r := range normalized {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
 	}
-	return false
+	return true
 }
 
+// normalizeMultiChoiceAnswer converts multi-choice answers like "A、C、E" or "A,C,E" to "ACE".
+func normalizeMultiChoiceAnswer(answer string) string {
+	a := strings.ToUpper(strings.TrimSpace(answer))
+	var b strings.Builder
+	for _, r := range a {
+		if r >= 'A' && r <= 'Z' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// parseOptions extracts option labels and content from lines.
+// Handles inline options on a single line (e.g. "A. foo B. bar C. baz"),
+// multi-line options, and continuation lines.
 func parseOptions(lines []string) []types.QuestionOption {
 	var options []types.QuestionOption
+
 	for _, line := range lines {
-		matches := optionLabelPattern.FindStringSubmatch(line)
-		if len(matches) < 2 {
-			continue
+		parts := splitInlineOptions(line)
+
+		// If this line has inline options, add them individually
+		if len(parts) > 0 {
+			for _, p := range parts {
+				content := strings.TrimSpace(p.Content)
+				if p.Label != "" && content != "" {
+					options = append(options, types.QuestionOption{
+						Label:   strings.ToUpper(p.Label),
+						Content: content,
+					})
+				}
+			}
+		} else {
+			// No option marker on this line: treat as continuation of the last option
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" && len(options) > 0 {
+				last := &options[len(options)-1]
+				if last.Content != "" {
+					last.Content += "\n" + trimmed
+				} else {
+					last.Content = trimmed
+				}
+			}
 		}
-		label := strings.ToUpper(matches[1])
-		content := optionLabelPattern.ReplaceAllString(line, "")
-		content = strings.TrimSpace(content)
+	}
+
+	// Remove duplicates (keep first occurrence) and empty content
+	seen := make(map[string]bool, len(options))
+	var deduped []types.QuestionOption
+	for _, opt := range options {
+		content := strings.TrimSpace(opt.Content)
 		if content == "" {
 			continue
 		}
-		options = append(options, types.QuestionOption{Label: label, Content: content})
+		if seen[opt.Label] {
+			continue
+		}
+		seen[opt.Label] = true
+		deduped = append(deduped, types.QuestionOption{Label: opt.Label, Content: content})
 	}
-	return options
+
+	return deduped
+}
+
+type optionPart struct {
+	Label   string
+	Content string
+}
+
+// splitInlineOptions splits a line at option marker positions.
+// "A. foo B. bar C. baz" → [{A, foo}, {B, bar}, {C, baz}]
+// If the line has at most one marker at the start, returns a single part.
+func splitInlineOptions(line string) []optionPart {
+	// Find all option marker positions
+	matches := inlineOptionPattern.FindAllStringSubmatchIndex(line, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	// Build parts: each part spans from its marker (after label+delimiter) to the next marker
+	var parts []optionPart
+	for i, m := range matches {
+		label := line[m[2]:m[3]] // capture group 1 → (A-Z)
+		contentStart := m[1]     // m[1] is the end of the full match (marker + delimiter)
+
+		var content string
+		if i+1 < len(matches) {
+			content = line[contentStart:matches[i+1][0]]
+		} else {
+			content = line[contentStart:]
+		}
+
+		parts = append(parts, optionPart{
+			Label:   strings.ToUpper(label),
+			Content: strings.TrimSpace(content),
+		})
+	}
+
+	return parts
+}
+
+// extractChoiceAnswerFromStem extracts answer letters from bracket notation in a stem,
+// e.g., "下列说法正确的是（B）" → cleanStem="下列说法正确的是", answer="B"
+// "下列选项正确的是（A、C、E）" → cleanStem="下列选项正确的是", answer="ACE"
+// Only extracts if all letters exist in optionLabels.
+func extractChoiceAnswerFromStem(stem string, optionLabels map[string]bool) (cleanStem string, answer string, ok bool) {
+	loc := bracketAnswerPattern.FindStringIndex(stem)
+	if loc == nil {
+		return stem, "", false
+	}
+
+	// Extract the bracket content
+	bracketContent := stem[loc[0]:loc[1]]
+
+	// Parse letters from the bracket
+	var letters []rune
+	for _, r := range bracketContent {
+		upper := unicode.ToUpper(r)
+		if upper >= 'A' && upper <= 'Z' {
+			letters = append(letters, upper)
+		}
+	}
+
+	if len(letters) == 0 {
+		return stem, "", false
+	}
+
+	// Validate: all extracted letters must exist in the parsed options
+	seen := make(map[rune]bool, len(letters))
+	var answerLetters []rune
+	for _, l := range letters {
+		label := string(l)
+		if !optionLabels[label] {
+			// A letter in the bracket doesn't match any option → don't extract
+			return stem, "", false
+		}
+		if !seen[l] {
+			seen[l] = true
+			answerLetters = append(answerLetters, l)
+		}
+	}
+
+	// Build answer string: "B" for single, "ACE" for multi
+	var answerBuilder strings.Builder
+	for _, l := range answerLetters {
+		answerBuilder.WriteRune(l)
+	}
+	answer = answerBuilder.String()
+
+	// Remove the bracket from the stem
+	cleanStem = strings.TrimSpace(stem[:loc[0]] + stem[loc[1]:])
+	// Also clean up any trailing space before the bracket
+	cleanStem = strings.TrimSpace(cleanStem)
+
+	return cleanStem, answer, true
 }
 
 func filterEmpty(lines []string) []string {
