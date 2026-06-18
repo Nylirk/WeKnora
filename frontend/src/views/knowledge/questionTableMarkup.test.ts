@@ -228,6 +228,20 @@ test('duplicate detection uses groups with raw text comparison', () => {
   assert.equal(fileImportSource.includes('忽略疑似重复题'), true)
 })
 
+test('raw text comparison dialog available on each question card', () => {
+  assert.equal(fileImportSource.includes('openRawCompare'), true)
+  assert.equal(fileImportSource.includes('rawCompareVisible'), true)
+  assert.equal(fileImportSource.includes('rawCompareItem'), true)
+  assert.equal(fileImportSource.includes('原文对比'), true)
+  // Comparison dialog template
+  assert.equal(fileImportSource.includes('raw-compare-body'), true)
+  assert.equal(fileImportSource.includes('getItemRawText'), true)
+  assert.equal(fileImportSource.includes('暂无原始文本'), true)
+  // Does not break import or parse
+  assert.equal(fileImportSource.includes('doPreviewParse'), true)
+  assert.equal(fileImportSource.includes('doConfirmImport'), true)
+})
+
 test('staged flow action with duplicateMode defaulting to skip', () => {
   assert.equal(fileImportSource.includes('handleFlowAction'), true)
   assert.equal(fileImportSource.includes('flowActionLabel'), true)

@@ -304,6 +304,7 @@ func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, c
 		AnswerBody:    normalizeJSONObject(nil),
 		AnalysisText:  analysisText,
 		GradingRubric: normalizeJSONObject(nil),
+			RawText:            rawText,
 		Difficulty:    difficulty,
 	}
 

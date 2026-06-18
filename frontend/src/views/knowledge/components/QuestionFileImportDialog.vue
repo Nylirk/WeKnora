@@ -152,6 +152,38 @@
     </t-dialog>
   </t-dialog>
 
+  <!-- Raw text comparison dialog -->
+  <t-dialog
+    v-model:visible="rawCompareVisible"
+    :header="`原文对比 · 第 ${rawCompareItem?.line_number || ''} 题`"
+    width="820px"
+    :confirm-btn="null"
+    :cancel-btn="{ content: '关闭' }"
+  >
+    <div v-if="rawCompareItem" class="raw-compare-body">
+      <t-row :gutter="16">
+        <t-col :span="6">
+          <div class="raw-compare-panel">
+            <div class="raw-compare-label">原始文本</div>
+            <pre v-if="getItemRawText(rawCompareItem)" class="raw-compare-text">{{ getItemRawText(rawCompareItem) }}</pre>
+            <t-empty v-else description="暂无原始文本，请检查后端 preview 是否返回 raw_text。" />
+          </div>
+        </t-col>
+        <t-col :span="6">
+          <div class="raw-compare-panel">
+            <div class="raw-compare-label">解析结果</div>
+            <div class="raw-compare-parsed">
+              <p><t-tag size="small">{{ questionTypeLabel(rawCompareItem.question_type as QuestionType) }}</t-tag> <t-tag size="small" variant="light">{{ difficultyLabel(rawCompareItem.difficulty) }}</t-tag></p>
+              <p><strong>题干：</strong>{{ rawCompareItem.stem_text }}</p>
+              <p v-if="rawCompareItem.answer_text"><strong>答案：</strong>{{ rawCompareItem.answer_text }}</p>
+              <p v-if="rawCompareItem.analysis_text"><strong>解析：</strong>{{ rawCompareItem.analysis_text }}</p>
+            </div>
+          </div>
+        </t-col>
+      </t-row>
+    </div>
+  </t-dialog>
+
   <!-- Preview drawer: stats + questions + duplicates + raw text -->
   <t-drawer
     v-model:visible="previewDrawerVisible"
@@ -182,6 +214,7 @@
                 <t-tag size="small" variant="light">{{ difficultyLabel(item.difficulty) }}</t-tag>
                 <span v-if="!item.answer_text" class="no-answer-tag">缺答案</span>
                 <t-space size="small">
+                  <t-button size="small" variant="text" @click="openRawCompare(item)">原文对比</t-button>
                   <t-button size="small" variant="text" @click="editPreviewItem(index)">编辑</t-button>
                   <t-button size="small" variant="text" theme="danger" @click="removePreviewItem(index)">移除</t-button>
                 </t-space>
@@ -297,6 +330,13 @@ const duplicateMode = ref<'include' | 'skip'>('skip')
 const editVisible = ref(false)
 const editingIndex = ref(-1)
 const editingItem = ref<ImportQuestionItem | null>(null)
+const rawCompareVisible = ref(false)
+const rawCompareItem = ref<ImportQuestionItem | null>(null)
+
+function openRawCompare(item: ImportQuestionItem) {
+  rawCompareItem.value = item
+  rawCompareVisible.value = true
+}
 
 const parseConfig = ref({
   default_question_type: 'short_answer',
@@ -328,6 +368,7 @@ function cleanupDialogState() {
   editVisible.value = false
   editingIndex.value = -1
   editingItem.value = null
+  rawCompareItem.value = null
   importMode.value = 'draft'
   duplicateMode.value = 'skip'
   parseConfig.value = {
@@ -681,6 +722,14 @@ onBeforeUnmount(() => {
 .dup-raw { font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow-y: auto; background: var(--td-bg-color-page); padding: 8px; border-radius: 3px; margin-bottom: 6px; }
 .dup-parsed { margin-bottom: 4px; }
 .dup-reason { font-size: 12px; color: var(--td-text-color-placeholder); margin-top: 6px; }
+
+/* Raw compare dialog */
+.raw-compare-body { min-height: 300px; }
+.raw-compare-panel { height: 100%; }
+.raw-compare-label { font-weight: 600; margin-bottom: 8px; font-size: 14px; }
+.raw-compare-text { max-height: 400px; overflow-y: auto; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; background: var(--td-bg-color-secondarycontainer); padding: 12px; border-radius: 4px; margin: 0; }
+.raw-compare-parsed { max-height: 400px; overflow-y: auto; }
+.raw-compare-parsed p { margin: 4px 0; font-size: 13px; line-height: 1.5; }
 .drawer-raw-text {
   max-height: calc(100vh - 200px);
   overflow-y: auto;
