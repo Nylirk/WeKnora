@@ -880,3 +880,130 @@ func assertOption(t *testing.T, options []types.QuestionOption, label, content s
 		t.Errorf("option %s content = %q, should contain %q", label, opt.Content, content)
 	}
 }
+
+func TestInlineOptionsUseSequentialLabelsOnly(t *testing.T) {
+	svc := newTestExtractionService()
+	text := "1. 以下哪个描述正确？（B） A. This is e.g. a JavaScript runtime B. DeferredRegister C. EventBus D. ItemStack E. ModContainer"
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+	if q.AnswerText != "B" {
+		t.Errorf("answer = %q, want B", q.AnswerText)
+	}
+
+	options := getOptionsFromBody(t, q.QuestionBody)
+	if len(options) != 5 {
+		t.Fatalf("expected 5 options, got %d: %v", len(options), optionLabels(options))
+	}
+
+	aOpt := getOption(options, "A")
+	if aOpt == nil {
+		t.Fatal("option A not found")
+	}
+	if !strings.Contains(aOpt.Content, "e.g. a JavaScript runtime") {
+		t.Errorf("A content = %q, should contain 'e.g. a JavaScript runtime'", aOpt.Content)
+	}
+	if !strings.Contains(aOpt.Content, "This is") {
+		t.Errorf("A content = %q, should start with 'This is'", aOpt.Content)
+	}
+
+	assertOption(t, options, "B", "DeferredRegister")
+	assertOption(t, options, "C", "EventBus")
+	assertOption(t, options, "D", "ItemStack")
+	assertOption(t, options, "E", "ModContainer")
+}
+
+func TestInlineOptionsRejectMissingLabel(t *testing.T) {
+	svc := newTestExtractionService()
+	text := "1. 以下哪个描述正确？（A） A. 选项一 C. 选项三 D. 选项四"
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+
+	options := getOptionsFromBody(t, q.QuestionBody)
+	if len(options) >= 3 {
+		t.Errorf("expected < 3 options (A/C/D not all sequential), got %d: %v",
+			len(options), optionLabels(options))
+	}
+	if q.QuestionType == string(types.QuestionTypeSingleChoice) && len(options) >= 3 {
+		t.Error("missing B should prevent 3-option single_choice")
+	}
+}
+
+func TestInlineOptionsRejectOutOfOrderLabels(t *testing.T) {
+	svc := newTestExtractionService()
+	text := "1. 以下哪个描述正确？（A） A. 选项一 C. 选项三 B. 选项二 D. 选项四"
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+
+	options := getOptionsFromBody(t, q.QuestionBody)
+	if len(options) >= 4 {
+		t.Errorf("expected < 4 options (out-of-order labels rejected), got %d: %v",
+			len(options), optionLabels(options))
+	}
+}
+
+func TestInlineOptionsRejectDuplicateLabels(t *testing.T) {
+	svc := newTestExtractionService()
+	text := "1. 以下哪个描述正确？（A） A. 选项一 B. 选项二 B. 重复选项 C. 选项三"
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+
+	options := getOptionsFromBody(t, q.QuestionBody)
+	if len(options) > 2 {
+		t.Errorf("expected <=2 options (duplicate B rejected), got %d: %v",
+			len(options), optionLabels(options))
+	}
+
+	bCount := 0
+	for _, opt := range options {
+		if opt.Label == "B" {
+			bCount++
+		}
+	}
+	if bCount > 1 {
+		t.Errorf("expected at most 1 option B, got %d", bCount)
+	}
+
+	bOpt := getOption(options, "B")
+	if bOpt == nil {
+		t.Fatal("option B not found")
+	}
+	if !strings.Contains(bOpt.Content, "选项二") {
+		t.Errorf("B content = %q, should contain '选项二'", bOpt.Content)
+	}
+}
+
+func TestInlineOptionsRejectsNonStartingA(t *testing.T) {
+	svc := newTestExtractionService()
+	text := "1. 题目 B. 选项二 C. 选项三"
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+
+	options := getOptionsFromBody(t, q.QuestionBody)
+	if len(options) != 0 {
+		t.Errorf("expected 0 options (no starting A), got %d: %v", len(options), optionLabels(options))
+	}
+	qtype := q.QuestionType
+	if qtype != string(types.QuestionTypeShortAnswer) && qtype != string(types.QuestionTypeFillBlank) {
+		t.Errorf("type = %q, want short_answer (no valid sequential A)", qtype)
+	}
+}

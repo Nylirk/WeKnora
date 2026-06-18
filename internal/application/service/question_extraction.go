@@ -420,33 +420,60 @@ type optionPart struct {
 
 // splitInlineOptions splits a line at option marker positions.
 // "A. foo B. bar C. baz" → [{A, foo}, {B, bar}, {C, baz}]
-// If the line has at most one marker at the start, returns a single part.
+// Only accepts markers in strict sequential order (A, B, C, D, E, ...).
+// Non-sequential markers (e.g. "e." in "e.g.") are skipped and treated
+// as part of the current option's content.
 func splitInlineOptions(line string) []optionPart {
-	// Find all option marker positions
-	matches := inlineOptionPattern.FindAllStringSubmatchIndex(line, -1)
-	if len(matches) == 0 {
+	candidates := inlineOptionPattern.FindAllStringSubmatchIndex(line, -1)
+	if len(candidates) < 2 {
 		return nil
 	}
 
-	// Build parts: each part spans from its marker (after label+delimiter) to the next marker
-	var parts []optionPart
-	for i, m := range matches {
-		label := line[m[2]:m[3]] // capture group 1 → (A-Z)
-		contentStart := m[1]     // m[1] is the end of the full match (marker + delimiter)
+	// Filter candidates: only accept those whose label matches the expected
+	// next letter in sequence (A, B, C, ...).
+	type acceptedMarker struct {
+		labelStart int // submatch group 1 start
+		fullEnd    int // full match end
+		label      string
+	}
+	var accepted []acceptedMarker
+	expected := rune('A')
+	for i := range candidates {
+		m := candidates[i]
+		labelStart := m[2] // submatch group 1 → (A-Z)
+		labelEnd := m[3]
+		fullEnd := m[1] // full match end (marker + delimiter)
+		label := strings.ToUpper(line[labelStart:labelEnd])
+		if len(label) != 1 || rune(label[0]) != expected {
+			continue // skip non-sequential markers (e.g. "e." in "e.g.")
+		}
+		accepted = append(accepted, acceptedMarker{
+			labelStart: labelStart,
+			fullEnd:    fullEnd,
+			label:      label,
+		})
+		expected++
+	}
 
+	if len(accepted) < 2 {
+		return nil
+	}
+
+	// Build parts using accepted marker boundaries
+	var parts []optionPart
+	for i, am := range accepted {
+		contentStart := am.fullEnd
 		var content string
-		if i+1 < len(matches) {
-			content = line[contentStart:matches[i+1][0]]
+		if i+1 < len(accepted) {
+			content = line[contentStart:accepted[i+1].labelStart]
 		} else {
 			content = line[contentStart:]
 		}
-
 		parts = append(parts, optionPart{
-			Label:   strings.ToUpper(label),
+			Label:   am.label,
 			Content: strings.TrimSpace(content),
 		})
 	}
-
 	return parts
 }
 
@@ -518,15 +545,35 @@ func extractChoiceAnswerFromStem(stem string, optionLabels map[string]bool) (cle
 // Returns (stem, optionSource, true) when at least 2 option markers are found;
 // otherwise ("", "", false).
 func splitStemInlineOptions(line string) (stem string, optionSource string, ok bool) {
-	matches := inlineOptionPattern.FindAllStringSubmatchIndex(line, -1)
-	if len(matches) < 2 {
+	candidates := inlineOptionPattern.FindAllStringSubmatchIndex(line, -1)
+	if len(candidates) < 2 {
 		return "", "", false
 	}
 
-	// The first marker's start position marks the boundary between stem and options.
-	firstMarkerStart := matches[0][0]
-	stem = strings.TrimSpace(line[:firstMarkerStart])
-	optionSource = strings.TrimSpace(line[firstMarkerStart:])
+	// Filter: only accept sequential labels starting from A.
+	// Non-sequential markers (e.g. bracket answers, English punctuation,
+	// out-of-order letters) are ignored so the stem boundary is correct.
+	var firstAccepted *struct{ labelStart int }
+	expected := rune('A')
+	acceptedCount := 0
+	for _, m := range candidates {
+		label := strings.ToUpper(line[m[2]:m[3]])
+		if len(label) != 1 || rune(label[0]) != expected {
+			continue
+		}
+		if acceptedCount == 0 {
+			firstAccepted = &struct{ labelStart int }{m[2]}
+		}
+		acceptedCount++
+		expected++
+	}
+
+	if acceptedCount < 2 || firstAccepted == nil {
+		return "", "", false
+	}
+
+	stem = strings.TrimSpace(line[:firstAccepted.labelStart])
+	optionSource = strings.TrimSpace(line[firstAccepted.labelStart:])
 	return stem, optionSource, true
 }
 
