@@ -147,7 +147,7 @@ test('opens a non-modal drawer with tabs for questions and raw text', () => {
   assert.equal(fileImportSource.includes('t-tabs'), true)
   assert.equal(fileImportSource.includes('t-tab-panel'), true)
   assert.equal(fileImportSource.includes('drawerTab'), true)
-  assert.equal(fileImportSource.includes('解析题目'), true)
+  assert.equal(fileImportSource.includes('全部'), true)
 })
 
 test('raw text preview moved from dialog to drawer', () => {
@@ -204,6 +204,34 @@ test('reviewed status shows reviewer tooltip', () => {
   assert.equal(source.includes('reviewed_by'), true)
   assert.equal(source.includes('reviewed_at'), true)
   assert.equal(source.includes('t-tooltip'), true)
+})
+
+test('stats moved from main dialog to drawer', () => {
+  assert.equal(fileImportSource.includes('drawer-stats'), true)
+  assert.equal(fileImportSource.includes('previewStats.detected_questions'), true)
+  assert.equal(fileImportSource.includes('previewStats.with_answer'), true)
+  assert.equal(fileImportSource.includes('previewStats.without_answer'), true)
+})
+
+test('duplicate detection and resolution UI exists', () => {
+  assert.equal(fileImportSource.includes('duplicateCount'), true)
+  assert.equal(fileImportSource.includes('duplicateResolution'), true)
+  assert.equal(fileImportSource.includes('classifyQuestionImportItemsWithinFile'), true)
+  assert.equal(fileImportSource.includes('疑似重复'), true)
+  assert.equal(fileImportSource.includes('保留重复并导入全部'), true)
+  assert.equal(fileImportSource.includes('跳过疑似重复'), true)
+  assert.equal(fileImportSource.includes('resolveDuplicates'), true)
+})
+
+test('import guard prevents silent duplicate dropping', () => {
+  assert.equal(fileImportSource.includes("duplicateResolution.value === 'unresolved'"), true)
+  assert.equal(fileImportSource.includes("duplicateCount.value > 0"), true)
+  assert.equal(fileImportSource.includes("drawerTab.value = 'duplicates'"), true)
+  assert.equal(fileImportSource.includes('itemsToImport'), true)
+  assert.equal(fileImportSource.includes('canImport'), true)
+  assert.equal(fileImportSource.includes('importButtonText'), true)
+  // Must not silently use classified.uniqueItems
+  assert.equal(fileImportSource.includes('skipDuplicates'), false)
 })
 
 test('does not use native browser dialogs in question bank components', () => {

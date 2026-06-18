@@ -53,19 +53,14 @@
       </t-space>
     </div>
 
-    <!-- 3. Preview area -->
+    <!-- 3. Preview summary -->
     <div v-if="previewResult" class="preview-area">
-      <!-- Stats -->
-      <div class="preview-stats">
-        <t-space size="small" break-line>
-          <t-tag variant="light">{{ $t('questionBank.fileImportDetected') }}：{{ previewStats.detected_questions }}</t-tag>
-          <t-tag theme="success" variant="light">{{ $t('questionBank.fileImportWithAnswer') }}：{{ previewStats.with_answer }}</t-tag>
-          <t-tag theme="warning" variant="light">{{ $t('questionBank.fileImportWithoutAnswer') }}：{{ previewStats.without_answer }}</t-tag>
-          <t-tag v-if="previewWarnings.length" theme="danger" variant="light">
-            {{ previewWarnings.length }} 条警告
-          </t-tag>
-        </t-space>
-      </div>
+      <t-space size="small" break-line>
+        <t-tag variant="light">识别 {{ questionItems.length }} 题</t-tag>
+        <t-tag v-if="duplicateCount" theme="warning" variant="light">疑似重复 {{ duplicateCount }} 题</t-tag>
+        <t-tag v-if="previewWarnings.length" theme="danger" variant="light">{{ previewWarnings.length }} 条警告</t-tag>
+        <t-tag v-if="previewErrors.length" theme="error" variant="light">{{ previewErrors.length }} 条错误</t-tag>
+      </t-space>
 
       <!-- Warnings -->
       <t-alert v-if="previewWarnings.length" theme="warning" :close-btn="false">
@@ -80,14 +75,14 @@
       <t-alert v-if="previewErrors.length" theme="error" :close-btn="false">
         <t-list size="small">
           <t-list-item v-for="(e, i) in previewErrors" :key="'err-' + i">
-            <span class="error-text">{{ $t('questionBank.fileImportError', '错误') }}：{{ e.message }}</span>
+            <span class="error-text">{{ e.message }}</span>
           </t-list-item>
         </t-list>
       </t-alert>
 
-      <!-- View parsed results button: opens the drawer -->
+      <!-- View parsed results button -->
       <t-button
-        v-if="previewResult && questionItems.length && !previewDrawerVisible"
+        v-if="!previewDrawerVisible"
         variant="outline"
         block
         @click="previewDrawerVisible = true"
@@ -115,10 +110,10 @@
         <t-button
           theme="primary"
           :loading="importing"
-          :disabled="!previewResult || !questionItems.length"
+          :disabled="!canImport"
           @click="doConfirmImport"
         >
-          {{ $t('questionBank.fileImportConfirm', '确认导入') }}
+          {{ importButtonText }}
         </t-button>
       </t-space>
     </template>
@@ -160,7 +155,7 @@
     </t-dialog>
   </t-dialog>
 
-  <!-- Preview drawer: parsed question list + raw text tabs -->
+  <!-- Preview drawer: stats + questions + duplicates + raw text -->
   <t-drawer
     v-model:visible="previewDrawerVisible"
     :header="previewDrawerTitle"
@@ -170,39 +165,77 @@
     :show-overlay="false"
     attach="body"
   >
+    <!-- Stats bar at drawer top -->
+    <div class="drawer-stats">
+      <t-space size="small" break-line>
+        <t-tag variant="light">识别 {{ previewStats.detected_questions }} 题</t-tag>
+        <t-tag theme="success" variant="light">有答案 {{ previewStats.with_answer }}</t-tag>
+        <t-tag theme="warning" variant="light">缺答案 {{ previewStats.without_answer }}</t-tag>
+        <t-tag v-if="duplicateCount" theme="danger" variant="light">疑似重复 {{ duplicateCount }}</t-tag>
+      </t-space>
+    </div>
+
+    <!-- Duplicate resolution bar -->
+    <div v-if="duplicateCount > 0 && duplicateResolution === 'unresolved'" class="duplicate-resolution-bar">
+      <t-alert theme="warning" :close-btn="false">
+        检测到 {{ duplicateCount }} 条疑似重复题，请确认处理方式后再导入。
+      </t-alert>
+      <t-space size="small" style="margin-top: 8px">
+        <t-button size="small" variant="outline" @click="resolveDuplicates('include')">
+          保留重复并导入全部 ({{ questionItems.length }})
+        </t-button>
+        <t-button size="small" variant="outline" theme="warning" @click="resolveDuplicates('skip')">
+          跳过疑似重复 ({{ classifiedPreview.uniqueItems.length }})
+        </t-button>
+      </t-space>
+    </div>
+    <div v-else-if="duplicateCount > 0" class="duplicate-resolution-bar">
+      <t-alert theme="info" :close-btn="false">
+        {{ duplicateResolution === 'include' ? '将保留疑似重复题，导入全部。' : `将跳过疑似重复题，导入 ${classifiedPreview.uniqueItems.length} 题。` }}
+      </t-alert>
+    </div>
+
     <t-tabs v-model="drawerTab" class="preview-drawer-tabs">
-      <t-tab-panel value="questions" :label="`解析题目（${questionItems.length}）`">
+      <t-tab-panel value="questions" :label="`全部（${questionItems.length}）`">
         <div class="preview-drawer-body">
           <div v-if="questionItems.length" class="question-preview-list">
             <div v-for="(item, index) in questionItems" :key="index" class="question-preview-item">
               <div class="preview-item-header">
-                <t-tag size="small">{{
-                  questionTypeLabel(item.question_type as QuestionType)
-                }}</t-tag>
+                <t-tag size="small">{{ questionTypeLabel(item.question_type as QuestionType) }}</t-tag>
                 <t-tag size="small" variant="light">{{ difficultyLabel(item.difficulty) }}</t-tag>
-                <span v-if="!item.answer_text" class="no-answer-tag">{{ $t('questionBank.fileImportEmptyAnswer') }}</span>
+                <span v-if="!item.answer_text" class="no-answer-tag">缺答案</span>
                 <t-space size="small">
-                  <t-button size="small" variant="text" @click="editPreviewItem(index)">
-                    {{ $t('questionBank.fileImportEdit') }}
-                  </t-button>
-                  <t-button size="small" variant="text" theme="danger" @click="removePreviewItem(index)">
-                    {{ $t('questionBank.fileImportDelete') }}
-                  </t-button>
+                  <t-button size="small" variant="text" @click="editPreviewItem(index)">编辑</t-button>
+                  <t-button size="small" variant="text" theme="danger" @click="removePreviewItem(index)">移除</t-button>
                 </t-space>
               </div>
               <div class="preview-item-stem">{{ item.stem_text }}</div>
-              <div v-if="item.answer_text" class="preview-item-answer">
-                <span class="answer-label">答案：</span>{{ item.answer_text }}
-              </div>
-              <div v-if="item.analysis_text" class="preview-item-analysis">
-                <span class="analysis-label">解析：</span>{{ item.analysis_text }}
-              </div>
+              <div v-if="item.answer_text" class="preview-item-answer"><span class="answer-label">答案：</span>{{ item.answer_text }}</div>
             </div>
           </div>
-          <t-empty v-else :description="$t('questionBank.fileImportNoQuestions')" />
+          <t-empty v-else description="无题目" />
         </div>
       </t-tab-panel>
-      <t-tab-panel value="raw" :label="$t('questionBank.fileImportRawText')" :disabled="!rawTextPreview">
+      <t-tab-panel value="duplicates" :label="`疑似重复（${duplicateCount}）`" :disabled="!duplicateCount">
+        <div class="preview-drawer-body">
+          <div v-if="classifiedPreview.duplicateItems.length" class="question-preview-list">
+            <div v-for="(item, index) in classifiedPreview.duplicateItems" :key="index" class="question-preview-item">
+              <div class="preview-item-header">
+                <t-tag size="small">{{ questionTypeLabel(item.question_type as QuestionType) }}</t-tag>
+                <t-tag size="small" variant="light">{{ difficultyLabel(item.difficulty) }}</t-tag>
+                <t-tag theme="warning" size="small" variant="light">本次文件内重复</t-tag>
+                <t-space size="small">
+                  <t-button size="small" variant="text" theme="danger" @click="removePreviewItem(questionItems.indexOf(item))">移除</t-button>
+                </t-space>
+              </div>
+              <div class="preview-item-stem">{{ item.stem_text }}</div>
+              <div v-if="item.answer_text" class="preview-item-answer"><span class="answer-label">答案：</span>{{ item.answer_text }}</div>
+            </div>
+          </div>
+          <t-empty v-else description="无重复题" />
+        </div>
+      </t-tab-panel>
+      <t-tab-panel value="raw" label="原始文本" :disabled="!rawTextPreview">
         <pre v-if="rawTextPreview" class="drawer-raw-text">{{ rawTextPreview }}</pre>
         <t-empty v-else description="无原始文本" />
       </t-tab-panel>
@@ -215,7 +248,7 @@ import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { previewImportFile, importQuestions, type ImportFilePreviewResponse, type ImportQuestionItem, type QuestionType, type QuestionDifficulty } from '@/api/question'
-import { classifyQuestionImportItems, selectQuestionImportItems } from '../questionData'
+import { classifyQuestionImportItemsWithinFile } from '../questionData'
 
 const { t } = useI18n()
 
@@ -269,6 +302,7 @@ const previewResult = ref<ImportFilePreviewResponse | null>(null)
 const previewDrawerVisible = ref(false)
 const drawerTab = ref('questions')
 const importMode = ref<'draft' | 'reviewed'>('draft')
+const duplicateResolution = ref<'unresolved' | 'include' | 'skip'>('unresolved')
 const editVisible = ref(false)
 const editingIndex = ref(-1)
 const editingItem = ref<ImportQuestionItem | null>(null)
@@ -304,6 +338,7 @@ function cleanupDialogState() {
   editingIndex.value = -1
   editingItem.value = null
   importMode.value = 'draft'
+  duplicateResolution.value = 'unresolved'
   parseConfig.value = {
     default_question_type: 'short_answer',
     default_difficulty: 'medium',
@@ -356,6 +391,38 @@ const rawTextPreview = computed(() => {
   const raw = (previewResult.value as any)?.raw_text_preview
   return typeof raw === 'string' ? raw : ''
 })
+
+const classifiedPreview = computed(() => classifyQuestionImportItemsWithinFile(questionItems.value))
+const duplicateCount = computed(() => classifiedPreview.value.duplicateItems.length)
+
+const itemsToImport = computed(() => {
+  if (duplicateCount.value === 0) return questionItems.value
+  if (duplicateResolution.value === 'include') return questionItems.value
+  if (duplicateResolution.value === 'skip') return classifiedPreview.value.uniqueItems
+  return questionItems.value
+})
+
+const canImport = computed(() => {
+  if (!previewResult.value || !questionItems.value.length) return false
+  if (duplicateCount.value > 0 && duplicateResolution.value === 'unresolved') return false
+  return true
+})
+
+const importButtonText = computed(() => {
+  if (!previewResult.value) return '确认导入'
+  if (duplicateCount.value > 0 && duplicateResolution.value === 'unresolved') return '处理重复后导入'
+  return `确认导入 ${itemsToImport.value.length} 题`
+})
+
+function resolveDuplicates(mode: 'include' | 'skip') {
+  duplicateResolution.value = mode
+  drawerTab.value = 'questions'
+  MessagePlugin.success(
+    mode === 'include'
+      ? '已选择保留疑似重复题，点击确认导入继续'
+      : '已选择跳过疑似重复题，点击确认导入继续',
+  )
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + ' B'
@@ -490,23 +557,17 @@ function removePreviewItem(index: number) {
 
 async function doConfirmImport() {
   if (!previewResult.value) return
-  const items = previewResult.value.items
-  if (!items.length) {
+  const toImport = itemsToImport.value
+  if (!toImport.length) {
     MessagePlugin.warning('没有可导入的题目')
     return
   }
 
-  // Classify and select (respect duplicates)
-  const fingerprints = (props.currentQuestions || []).map((q: any) => ({
-    question_type: q.question_type,
-    stem_text: q.stem_text,
-    answer_text: q.answer_text,
-  }))
-  const classified = classifyQuestionImportItems(items, fingerprints)
-  const toImport = selectQuestionImportItems(items, classified, false)
-
-  if (!toImport.length && classified.duplicateItems.length > 0) {
-    MessagePlugin.warning('没有可导入的新题，已跳过重复题。')
+  // Guard: duplicates unresolved — require explicit user decision
+  if (duplicateCount.value > 0 && duplicateResolution.value === 'unresolved') {
+    previewDrawerVisible.value = true
+    drawerTab.value = 'duplicates'
+    MessagePlugin.warning(`检测到 ${duplicateCount.value} 条疑似重复题，请确认处理方式后再导入。`)
     return
   }
 
@@ -515,7 +576,6 @@ async function doConfirmImport() {
 
   importing.value = true
   try {
-    // Apply import mode status to items
     const itemsWithStatus = toImport.map(item => ({
       ...item,
       status: importMode.value,
@@ -523,22 +583,25 @@ async function doConfirmImport() {
     const response: any = await importQuestions(props.knowledgeBaseId, props.setId, { items: itemsWithStatus })
     const result = response?.data ?? response
 
-    // Guard: ignore response if dialog was closed
     if (requestId !== importingRequestId.value) return
     if (!props.visible) return
 
     const errors = Array.isArray(result?.errors) ? result.errors : []
     const created = result?.created ?? 0
+    const skipped = duplicateCount.value > 0 && duplicateResolution.value === 'skip' ? duplicateCount.value : 0
+
+    let msg = `解析 ${questionItems.value.length} 题，成功导入 ${created} 题`
+    if (skipped) msg += `，跳过重复 ${skipped} 题`
+    if (errors.length) msg += `，失败 ${errors.length} 题`
 
     if (created > 0) {
-      MessagePlugin.success(`成功导入 ${created} 道题目`)
+      MessagePlugin.success(msg)
       emit('imported')
     }
     if (errors.length) {
-      MessagePlugin.warning(`导入成功 ${created} 道，${errors.length} 道失败`)
+      MessagePlugin.warning(`导入 ${created}/${toImport.length} 题，${errors.length} 条错误`)
     }
     if (created > 0 && !errors.length) {
-      // Successful import — close dialog, which triggers closeAndReset
       closeAndReset()
     }
   } catch (e: any) {
@@ -615,6 +678,8 @@ onBeforeUnmount(() => {
 .warning-text { color: var(--td-warning-color); }
 .error-text { color: var(--td-error-color); }
 
+.drawer-stats { padding: 0 0 12px; border-bottom: 1px solid var(--td-component-stroke); margin-bottom: 8px; }
+.duplicate-resolution-bar { margin-bottom: 12px; }
 .drawer-raw-text {
   max-height: calc(100vh - 200px);
   overflow-y: auto;

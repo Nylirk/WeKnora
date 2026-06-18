@@ -176,6 +176,26 @@ export function classifyQuestionImportItems(
   return { uniqueItems, duplicateItems }
 }
 
+export function classifyQuestionImportItemsWithinFile(
+  items: ImportQuestionItem[],
+): QuestionImportClassification {
+  const seenFingerprints = new Set<string>()
+  const uniqueItems: ImportQuestionItem[] = []
+  const duplicateItems: ImportQuestionItem[] = []
+
+  for (const item of items) {
+    const fingerprint = questionFingerprint(item)
+    if (seenFingerprints.has(fingerprint)) {
+      duplicateItems.push(item)
+      continue
+    }
+    seenFingerprints.add(fingerprint)
+    uniqueItems.push(item)
+  }
+
+  return { uniqueItems, duplicateItems }
+}
+
 export function selectQuestionImportItems(
   items: ImportQuestionItem[],
   classified: QuestionImportClassification,
