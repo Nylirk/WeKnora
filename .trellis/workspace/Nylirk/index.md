@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
-- **Last Active**: 2026-06-16
+- **Total Sessions**: 6
+- **Last Active**: 2026-06-18
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~177 | Active |
+| `journal-1.md` | ~223 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-06-18 | 实现题库 DOC/DOCX/PDF 文件导入与预览 | `d324df99`, `51bab9e1`, `4bb3216e`, `f045a189`, `f934ddab`, `a0b23a7d`, `9453d9e3`, `4d05cc2e` | `feat/document-question-import` |
 | 5 | 2026-06-16 | Align evaluation UI with knowledge base cards | `d1300a0e`, `e0e716a1`, `abb8a68a` | `-` |
 | 4 | 2026-06-16 | Fix frontend vendor chunk cycle | `2ea770f1` | `codex/rag-evaluation-v2` |
 | 3 | 2026-06-15 | Fix evaluation startup dependency ordering | `6b0f2b15` | `codex/rag-evaluation-v2` |

@@ -175,3 +175,49 @@ Reworked evaluation UI into knowledge-base-style dataset cards, query-driven det
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: 实现题库 DOC/DOCX/PDF 文件导入与预览
+
+**Date**: 2026-06-18
+**Task**: 实现题库 DOC/DOCX/PDF 文件导入与预览
+**Branch**: `feat/document-question-import`
+
+### Summary
+
+新增 DOC/DOCX/PDF 文件导入预览功能。
+
+后端：新增 import-file/preview endpoint，规则版 QuestionExtractionService 文本抽题，直接调用 docreader 不经过 chunk pipeline，ImportQuestions 支持 caller-controlled status，文件大小限制 20MB。
+
+前端：QuestionFileImportDialog 文件上传/解析预览/确认导入，遮罩层不可关闭，AbortController + requestId 防 stale response，Word/PDF 类型隔离，导入菜单受控关闭，nullable field 安全计算。
+
+修复：弹窗状态隔离、X/取消可用、parseBlock 双返回值编译问题、预览超时 120s、空文本不报硬错。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d324df99` | (see git log) |
+| `51bab9e1` | (see git log) |
+| `4bb3216e` | (see git log) |
+| `f045a189` | (see git log) |
+| `f934ddab` | (see git log) |
+| `a0b23a7d` | (see git log) |
+| `9453d9e3` | (see git log) |
+| `4d05cc2e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
