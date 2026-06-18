@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
@@ -597,6 +599,7 @@ func (s *QuestionExtractionService) fileExtension(name string) string {
 
 // PreviewImportQuestionsFromFile extracts text from a document file and parses
 // questions from it without persisting to the database.
+// It does NOT create knowledge, chunks, or embeddings.
 func (s *QuestionService) PreviewImportQuestionsFromFile(
 	ctx context.Context,
 	kbID, setID string,
@@ -604,12 +607,13 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 	fileName string,
 	req *types.ImportFilePreviewRequest,
 ) (*types.ImportFilePreviewResponse, error) {
-	// 1. Validate KB is question_bank
-	qs, err := s.getQuestionSetForKB(ctx, kbID, setID)
-	if err != nil {
+	log := logger.GetLogger(ctx)
+	log.Infof("[import-file preview] started: kb=%s set=%s file=%s size=%d", kbID, setID, fileName, len(fileData))
+
+	// 1. Validate KB is question_bank (this also validates set belongs to kb)
+	if _, err := s.getQuestionSetForKB(ctx, kbID, setID); err != nil {
 		return nil, err
 	}
-	_ = qs
 
 	// 2. Validate file extension
 	if !isValidImportFileExtension(fileName) {
@@ -625,38 +629,55 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 	}
 
 	// 4. Determine file type for docreader
-	fileType := s.extractionService.fileExtension(fileName) // use service method
-	if fileType == "" {
-		fileType = strings.ToLower(fileName[strings.LastIndex(fileName, "."):])
-	}
-	// Strip dot
-	fileType = strings.TrimPrefix(fileType, ".")
+	fileType := strings.TrimPrefix(
+		strings.ToLower(fileName[strings.LastIndex(fileName, "."):]),
+		".",
+	)
 
-	// 5. Extract text using docreader
+	// 5. Extract text using docreader with a timeout
 	if s.docReader == nil || !s.docReader.IsConnected() {
 		return nil, apperrors.NewBadRequestError("文档解析服务不可用，请稍后重试。")
 	}
-	readResp, err := s.docReader.Read(ctx, &types.ReadRequest{
+
+	readCtx, readCancel := context.WithTimeout(ctx, 120*time.Second)
+	defer readCancel()
+
+	log.Infof("[import-file preview] docreader read started: file=%s type=%s", fileName, fileType)
+	readResp, err := s.docReader.Read(readCtx, &types.ReadRequest{
 		FileContent: fileData,
 		FileName:    fileName,
 		FileType:    fileType,
 	})
 	if err != nil {
+		if readCtx.Err() == context.DeadlineExceeded {
+			log.Warnf("[import-file preview] docreader timed out: file=%s", fileName)
+			return nil, apperrors.NewBadRequestError("文档解析超时，请尝试拆分文件或使用 JSON/JSONL 导入。")
+		}
+		log.Errorf("[import-file preview] docreader read failed: file=%s err=%v", fileName, err)
 		return nil, apperrors.NewBadRequestError(
 			fmt.Sprintf("文档解析失败: %s", err.Error()),
 		)
 	}
 	if readResp.Error != "" {
+		log.Errorf("[import-file preview] docreader returned error: file=%s err=%s", fileName, readResp.Error)
 		return nil, apperrors.NewBadRequestError(
 			fmt.Sprintf("文档解析失败: %s", readResp.Error),
 		)
 	}
+	log.Infof("[import-file preview] docreader read finished: file=%s markdown_len=%d", fileName, len(readResp.MarkdownContent))
 
 	extractedText := strings.TrimSpace(readResp.MarkdownContent)
 	if extractedText == "" {
-		return nil, apperrors.NewBadRequestError(
-			"未能从文件中抽取文本，请确认文件内容可复制，或等待 OCR 支持。",
-		)
+		// Return an empty preview response instead of a hard error,
+		// so the frontend can show the warning without getting stuck.
+		log.Warnf("[import-file preview] empty text extracted: file=%s", fileName)
+		return &types.ImportFilePreviewResponse{
+			Items:   nil,
+			Errors:  nil,
+			Warnings: []string{"未能从文件中抽取文本，请确认文件内容可复制，或等待 OCR 支持。"},
+			RawTextPreview: "",
+			Stats: types.ImportFilePreviewStats{},
+		}, nil
 	}
 
 	// 6. Parse questions from extracted text
@@ -672,6 +693,7 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 	// Check context cancellation before extraction
 	select {
 	case <-ctx.Done():
+		log.Infof("[import-file preview] cancelled before extraction: file=%s", fileName)
 		return nil, apperrors.NewBadRequestError("请求已取消")
 	default:
 	}
@@ -679,6 +701,8 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 	items, parseErrors, parseWarnings := s.extractionService.Extract(
 		ctx, extractedText, defaultType, defaultDifficulty,
 	)
+	log.Infof("[import-file preview] extraction finished: items=%d errors=%d warnings=%d",
+		len(items), len(parseErrors), len(parseWarnings))
 
 	// 7. Build response stats
 	withAnswer := 0
@@ -691,11 +715,17 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 		}
 	}
 
+	// Truncate raw text for preview (first 4000 chars is enough to verify content)
+	rawText := extractedText
+	if len([]rune(rawText)) > 4000 {
+		rawText = string([]rune(rawText)[:4000]) + "\n... (truncated)"
+	}
+
 	return &types.ImportFilePreviewResponse{
 		Items:          items,
 		Errors:         parseErrors,
 		Warnings:       parseWarnings,
-		RawTextPreview: extractedText,
+		RawTextPreview: rawText,
 		Stats: types.ImportFilePreviewStats{
 			DetectedQuestions: len(items),
 			WithAnswer:        withAnswer,
