@@ -364,7 +364,26 @@ func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID strin
 		}
 		// Respect caller-supplied status; otherwise auto-determine.
 		if item.Status != "" {
-			q.Status = types.QuestionStatus(item.Status)
+			switch types.QuestionStatus(item.Status) {
+			case types.QuestionStatusDraft:
+				q.Status = types.QuestionStatusDraft
+			case types.QuestionStatusRejected:
+				q.Status = types.QuestionStatusRejected
+			case types.QuestionStatusReviewed:
+				// When caller requests reviewed, validate structurally first.
+				// On failure, degrade to draft so the data still lands safely.
+				if errs := types.ValidateQuestionForReview(q); len(errs) == 0 {
+					q.Status = types.QuestionStatusReviewed
+				} else {
+					q.Status = types.QuestionStatusDraft
+				}
+			default:
+				result.Errors = append(result.Errors, types.ImportQuestionError{
+					LineNumber: item.LineNumber,
+					Message:    fmt.Sprintf("不支持的状态值: %s，仅允许 draft / reviewed / rejected", item.Status),
+				})
+				continue
+			}
 		} else {
 			q.Status = structuredQuestionStatus(q)
 		}
@@ -650,8 +669,15 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 		defaultDifficulty = string(types.QuestionDifficultyMedium)
 	}
 
+	// Check context cancellation before extraction
+	select {
+	case <-ctx.Done():
+		return nil, apperrors.NewBadRequestError("请求已取消")
+	default:
+	}
+
 	items, parseErrors, parseWarnings := s.extractionService.Extract(
-		extractedText, defaultType, defaultDifficulty,
+		ctx, extractedText, defaultType, defaultDifficulty,
 	)
 
 	// 7. Build response stats

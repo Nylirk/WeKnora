@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"regexp"
 	"strings"
@@ -21,6 +22,7 @@ type extractionContext struct {
 	defaultType       string
 	defaultDifficulty string
 	lineCount         int
+	errors            []types.ImportQuestionError
 }
 
 var questionNumPattern = regexp.MustCompile(
@@ -33,26 +35,22 @@ var answerLabelPattern = regexp.MustCompile(
 	`(?i)^[\s]*(?:答案|参考答案|答案解析|答案部分|答案解析部分|Answer\s*(?:Key)?|Explanation)[：:]\s*`,
 )
 
-var answerSectionPattern = regexp.MustCompile(
-	`(?i)参考答案|答案解析|答案部分|答案解析部分|Answer\s*Key|^\s*Explanation\s*$`,
-)
-
 var analysisLabelPattern = regexp.MustCompile(`(?i)^[\s]*(?:解析|分析|答案解析)[：:]\s*`)
 
 var blankMarkerPattern = regexp.MustCompile(`[（(]\s*[）)]|___+|_{3,}|\.{3,}`)
 
 // Extract extracts question items from plain text using rule-based heuristics.
-func (s *QuestionExtractionService) Extract(text string, defaultQuestionType string, defaultDifficulty string) (
+func (s *QuestionExtractionService) Extract(ctx context.Context, text string, defaultQuestionType string, defaultDifficulty string) (
 	items []types.ImportQuestionItem, errors []types.ImportQuestionError, warnings []string,
 ) {
-	ctx := &extractionContext{
+	ext := &extractionContext{
 		defaultType:       defaultQuestionType,
 		defaultDifficulty: defaultDifficulty,
 	}
 
 	normalized := normalizeText(text)
 	lines := splitAndCleanLines(normalized)
-	ctx.lineCount = len(lines)
+	ext.lineCount = len(lines)
 
 	if len(lines) == 0 {
 		return nil, nil, []string{"未能从文件中抽取文本，请确认文件内容可复制，或等待 OCR 支持。"}
@@ -64,17 +62,29 @@ func (s *QuestionExtractionService) Extract(text string, defaultQuestionType str
 	}
 
 	for i, block := range blocks {
-		item := s.parseBlock(block, i+1, ctx)
+		// Check for context cancellation periodically (every 10 blocks)
+		if i%10 == 0 {
+			select {
+			case <-ctx.Done():
+				return items, ext.errors, append(warnings, "请求已取消")
+			default:
+			}
+		}
+		item, err := s.parseBlock(block, i+1, ext)
+		if err != nil {
+			ext.errors = append(ext.errors, *err)
+			continue
+		}
 		if item != nil {
 			items = append(items, *item)
 		}
 	}
 
-	if len(items) == 0 {
+	if len(items) == 0 && len(ext.errors) == 0 {
 		warnings = append(warnings, "未识别到题目，请检查文档题号格式，或使用 JSON/JSONL 导入。")
 	}
 
-	return items, errors, warnings
+	return items, ext.errors, warnings
 }
 
 func normalizeText(text string) string {
@@ -115,9 +125,9 @@ func partitionIntoBlocks(lines []string) [][]string {
 	return blocks
 }
 
-func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, ctx *extractionContext) *types.ImportQuestionItem {
+func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, ctx *extractionContext) (*types.ImportQuestionItem, *types.ImportQuestionError) {
 	if len(lines) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	stemLine := questionNumPattern.ReplaceAllString(lines[0], "")
@@ -194,16 +204,9 @@ func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, c
 
 	stemText := strings.TrimSpace(strings.Join(filterEmpty(stemLines), "\n"))
 	if stemText == "" {
-		return &types.ImportQuestionItem{
-			LineNumber:        blockIndex,
-			QuestionType:      ctx.defaultType,
-			Difficulty:        ctx.defaultDifficulty,
-			QuestionBody:      normalizeJSONObject(nil),
-			AnswerBody:        normalizeJSONObject(nil),
-			GradingRubric:     normalizeJSONObject(nil),
-			KnowledgePoints:   normalizeJSONArray(nil),
-			Tags:              normalizeJSONArray(nil),
-			EvidenceChunkIDs:  normalizeJSONArray(nil),
+		return nil, &types.ImportQuestionError{
+			LineNumber: blockIndex,
+			Message:    "未识别到题干，请检查题号后的内容。",
 		}
 	}
 

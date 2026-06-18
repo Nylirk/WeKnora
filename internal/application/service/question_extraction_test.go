@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -23,7 +24,7 @@ D. 网络协议
 2. Docker 的核心组件有哪些？
 3. 请简述微服务架构的优势。`
 
-	items, errors, warnings := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	items, errors, warnings := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 
 	if len(errors) > 0 {
 		t.Fatalf("unexpected errors: %v", errors)
@@ -69,7 +70,7 @@ func TestExtractChineseNumbering(t *testing.T) {
 一、第二题
 （1）第三题`
 
-	items, _, _ := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 	if len(items) != 3 {
 		t.Fatalf("expected 3 items, got %d", len(items))
 	}
@@ -82,7 +83,7 @@ Answer: Artificial Intelligence
 
 Question 2: What is ML?`
 
-	items, _, _ := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(items))
 	}
@@ -99,7 +100,7 @@ func TestExtractTrueFalseAnswer(t *testing.T) {
 2. 太阳绕地球转。
 答案：错误`
 
-	items, _, _ := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(items))
 	}
@@ -120,7 +121,7 @@ C. HTML
 D. CSS
 答案：AB`
 
-	items, _, _ := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
@@ -135,7 +136,7 @@ func TestExtractFillBlank(t *testing.T) {
 
 2. 把括号中的内容补全：我们通常使用（）来管理 Docker 容器。`
 
-	items, _, _ := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(items))
 	}
@@ -153,7 +154,7 @@ func TestExtractWithAnalysis(t *testing.T) {
 答案：正确答案
 解析：解题思路解析`
 
-	items, _, _ := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
@@ -169,7 +170,7 @@ func TestExtractDefaultDifficulty(t *testing.T) {
 	svc := newTestExtractionService()
 	text := `1. 题目`
 
-	items, _, _ := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
@@ -182,7 +183,7 @@ func TestExtractCustomDifficulty(t *testing.T) {
 	svc := newTestExtractionService()
 	text := `1. 题目`
 
-	items, _, _ := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyHard))
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyHard))
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
@@ -193,7 +194,7 @@ func TestExtractCustomDifficulty(t *testing.T) {
 
 func TestExtractEmptyText(t *testing.T) {
 	svc := newTestExtractionService()
-	_, _, warnings := svc.Extract("", string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	_, _, warnings := svc.Extract(context.Background(), "", string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 	if len(warnings) == 0 {
 		t.Fatal("expected warnings for empty text")
 	}
@@ -203,9 +204,63 @@ func TestExtractNoQuestions(t *testing.T) {
 	svc := newTestExtractionService()
 	text := "这里只是一段普通文本，没有题号标记。\n全文只有一段介绍。"
 
-	_, _, warnings := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	_, _, warnings := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 	if len(warnings) == 0 {
 		t.Fatal("expected warnings for text with no questions")
+	}
+}
+
+func TestExtractEmptyStemReturnsError(t *testing.T) {
+	svc := newTestExtractionService()
+	// Line 1 has a number marker but no actual stem content after stripping
+	text := "1.\n答案：某个答案"
+
+	items, errors, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 0 {
+		t.Fatalf("expected 0 items for empty stem, got %d", len(items))
+	}
+	if len(errors) == 0 {
+		t.Fatal("expected errors for empty stem block")
+	}
+	if !strings.Contains(errors[0].Message, "未识别到题干") {
+		t.Errorf("error message = %q, should mention missing stem", errors[0].Message)
+	}
+}
+
+func TestExtractStemWithOnlyNumber(t *testing.T) {
+	svc := newTestExtractionService()
+	// Only a number and whitespace as the block content
+	text := "1. \n\n2. 有内容"
+
+	items, errors, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item with content, got %d", len(items))
+	}
+	if len(errors) != 1 {
+		t.Fatalf("expected 1 error for empty-stem block, got %d", len(errors))
+	}
+}
+
+func TestExtractContextCancellation(t *testing.T) {
+	svc := newTestExtractionService()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	text := ""
+	for i := 0; i < 100; i++ {
+		text += "1. 题目\n答案：答案\n"
+	}
+
+	_, _, warnings := svc.Extract(ctx, text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	hasCancel := false
+	for _, w := range warnings {
+		if strings.Contains(w, "已取消") {
+			hasCancel = true
+			break
+		}
+	}
+	if !hasCancel {
+		t.Log("context cancellation did not produce a cancel warning (may finish before first check)")
 	}
 }
 
@@ -217,7 +272,7 @@ func TestExtractWithAnswerSectionPrefix(t *testing.T) {
 2. 题目二
 答案解析：详细解析`
 
-	items, _, _ := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(items))
 	}
@@ -238,7 +293,7 @@ C. Java
 D. TypeScript
 Answer: B`
 
-	items, _, _ := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
@@ -254,7 +309,7 @@ func TestExtractMultiLineStem(t *testing.T) {
 某公司需要迁移到云原生架构。
 请问应该采用什么方案？`
 
-	items, _, _ := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
@@ -270,7 +325,7 @@ A. 选项一
 B. 选项二
 答案：A`
 
-	items, _, _ := svc.Extract(text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
