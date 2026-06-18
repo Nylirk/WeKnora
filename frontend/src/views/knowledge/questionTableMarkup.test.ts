@@ -36,7 +36,7 @@ test('renders only spaced edit and delete row actions', () => {
   assert.equal(operationSlot.includes('openEditDialog(row)'), true)
   assert.equal(operationSlot.includes('removeQuestion(row)'), true)
   assert.equal(operationSlot.includes('reviewQuestion(row)'), false)
-  assert.equal(source.includes('updateQuestionStatus'), false)
+  assert.equal(source.includes('updateQuestionStatus'), true)
 })
 
 test('passes current questions into duplicate detection and syncs totals to the selected set', () => {
@@ -179,6 +179,31 @@ test('import button stays in dialog footer, drawer has no footer', () => {
 
 test('dialog shifted left when drawer open', () => {
   assert.equal(fileImportSource.includes('dialog-shifted-left'), true)
+})
+
+test('question table has row selection and batch actions', () => {
+  assert.equal(source.includes("type: 'multiple'"), true)
+  assert.equal(source.includes('selectedRowKeys'), true)
+  assert.equal(source.includes('onSelectChange'), true)
+  assert.equal(source.includes('batchReview'), true)
+  assert.equal(source.includes('batchDelete'), true)
+  assert.equal(source.includes('批量审核'), true)
+  assert.equal(source.includes('批量删除'), true)
+  assert.equal(source.includes('清空选择'), true)
+})
+
+test('draft status is clickable for single question review', () => {
+  assert.equal(source.includes('reviewSingleQuestion'), true)
+  assert.equal(source.includes('updateQuestionStatus'), true)
+  assert.equal(source.includes("row.status === 'draft'"), true)
+  // No old review button in operation column
+  assert.equal(source.includes('reviewQuestion(row)'), false)
+})
+
+test('reviewed status shows reviewer tooltip', () => {
+  assert.equal(source.includes('reviewed_by'), true)
+  assert.equal(source.includes('reviewed_at'), true)
+  assert.equal(source.includes('t-tooltip'), true)
 })
 
 test('does not use native browser dialogs in question bank components', () => {

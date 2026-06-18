@@ -324,6 +324,13 @@ func (s *QuestionService) UpdateQuestionStatus(ctx context.Context, kbID, setID,
 		}
 	}
 	q.Status = newStatus
+	if newStatus == types.QuestionStatusReviewed {
+		now := time.Now()
+		q.ReviewedAt = &now
+		if userID, ok := types.UserIDFromContext(ctx); ok && userID != "" && !types.IsSyntheticUserID(userID) {
+			q.ReviewedBy = userID
+		}
+	}
 	if err := s.repository.UpdateQuestion(ctx, q); err != nil {
 		return nil, err
 	}

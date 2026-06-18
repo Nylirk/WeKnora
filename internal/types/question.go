@@ -81,6 +81,8 @@ type Question struct {
 	GradingRubric      JSON            `json:"grading_rubric" gorm:"type:jsonb;not null"`
 	Difficulty         QuestionDifficulty `json:"difficulty" gorm:"type:varchar(16);not null;default:'medium'"`
 	Status             QuestionStatus  `json:"status" gorm:"type:varchar(32);not null;default:'draft'"`
+	ReviewedBy         string          `json:"reviewed_by" gorm:"type:varchar(36);not null;default:''"`
+	ReviewedAt         *time.Time      `json:"reviewed_at"`
 	KnowledgePoints    JSON            `json:"knowledge_points" gorm:"type:jsonb;not null"`
 	Tags                JSON            `json:"tags" gorm:"type:jsonb;not null"`
 	SourceKnowledgeID  string          `json:"source_knowledge_id" gorm:"type:varchar(36);not null;default:''"`

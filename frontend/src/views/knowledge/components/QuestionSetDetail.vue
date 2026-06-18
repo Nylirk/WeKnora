@@ -55,13 +55,25 @@
       <t-input v-model="filter.keyword" :placeholder="$t('questionBank.searchPlaceholder', '搜索题干...')" clearable style="width: 180px" @clear="loadQuestions" @enter="loadQuestions" />
     </div>
 
+    <!-- Batch action bar -->
+    <div v-if="selectedRowKeys.length" class="batch-actions">
+      <span class="batch-label">已选择 {{ selectedRowKeys.length }} 题</span>
+      <t-button size="small" variant="outline" @click="batchReview">批量审核</t-button>
+      <t-popconfirm content="确定要删除选中题目？此操作不可撤销。" @confirm="batchDelete">
+        <t-button size="small" variant="outline" theme="danger">批量删除</t-button>
+      </t-popconfirm>
+      <t-button size="small" variant="text" @click="selectedRowKeys = []">清空选择</t-button>
+    </div>
+
     <t-table
       v-if="loading || questions.length > 0"
       :data="questions"
       :columns="questionColumns"
       :loading="loading"
+      :selected-row-keys="selectedRowKeys"
       row-key="id"
       hover
+      @select-change="onSelectChange"
     >
       <template #question_type="{ row }">
         {{ questionTypeLabel(row.question_type) }}
@@ -70,9 +82,15 @@
         {{ difficultyLabel(row.difficulty) }}
       </template>
       <template #status="{ row }">
-          <t-tag :theme="row.status === 'reviewed' ? 'success' : row.status === 'rejected' ? 'danger' : 'default'" size="small">
-            {{ statusLabel(row.status) }}
-          </t-tag>
+        <t-tooltip v-if="row.status === 'reviewed' && row.reviewed_at" :content="`审核人：${row.reviewed_by || '未知'}\n审核时间：${row.reviewed_at}`">
+          <t-tag theme="success" size="small">{{ statusLabel(row.status) }}</t-tag>
+        </t-tooltip>
+        <t-link v-else-if="row.status === 'draft'" theme="primary" hover="color" @click="reviewSingleQuestion(row)">
+          <t-tag theme="default" size="small" class="draft-review-tag">{{ statusLabel(row.status) }}</t-tag>
+        </t-link>
+        <t-tag v-else :theme="row.status === 'rejected' ? 'danger' : 'default'" size="small">
+          {{ statusLabel(row.status) }}
+        </t-tag>
       </template>
       <template #operation="{ row }">
         <t-space size="small">
@@ -135,7 +153,7 @@ import { computed, ref, onMounted, nextTick, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import {
   getQuestionSet, listQuestions, deleteQuestion as apiDeleteQuestion,
-  exportToEvaluationDataset,
+  exportToEvaluationDataset, updateQuestionStatus,
   type Question, type QuestionListFilter, type QuestionType,
 } from '@/api/question'
 import { resolveQuestionRows, resolveQuestionTotal } from '../questionData'
@@ -145,6 +163,7 @@ const emit = defineEmits<{ generated: []; changed: [total: number] }>()
 
 const questionTypes: QuestionType[] = ['single_choice', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer', 'essay', 'composite']
 const questionColumns = computed(() => [
+  { colKey: 'row-select', type: 'multiple' as const, width: 50 },
   { colKey: 'question_type', title: '类型', width: 100, cell: 'question_type' },
   { colKey: 'stem_text', title: '题干', ellipsis: true },
   { colKey: 'difficulty', title: '难度', width: 80, cell: 'difficulty' },
@@ -168,6 +187,57 @@ const exportName = ref('')
 const exportDescription = ref('')
 const exporting = ref(false)
 const editingQuestion = ref<Question | null>(null)
+const selectedRowKeys = ref<string[]>([])
+
+function onSelectChange(value: string[]) {
+  selectedRowKeys.value = value
+}
+
+async function reviewSingleQuestion(row: Question) {
+  if (row.status !== 'draft') return
+  try {
+    await updateQuestionStatus(props.knowledgeBaseId, props.setId, row.id, { status: 'reviewed' })
+    MessagePlugin.success('审核成功')
+    await refreshAfterMutation()
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || '审核失败')
+  }
+}
+
+async function batchReview() {
+  const draftIds = selectedRowKeys.value.filter(id => {
+    const q = questions.value.find(q => q.id === id)
+    return q?.status === 'draft'
+  })
+  if (!draftIds.length) {
+    MessagePlugin.warning('没有可审核的草稿题目')
+    return
+  }
+  let done = 0; let failed = 0
+  for (const id of draftIds) {
+    try {
+      await updateQuestionStatus(props.knowledgeBaseId, props.setId, id, { status: 'reviewed' })
+      done++
+    } catch { failed++ }
+  }
+  MessagePlugin.success(`审核完成：成功 ${done} 题` + (failed ? `，失败 ${failed} 题` : ''))
+  selectedRowKeys.value = []
+  await refreshAfterMutation()
+}
+
+async function batchDelete() {
+  if (!selectedRowKeys.value.length) return
+  let done = 0; let failed = 0
+  for (const id of selectedRowKeys.value) {
+    try {
+      await apiDeleteQuestion(props.knowledgeBaseId, props.setId, id)
+      done++
+    } catch { failed++ }
+  }
+  MessagePlugin.success(`删除完成：成功 ${done} 题` + (failed ? `，失败 ${failed} 题` : ''))
+  selectedRowKeys.value = []
+  await refreshAfterMutation()
+}
 
 async function loadQuestions(): Promise<number | null> {
   loading.value = true
@@ -229,6 +299,7 @@ function handleGenerated() {
 }
 
 async function refreshAfterMutation() {
+  selectedRowKeys.value = []
   filter.value = {}
   const total = await loadQuestions()
   if (total !== null) emit('changed', total)
@@ -309,6 +380,10 @@ import QuestionGenerateDialog from './QuestionGenerateDialog.vue'
 .detail-header h2 { flex: 1; margin: 0; }
 .header-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.batch-actions { display: flex; align-items: center; gap: 8px; padding: 6px 12px; margin-bottom: 8px; background: var(--td-bg-color-secondarycontainer); border-radius: 6px; }
+.batch-label { font-size: 13px; color: var(--td-text-color-secondary); margin-right: 8px; }
+.draft-review-tag { cursor: pointer; }
+.draft-review-tag:hover { color: var(--td-brand-color); }
 .question-empty { padding: 48px 16px; }
 .import-type-menu { width: 320px; padding: 6px; }
 .import-type-item { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; border: 0; border-radius: 6px; color: var(--td-text-color-primary); background: transparent; text-align: left; cursor: pointer; }

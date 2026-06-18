@@ -34,6 +34,7 @@ export interface Question {
   source_knowledge_id: string; evidence_chunk_ids: string[]
   source_payload: Record<string, unknown>; extraction_metadata: Record<string, unknown>
   sort_order: number; created_at: string; updated_at: string
+  reviewed_by?: string; reviewed_at?: string
 }
 
 export interface QuestionListFilter {
