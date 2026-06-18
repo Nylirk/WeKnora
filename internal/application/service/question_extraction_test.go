@@ -392,8 +392,11 @@ E. 人体自身整体性及人与自然、社会环境的统一性`
 	if !strings.Contains(q.AnswerText, "E. ") {
 		t.Errorf("answer = %q, should contain E.", q.AnswerText)
 	}
-	if q.StemText != "中医学整体观念的内涵是" {
-		t.Errorf("stem = %q, want %q", q.StemText, "中医学整体观念的内涵是")
+	if !strings.Contains(q.StemText, "中医学整体观念的内涵是") {
+		t.Errorf("stem = %q, should contain '中医学整体观念的内涵是'", q.StemText)
+	}
+	if !strings.Contains(q.StemText, "E. 人体自身整体性及人与自然、社会环境的统一性") {
+		t.Errorf("stem = %q, should contain E option content", q.StemText)
 	}
 	if q.QuestionType != string(types.QuestionTypeSingleChoice) {
 		t.Errorf("type = %q, want single_choice", q.QuestionType)
@@ -421,8 +424,11 @@ E. 辨证求因与审因论治`
 	if !strings.Contains(q.AnswerText, "B. ") {
 		t.Errorf("answer = %q, should contain B.", q.AnswerText)
 	}
-	if q.StemText != "中医学的基本特点，主要是" {
-		t.Errorf("stem = %q, want %q", q.StemText, "中医学的基本特点，主要是")
+	if !strings.Contains(q.StemText, "中医学的基本特点，主要是") {
+		t.Errorf("stem = %q, should contain '中医学的基本特点，主要是'", q.StemText)
+	}
+	if !strings.Contains(q.StemText, "B. 整体观念与辨证论治") {
+		t.Errorf("stem = %q, should contain B option content", q.StemText)
 	}
 	options := getOptionsFromBody(t, q.QuestionBody)
 	if len(options) != 5 {
