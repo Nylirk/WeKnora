@@ -47,22 +47,11 @@
             <t-option value="hard" :label="$t('questionBank.hard', '困难')" />
           </t-select>
         </div>
-        <t-button variant="outline" :loading="parsing" :disabled="!selectedFile" @click="doPreviewParse">
-          {{ parsing ? $t('questionBank.fileImportParsing') : $t('questionBank.fileImportParsePreview') }}
-        </t-button>
       </t-space>
     </div>
 
-    <!-- 3. Preview summary -->
+    <!-- 3. Preview summary (brief warnings/errors only; stats in drawer) -->
     <div v-if="previewResult" class="preview-area">
-      <t-space size="small" break-line>
-        <t-tag variant="light">识别 {{ questionItems.length }} 题</t-tag>
-        <t-tag v-if="duplicateCount" theme="warning" variant="light">疑似重复 {{ duplicateCount }} 题</t-tag>
-        <t-tag v-if="previewWarnings.length" theme="danger" variant="light">{{ previewWarnings.length }} 条警告</t-tag>
-        <t-tag v-if="previewErrors.length" theme="error" variant="light">{{ previewErrors.length }} 条错误</t-tag>
-      </t-space>
-
-      <!-- Warnings -->
       <t-alert v-if="previewWarnings.length" theme="warning" :close-btn="false">
         <t-list size="small">
           <t-list-item v-for="(w, i) in previewWarnings" :key="'warn-' + i">
@@ -70,8 +59,6 @@
           </t-list-item>
         </t-list>
       </t-alert>
-
-      <!-- Errors -->
       <t-alert v-if="previewErrors.length" theme="error" :close-btn="false">
         <t-list size="small">
           <t-list-item v-for="(e, i) in previewErrors" :key="'err-' + i">
@@ -79,8 +66,6 @@
           </t-list-item>
         </t-list>
       </t-alert>
-
-      <!-- View parsed results button -->
       <t-button
         v-if="!previewDrawerVisible"
         variant="outline"
@@ -91,7 +76,7 @@
       </t-button>
     </div>
 
-    <!-- 4. Import mode selector (shown after preview) -->
+    <!-- 4. Import mode + duplicate handling -->
     <div v-if="previewResult && questionItems.length" class="import-mode-section">
       <div class="section-title">{{ $t('questionBank.fileImportImportMode') }}</div>
       <t-radio-group v-model="importMode" variant="default-filled">
@@ -99,9 +84,21 @@
         <t-radio-button value="reviewed">{{ $t('questionBank.fileImportModeReviewed') }}</t-radio-button>
       </t-radio-group>
       <p class="import-mode-hint">{{ $t('questionBank.fileImportModeDraftHelp') }}</p>
+
+      <!-- Duplicate handling -->
+      <div v-if="duplicateCount > 0" class="duplicate-mode-section">
+        <div class="section-title">重复题处理</div>
+        <t-radio-group v-model="duplicateMode" variant="default-filled">
+          <t-radio-button value="include">保留疑似重复题</t-radio-button>
+          <t-radio-button value="skip">忽略疑似重复题</t-radio-button>
+        </t-radio-group>
+        <p class="import-mode-hint">
+          {{ duplicateMode === 'skip' ? `将忽略 ${duplicateCount} 条疑似重复题，导入 ${classifiedPreview.uniqueItems.length} 题` : `保留全部重复题，导入 ${questionItems.length} 题` }}
+        </p>
+      </div>
     </div>
 
-    <!-- Custom footer -->
+    <!-- Custom footer: staged flow-action button -->
     <template #footer>
       <t-space size="small">
         <t-button variant="outline" @click="closeAndReset">
@@ -109,11 +106,11 @@
         </t-button>
         <t-button
           theme="primary"
-          :loading="importing"
-          :disabled="!canImport"
-          @click="doConfirmImport"
+          :loading="parsing || importing"
+          :disabled="flowActionDisabled"
+          @click="handleFlowAction"
         >
-          {{ importButtonText }}
+          {{ flowActionLabel }}
         </t-button>
       </t-space>
     </template>
@@ -173,26 +170,6 @@
         <t-tag theme="warning" variant="light">缺答案 {{ previewStats.without_answer }}</t-tag>
         <t-tag v-if="duplicateCount" theme="danger" variant="light">疑似重复 {{ duplicateCount }}</t-tag>
       </t-space>
-    </div>
-
-    <!-- Duplicate resolution bar -->
-    <div v-if="duplicateCount > 0 && duplicateResolution === 'unresolved'" class="duplicate-resolution-bar">
-      <t-alert theme="warning" :close-btn="false">
-        检测到 {{ duplicateCount }} 条疑似重复题，请确认处理方式后再导入。
-      </t-alert>
-      <t-space size="small" style="margin-top: 8px">
-        <t-button size="small" variant="outline" @click="resolveDuplicates('include')">
-          保留重复并导入全部 ({{ questionItems.length }})
-        </t-button>
-        <t-button size="small" variant="outline" theme="warning" @click="resolveDuplicates('skip')">
-          跳过疑似重复 ({{ classifiedPreview.uniqueItems.length }})
-        </t-button>
-      </t-space>
-    </div>
-    <div v-else-if="duplicateCount > 0" class="duplicate-resolution-bar">
-      <t-alert theme="info" :close-btn="false">
-        {{ duplicateResolution === 'include' ? '将保留疑似重复题，导入全部。' : `将跳过疑似重复题，导入 ${classifiedPreview.uniqueItems.length} 题。` }}
-      </t-alert>
     </div>
 
     <t-tabs v-model="drawerTab" class="preview-drawer-tabs">
@@ -302,7 +279,7 @@ const previewResult = ref<ImportFilePreviewResponse | null>(null)
 const previewDrawerVisible = ref(false)
 const drawerTab = ref('questions')
 const importMode = ref<'draft' | 'reviewed'>('draft')
-const duplicateResolution = ref<'unresolved' | 'include' | 'skip'>('unresolved')
+const duplicateMode = ref<'' | 'include' | 'skip'>('')
 const editVisible = ref(false)
 const editingIndex = ref(-1)
 const editingItem = ref<ImportQuestionItem | null>(null)
@@ -338,7 +315,7 @@ function cleanupDialogState() {
   editingIndex.value = -1
   editingItem.value = null
   importMode.value = 'draft'
-  duplicateResolution.value = 'unresolved'
+  duplicateMode.value = ''
   parseConfig.value = {
     default_question_type: 'short_answer',
     default_difficulty: 'medium',
@@ -397,31 +374,38 @@ const duplicateCount = computed(() => classifiedPreview.value.duplicateItems.len
 
 const itemsToImport = computed(() => {
   if (duplicateCount.value === 0) return questionItems.value
-  if (duplicateResolution.value === 'include') return questionItems.value
-  if (duplicateResolution.value === 'skip') return classifiedPreview.value.uniqueItems
+  if (duplicateMode.value === 'include') return questionItems.value
+  if (duplicateMode.value === 'skip') return classifiedPreview.value.uniqueItems
   return questionItems.value
 })
 
-const canImport = computed(() => {
-  if (!previewResult.value || !questionItems.value.length) return false
-  if (duplicateCount.value > 0 && duplicateResolution.value === 'unresolved') return false
-  return true
+// Staged flow-action: parse → resolve duplicates → import
+const flowActionLabel = computed(() => {
+  if (!previewResult.value) return parsing.value ? '解析中...' : '解析预览'
+  if (duplicateCount.value > 0 && !duplicateMode.value) return '处理重复后导入'
+  return `导入 ${itemsToImport.value.length} 题`
 })
 
-const importButtonText = computed(() => {
-  if (!previewResult.value) return '确认导入'
-  if (duplicateCount.value > 0 && duplicateResolution.value === 'unresolved') return '处理重复后导入'
-  return `确认导入 ${itemsToImport.value.length} 题`
+const flowActionDisabled = computed(() => {
+  if (!previewResult.value) return !selectedFile.value || parsing.value
+  if (duplicateCount.value > 0 && !duplicateMode.value) return false
+  return importing.value || !itemsToImport.value.length
 })
 
-function resolveDuplicates(mode: 'include' | 'skip') {
-  duplicateResolution.value = mode
-  drawerTab.value = 'questions'
-  MessagePlugin.success(
-    mode === 'include'
-      ? '已选择保留疑似重复题，点击确认导入继续'
-      : '已选择跳过疑似重复题，点击确认导入继续',
-  )
+async function handleFlowAction() {
+  if (!previewResult.value) {
+    await doPreviewParse()
+    return
+  }
+
+  if (duplicateCount.value > 0 && !duplicateMode.value) {
+    previewDrawerVisible.value = true
+    drawerTab.value = 'duplicates'
+    MessagePlugin.warning(`检测到 ${duplicateCount.value} 条疑似重复题，请先选择重复处理方式。`)
+    return
+  }
+
+  await doConfirmImport()
 }
 
 function formatFileSize(bytes: number): string {
@@ -564,10 +548,10 @@ async function doConfirmImport() {
   }
 
   // Guard: duplicates unresolved — require explicit user decision
-  if (duplicateCount.value > 0 && duplicateResolution.value === 'unresolved') {
+  if (duplicateCount.value > 0 && !duplicateMode.value) {
     previewDrawerVisible.value = true
     drawerTab.value = 'duplicates'
-    MessagePlugin.warning(`检测到 ${duplicateCount.value} 条疑似重复题，请确认处理方式后再导入。`)
+    MessagePlugin.warning(`检测到 ${duplicateCount.value} 条疑似重复题，请先选择重复处理方式。`)
     return
   }
 
@@ -588,7 +572,7 @@ async function doConfirmImport() {
 
     const errors = Array.isArray(result?.errors) ? result.errors : []
     const created = result?.created ?? 0
-    const skipped = duplicateCount.value > 0 && duplicateResolution.value === 'skip' ? duplicateCount.value : 0
+    const skipped = duplicateCount.value > 0 && duplicateMode.value === 'skip' ? duplicateCount.value : 0
 
     let msg = `解析 ${questionItems.value.length} 题，成功导入 ${created} 题`
     if (skipped) msg += `，跳过重复 ${skipped} 题`

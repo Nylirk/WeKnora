@@ -213,25 +213,28 @@ test('stats moved from main dialog to drawer', () => {
   assert.equal(fileImportSource.includes('previewStats.without_answer'), true)
 })
 
-test('duplicate detection and resolution UI exists', () => {
+test('duplicate detection and resolution UI with duplicateMode', () => {
   assert.equal(fileImportSource.includes('duplicateCount'), true)
-  assert.equal(fileImportSource.includes('duplicateResolution'), true)
+  assert.equal(fileImportSource.includes('duplicateMode'), true)
   assert.equal(fileImportSource.includes('classifyQuestionImportItemsWithinFile'), true)
   assert.equal(fileImportSource.includes('疑似重复'), true)
-  assert.equal(fileImportSource.includes('保留重复并导入全部'), true)
-  assert.equal(fileImportSource.includes('跳过疑似重复'), true)
-  assert.equal(fileImportSource.includes('resolveDuplicates'), true)
+  assert.equal(fileImportSource.includes('保留疑似重复题'), true)
+  assert.equal(fileImportSource.includes('忽略疑似重复题'), true)
+  assert.equal(fileImportSource.includes('重复题处理'), true)
 })
 
-test('import guard prevents silent duplicate dropping', () => {
-  assert.equal(fileImportSource.includes("duplicateResolution.value === 'unresolved'"), true)
-  assert.equal(fileImportSource.includes("duplicateCount.value > 0"), true)
+test('staged flow action replaces separate parse and import buttons', () => {
+  assert.equal(fileImportSource.includes('handleFlowAction'), true)
+  assert.equal(fileImportSource.includes('flowActionLabel'), true)
+  assert.equal(fileImportSource.includes('flowActionDisabled'), true)
+  // Flow branches: parse, resolve duplicates, import
+  assert.equal(fileImportSource.includes('!previewResult'), true)
+  assert.equal(fileImportSource.includes('!duplicateMode'), true)
   assert.equal(fileImportSource.includes("drawerTab.value = 'duplicates'"), true)
+  // No separate parse button in parse config area
+  assert.equal(fileImportSource.includes('doPreviewParse'), true)
+  assert.equal(fileImportSource.includes('doConfirmImport'), true)
   assert.equal(fileImportSource.includes('itemsToImport'), true)
-  assert.equal(fileImportSource.includes('canImport'), true)
-  assert.equal(fileImportSource.includes('importButtonText'), true)
-  // Must not silently use classified.uniqueItems
-  assert.equal(fileImportSource.includes('skipDuplicates'), false)
 })
 
 test('does not use native browser dialogs in question bank components', () => {
