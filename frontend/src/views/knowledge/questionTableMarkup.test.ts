@@ -223,15 +223,13 @@ test('duplicate detection and resolution UI with duplicateMode', () => {
   assert.equal(fileImportSource.includes('重复题处理'), true)
 })
 
-test('staged flow action replaces separate parse and import buttons', () => {
+test('staged flow action with duplicateMode defaulting to skip', () => {
   assert.equal(fileImportSource.includes('handleFlowAction'), true)
   assert.equal(fileImportSource.includes('flowActionLabel'), true)
   assert.equal(fileImportSource.includes('flowActionDisabled'), true)
-  // Flow branches: parse, resolve duplicates, import
   assert.equal(fileImportSource.includes('!previewResult'), true)
-  assert.equal(fileImportSource.includes('!duplicateMode'), true)
-  assert.equal(fileImportSource.includes("drawerTab.value = 'duplicates'"), true)
-  // No separate parse button in parse config area
+  // duplicateMode defaults to 'skip' — no empty-string blocking state
+  assert.equal(fileImportSource.includes("duplicateMode = ref<'include' | 'skip'>('skip')"), true)
   assert.equal(fileImportSource.includes('doPreviewParse'), true)
   assert.equal(fileImportSource.includes('doConfirmImport'), true)
   assert.equal(fileImportSource.includes('itemsToImport'), true)

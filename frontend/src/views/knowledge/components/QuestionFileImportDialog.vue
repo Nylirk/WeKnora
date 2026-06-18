@@ -279,7 +279,7 @@ const previewResult = ref<ImportFilePreviewResponse | null>(null)
 const previewDrawerVisible = ref(false)
 const drawerTab = ref('questions')
 const importMode = ref<'draft' | 'reviewed'>('draft')
-const duplicateMode = ref<'' | 'include' | 'skip'>('')
+const duplicateMode = ref<'include' | 'skip'>('skip')
 const editVisible = ref(false)
 const editingIndex = ref(-1)
 const editingItem = ref<ImportQuestionItem | null>(null)
@@ -315,7 +315,7 @@ function cleanupDialogState() {
   editingIndex.value = -1
   editingItem.value = null
   importMode.value = 'draft'
-  duplicateMode.value = ''
+  duplicateMode.value = 'skip'
   parseConfig.value = {
     default_question_type: 'short_answer',
     default_difficulty: 'medium',
@@ -382,13 +382,11 @@ const itemsToImport = computed(() => {
 // Staged flow-action: parse → resolve duplicates → import
 const flowActionLabel = computed(() => {
   if (!previewResult.value) return parsing.value ? '解析中...' : '解析预览'
-  if (duplicateCount.value > 0 && !duplicateMode.value) return '处理重复后导入'
   return `导入 ${itemsToImport.value.length} 题`
 })
 
 const flowActionDisabled = computed(() => {
   if (!previewResult.value) return !selectedFile.value || parsing.value
-  if (duplicateCount.value > 0 && !duplicateMode.value) return false
   return importing.value || !itemsToImport.value.length
 })
 
@@ -398,12 +396,7 @@ async function handleFlowAction() {
     return
   }
 
-  if (duplicateCount.value > 0 && !duplicateMode.value) {
-    previewDrawerVisible.value = true
-    drawerTab.value = 'duplicates'
-    MessagePlugin.warning(`检测到 ${duplicateCount.value} 条疑似重复题，请先选择重复处理方式。`)
-    return
-  }
+  // duplicateMode defaults to skip; user can toggle to include in import-mode-section
 
   await doConfirmImport()
 }
@@ -548,13 +541,6 @@ async function doConfirmImport() {
   }
 
   // Guard: duplicates unresolved — require explicit user decision
-  if (duplicateCount.value > 0 && !duplicateMode.value) {
-    previewDrawerVisible.value = true
-    drawerTab.value = 'duplicates'
-    MessagePlugin.warning(`检测到 ${duplicateCount.value} 条疑似重复题，请先选择重复处理方式。`)
-    return
-  }
-
   const requestId = importingRequestId.value + 1
   importingRequestId.value = requestId
 

@@ -203,3 +203,10 @@ export function selectQuestionImportItems(
 ): ImportQuestionItem[] {
   return allowDuplicates ? items : classified.uniqueItems
 }
+
+export type QuestionImportDuplicateGroup = {
+  fingerprint: string
+  firstIndex: number
+  firstItem: ImportQuestionItem
+  duplicateItems: ImportQuestionItem[]
+}
