@@ -10,6 +10,10 @@ const fileImportSource = readFileSync(
   new URL('./components/QuestionFileImportDialog.vue', import.meta.url),
   'utf8',
 )
+const questionApiSource = readFileSync(
+  new URL('../../api/question.ts', import.meta.url),
+  'utf8',
+)
 
 test('uses supported TDesign columns and named cell slots', () => {
   assert.equal(source.includes('<t-table-column'), false)
@@ -100,6 +104,25 @@ test('file import dialog disables overlay close and resets cancellable preview s
   assert.equal(fileImportSource.includes('previewImportFile('), true)
   assert.equal(fileImportSource.includes('signal: controller.signal'), true)
   assert.equal(fileImportSource.includes('timeout: 120000'), true)
+})
+
+test('file import preview handles nullable arrays safely', () => {
+  assert.equal(fileImportSource.includes('previewWarnings'), true)
+  assert.equal(fileImportSource.includes('previewWarnings.length'), true)
+  // Must use safe computed, not raw null-unsafe property
+  assert.equal(fileImportSource.includes('previewResult.warnings.length'), false)
+  assert.equal(fileImportSource.includes('previewStats'), true)
+  assert.equal(fileImportSource.includes('rawTextPreview'), true)
+  assert.equal(fileImportSource.includes('Array.isArray(previewResult.value?.warnings)'), true)
+  assert.equal(fileImportSource.includes('Array.isArray(previewResult.value?.items)'), true)
+  assert.equal(fileImportSource.includes('Array.isArray(previewResult.value?.errors)'), true)
+})
+
+test('normalizes import file preview response arrays', () => {
+  assert.equal(questionApiSource.includes('normalizeImportFilePreviewResponse'), true)
+  assert.equal(questionApiSource.includes('Array.isArray(source.items)'), true)
+  assert.equal(questionApiSource.includes('Array.isArray(source.errors)'), true)
+  assert.equal(questionApiSource.includes('Array.isArray(source.warnings)'), true)
 })
 
 test('does not use native browser dialogs in question bank components', () => {

@@ -57,19 +57,19 @@
       <!-- Stats -->
       <div class="preview-stats">
         <t-space size="small" break-line>
-          <t-tag variant="light">{{ $t('questionBank.fileImportDetected') }}：{{ previewResult.stats?.detected_questions ?? questionItems.length }}</t-tag>
-          <t-tag theme="success" variant="light">{{ $t('questionBank.fileImportWithAnswer') }}：{{ previewResult.stats?.with_answer ?? $t('questionBank.fileImportNoStat') }}</t-tag>
-          <t-tag theme="warning" variant="light">{{ $t('questionBank.fileImportWithoutAnswer') }}：{{ previewResult.stats?.without_answer ?? $t('questionBank.fileImportNoStat') }}</t-tag>
-          <t-tag v-if="previewResult.warnings.length" theme="danger" variant="light">
-            {{ previewResult.warnings.length }} 条警告
+          <t-tag variant="light">{{ $t('questionBank.fileImportDetected') }}：{{ previewStats.detected_questions }}</t-tag>
+          <t-tag theme="success" variant="light">{{ $t('questionBank.fileImportWithAnswer') }}：{{ previewStats.with_answer }}</t-tag>
+          <t-tag theme="warning" variant="light">{{ $t('questionBank.fileImportWithoutAnswer') }}：{{ previewStats.without_answer }}</t-tag>
+          <t-tag v-if="previewWarnings.length" theme="danger" variant="light">
+            {{ previewWarnings.length }} 条警告
           </t-tag>
         </t-space>
       </div>
 
       <!-- Warnings -->
-      <t-alert v-if="previewResult.warnings.length" theme="warning" :close-btn="false">
+      <t-alert v-if="previewWarnings.length" theme="warning" :close-btn="false">
         <t-list size="small">
-          <t-list-item v-for="(w, i) in previewResult.warnings" :key="'warn-' + i">
+          <t-list-item v-for="(w, i) in previewWarnings" :key="'warn-' + i">
             <span class="warning-text">{{ w }}</span>
           </t-list-item>
         </t-list>
@@ -85,9 +85,9 @@
       </t-alert>
 
       <!-- Raw text (collapsible) -->
-      <t-collapse v-if="previewResult.raw_text_preview">
+      <t-collapse v-if="rawTextPreview">
         <t-collapse-panel :header="$t('questionBank.fileImportRawText')">
-          <pre class="raw-text">{{ previewResult.raw_text_preview }}</pre>
+          <pre class="raw-text">{{ rawTextPreview }}</pre>
         </t-collapse-panel>
       </t-collapse>
 
@@ -297,10 +297,36 @@ function closeAndReset() {
 }
 
 const questionItems = computed(() => {
-  return previewResult.value?.items ?? []
+  return Array.isArray(previewResult.value?.items) ? previewResult.value.items : []
 })
 
-const previewErrors = computed(() => previewResult.value?.errors ?? [])
+const previewWarnings = computed(() => {
+  return Array.isArray(previewResult.value?.warnings) ? previewResult.value.warnings : []
+})
+
+const previewErrors = computed(() => {
+  return Array.isArray(previewResult.value?.errors) ? previewResult.value.errors : []
+})
+
+const previewStats = computed(() => {
+  const stats = (previewResult.value as any)?.stats || {}
+  return {
+    detected_questions: Number(stats.detected_questions ?? questionItems.value.length ?? 0),
+    with_answer: Number(
+      stats.with_answer ??
+        questionItems.value.filter((item) => !!String(item.answer_text || '').trim()).length,
+    ),
+    without_answer: Number(
+      stats.without_answer ??
+        questionItems.value.filter((item) => !String(item.answer_text || '').trim()).length,
+    ),
+  }
+})
+
+const rawTextPreview = computed(() => {
+  const raw = (previewResult.value as any)?.raw_text_preview
+  return typeof raw === 'string' ? raw : ''
+})
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + ' B'

@@ -123,6 +123,43 @@ export interface ImportFilePreviewResponse {
   stats: ImportFilePreviewStats
 }
 
+export function normalizeImportFilePreviewResponse(payload: any): ImportFilePreviewResponse {
+  // Unwrap common response shapes: { data: ... }, { data: { data: ... } }
+  const source = payload?.data?.data ?? payload?.data ?? payload ?? {}
+
+  const items = Array.isArray(source.items) ? source.items : []
+  const errors = Array.isArray(source.errors) ? source.errors : []
+  const warnings = Array.isArray(source.warnings) ? source.warnings : []
+  const rawText =
+    typeof source.raw_text_preview === 'string'
+      ? source.raw_text_preview
+      : typeof source.rawTextPreview === 'string'
+        ? source.rawTextPreview
+        : ''
+
+  return {
+    items,
+    errors,
+    warnings,
+    raw_text_preview: rawText,
+    stats: {
+      detected_questions: Number(
+        source.stats?.detected_questions ?? source.stats?.detectedQuestions ?? items.length,
+      ),
+      with_answer: Number(
+        source.stats?.with_answer ??
+          source.stats?.withAnswer ??
+          items.filter((item: any) => !!String(item.answer_text || '').trim()).length,
+      ),
+      without_answer: Number(
+        source.stats?.without_answer ??
+          source.stats?.withoutAnswer ??
+          items.filter((item: any) => !String(item.answer_text || '').trim()).length,
+      ),
+    },
+  }
+}
+
 export const previewImportFile = (
   kbId: string,
   setId: string,
@@ -143,5 +180,5 @@ export const previewImportFile = (
     fd,
     undefined,
     config,
-  ).then(unwrap<ImportFilePreviewResponse>)
+  ).then((response: any) => normalizeImportFilePreviewResponse(response))
 }

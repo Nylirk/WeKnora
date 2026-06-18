@@ -721,6 +721,17 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 		rawText = string([]rune(rawText)[:4000]) + "\n... (truncated)"
 	}
 
+	// Normalize nil slices to empty arrays so the JSON never contains null.
+	if items == nil {
+		items = []types.ImportQuestionItem{}
+	}
+	if parseErrors == nil {
+		parseErrors = []types.ImportQuestionError{}
+	}
+	if parseWarnings == nil {
+		parseWarnings = []string{}
+	}
+
 	return &types.ImportFilePreviewResponse{
 		Items:          items,
 		Errors:         parseErrors,
