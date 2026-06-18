@@ -366,51 +366,63 @@ func normalizeMultiChoiceAnswer(answer string) string {
 // multi-line options, and continuation lines.
 func parseOptions(lines []string) []types.QuestionOption {
 	var options []types.QuestionOption
+	expected := rune('A')
+	invalidSequence := false
 
 	for _, line := range lines {
-		parts := splitInlineOptions(line)
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
 
-		// If this line has inline options, add them individually
-		if len(parts) > 0 {
+		// First handle multiple options on the same line. The scanner also
+		// reports a broken sequence while preserving the valid prefix.
+		parts, invalid := scanInlineOptionsFromExpected(line, expected)
+		if len(parts) >= 2 {
 			for _, p := range parts {
 				content := strings.TrimSpace(p.Content)
-				if p.Label != "" && content != "" {
-					options = append(options, types.QuestionOption{
-						Label:   strings.ToUpper(p.Label),
-						Content: content,
-					})
+				label := strings.ToUpper(p.Label)
+				if label == "" || content == "" || []rune(label)[0] != expected {
+					invalidSequence = true
+					break
 				}
+				options = append(options, types.QuestionOption{Label: label, Content: content})
+				expected++
 			}
-		} else {
-			// No option marker on this line: treat as continuation of the last option
-			trimmed := strings.TrimSpace(line)
-			if trimmed != "" && len(options) > 0 {
-				last := &options[len(options)-1]
-				if last.Content != "" {
-					last.Content += "\n" + trimmed
-				} else {
-					last.Content = trimmed
-				}
+			if invalid || invalidSequence {
+				invalidSequence = true
+				break
+			}
+			continue
+		}
+
+		// Then handle the common one-option-per-line form.
+		if label, content, ok := parseLeadingOptionLine(line); ok {
+			labelRune := []rune(label)[0]
+			if labelRune != expected || content == "" {
+				invalidSequence = true
+				break
+			}
+			options = append(options, types.QuestionOption{Label: label, Content: content})
+			expected++
+			continue
+		}
+
+		// Otherwise this is a continuation of the last parsed option.
+		if len(options) > 0 {
+			last := &options[len(options)-1]
+			if last.Content != "" {
+				last.Content += "\n" + line
+			} else {
+				last.Content = line
 			}
 		}
 	}
 
-	// Remove duplicates (keep first occurrence) and empty content
-	seen := make(map[string]bool, len(options))
-	var deduped []types.QuestionOption
-	for _, opt := range options {
-		content := strings.TrimSpace(opt.Content)
-		if content == "" {
-			continue
-		}
-		if seen[opt.Label] {
-			continue
-		}
-		seen[opt.Label] = true
-		deduped = append(deduped, types.QuestionOption{Label: opt.Label, Content: content})
+	if len(options) < 2 {
+		return nil
 	}
-
-	return deduped
+	return options
 }
 
 type optionPart struct {
@@ -424,9 +436,40 @@ type optionPart struct {
 // Non-sequential markers (e.g. "e." in "e.g.") are skipped and treated
 // as part of the current option's content.
 func splitInlineOptions(line string) []optionPart {
-	candidates := inlineOptionPattern.FindAllStringSubmatchIndex(line, -1)
-	if len(candidates) < 2 {
+	return splitInlineOptionsFromExpected(line, 'A')
+}
+
+// parseLeadingOptionLine parses one option marker at the start of a line.
+// It intentionally does not require another marker on the same line.
+func parseLeadingOptionLine(line string) (label string, content string, ok bool) {
+	match := optionLabelPattern.FindStringSubmatchIndex(line)
+	if match == nil {
+		return "", "", false
+	}
+
+	label = strings.ToUpper(line[match[2]:match[3]])
+	if len(label) != 1 || label[0] < 'A' || label[0] > 'Z' {
+		return "", "", false
+	}
+	return label, strings.TrimSpace(line[match[1]:]), true
+}
+
+// splitInlineOptionsFromExpected extracts two or more sequential inline
+// options beginning at expectedStart.
+func splitInlineOptionsFromExpected(line string, expectedStart rune) []optionPart {
+	parts, _ := scanInlineOptionsFromExpected(line, expectedStart)
+	if len(parts) < 2 {
 		return nil
+	}
+	return parts
+}
+
+// scanInlineOptionsFromExpected returns the valid sequential prefix and
+// reports whether a later marker breaks the sequence.
+func scanInlineOptionsFromExpected(line string, expectedStart rune) ([]optionPart, bool) {
+	candidates := inlineOptionPattern.FindAllStringSubmatchIndex(line, -1)
+	if len(candidates) == 0 {
+		return nil, false
 	}
 
 	// Filter candidates: only accept those whose label matches the expected
@@ -437,15 +480,25 @@ func splitInlineOptions(line string) []optionPart {
 		label      string
 	}
 	var accepted []acceptedMarker
-	expected := rune('A')
+	expected := expectedStart
+	invalid := false
+	contentEnd := len(line)
 	for i := range candidates {
 		m := candidates[i]
 		labelStart := m[2] // submatch group 1 → (A-Z)
 		labelEnd := m[3]
 		fullEnd := m[1] // full match end (marker + delimiter)
 		label := strings.ToUpper(line[labelStart:labelEnd])
-		if len(label) != 1 || rune(label[0]) != expected {
-			continue // skip non-sequential markers (e.g. "e." in "e.g.")
+		if len(label) != 1 {
+			continue
+		}
+		if rune(label[0]) != expected {
+			if len(accepted) == 0 || isInlineAbbreviationMarker(line, m) {
+				continue
+			}
+			invalid = true
+			contentEnd = labelStart
+			break
 		}
 		accepted = append(accepted, acceptedMarker{
 			labelStart: labelStart,
@@ -455,8 +508,8 @@ func splitInlineOptions(line string) []optionPart {
 		expected++
 	}
 
-	if len(accepted) < 2 {
-		return nil
+	if len(accepted) == 0 {
+		return nil, invalid
 	}
 
 	// Build parts using accepted marker boundaries
@@ -467,14 +520,28 @@ func splitInlineOptions(line string) []optionPart {
 		if i+1 < len(accepted) {
 			content = line[contentStart:accepted[i+1].labelStart]
 		} else {
-			content = line[contentStart:]
+			content = line[contentStart:contentEnd]
 		}
 		parts = append(parts, optionPart{
 			Label:   am.label,
 			Content: strings.TrimSpace(content),
 		})
 	}
-	return parts
+	return parts, invalid
+}
+
+// isInlineAbbreviationMarker recognises the leading "e." in text such as
+// "e.g." so it remains option content instead of breaking label sequencing.
+func isInlineAbbreviationMarker(line string, match []int) bool {
+	if match[2] < 0 || match[3] < 0 || match[1] >= len(line) {
+		return false
+	}
+	rawLabel := line[match[2]:match[3]]
+	if rawLabel == strings.ToUpper(rawLabel) {
+		return false
+	}
+	rest := line[match[1]:]
+	return len(rest) >= 2 && ((rest[0] >= 'A' && rest[0] <= 'Z') || (rest[0] >= 'a' && rest[0] <= 'z')) && rest[1] == '.'
 }
 
 // extractChoiceAnswerFromStem extracts answer letters from bracket notation in a stem,

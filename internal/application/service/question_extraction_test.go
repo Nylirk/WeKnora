@@ -375,6 +375,61 @@ E. DeferredRegister`
 	assertOption(t, options, "E", "DeferredRegister")
 }
 
+func TestExtractChineseMedicalQuestionOneOptionPerLine(t *testing.T) {
+	svc := newTestExtractionService()
+	text := `1. 中医学整体观念的内涵是(E)
+A. 人与自然环境的统一性
+B. 人体是一个有机整体
+C. 人与社会环境的统一性
+D. 五脏一体观
+E. 人体自身整体性及人与自然、社会环境的统一性`
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+	if q.AnswerText != "E" {
+		t.Errorf("answer = %q, want E", q.AnswerText)
+	}
+	if q.StemText != "中医学整体观念的内涵是" {
+		t.Errorf("stem = %q, want %q", q.StemText, "中医学整体观念的内涵是")
+	}
+	if q.QuestionType != string(types.QuestionTypeSingleChoice) {
+		t.Errorf("type = %q, want single_choice", q.QuestionType)
+	}
+	options := getOptionsFromBody(t, q.QuestionBody)
+	if len(options) != 5 {
+		t.Fatalf("expected 5 options, got %d: %v", len(options), optionLabels(options))
+	}
+}
+
+func TestExtractSecondMedicalQuestionOneOptionPerLine(t *testing.T) {
+	svc := newTestExtractionService()
+	text := `1. 中医学的基本特点，主要是(B)
+A. 阴阳五行与藏象经络
+B. 整体观念与辨证论治
+C. 以五脏为主的整体观
+D. 望闻问切与辨证论治
+E. 辨证求因与审因论治`
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+	if q.AnswerText != "B" {
+		t.Errorf("answer = %q, want B", q.AnswerText)
+	}
+	if q.StemText != "中医学的基本特点，主要是" {
+		t.Errorf("stem = %q, want %q", q.StemText, "中医学的基本特点，主要是")
+	}
+	options := getOptionsFromBody(t, q.QuestionBody)
+	if len(options) != 5 {
+		t.Fatalf("expected 5 options, got %d: %v", len(options), optionLabels(options))
+	}
+}
+
 func TestExtractFiveInlineOptionsWithAnswerInStem(t *testing.T) {
 	svc := newTestExtractionService()
 	text := "1. 以下哪个是注册器？（E） A. RegistryObject B. EventBus C. ModContainer D. ItemStack E. DeferredRegister"
