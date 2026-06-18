@@ -678,6 +678,35 @@ E. e选项`
 	}
 }
 
+func TestDoesNotRemoveInvalidBracketAnswerWithoutMatchingOption(t *testing.T) {
+	svc := newTestExtractionService()
+	text := `1. 下列说法正确的是（Z）
+A. A选项
+B. B选项
+C. C选项
+D. D选项
+E. E选项`
+
+	items, _, _ := svc.Extract(context.Background(), text, string(types.QuestionTypeShortAnswer), string(types.QuestionDifficultyMedium))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	q := items[0]
+	// Z is not one of the options → bracket should NOT be extracted as answer
+	if q.AnswerText != "" {
+		t.Errorf("answer = %q, want empty (Z does not match any option label)", q.AnswerText)
+	}
+	// Stem must still contain (Z); we must not silently delete bracket content
+	if !strings.Contains(q.StemText, "（Z）") && !strings.Contains(q.StemText, "(Z)") {
+		t.Errorf("stem = %q, should still contain （Z）", q.StemText)
+	}
+	// Options should still be parsed
+	options := getOptionsFromBody(t, q.QuestionBody)
+	if len(options) != 5 {
+		t.Fatalf("expected 5 options, got %d", len(options))
+	}
+}
+
 func TestNormalizeMultiChoiceAnswer(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"A、C、E", "ACE"},

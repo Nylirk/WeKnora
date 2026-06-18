@@ -32,11 +32,12 @@ var questionNumPattern = regexp.MustCompile(
 
 // optionLabelPattern matches a single option label at line start: A. / a) / B．/ etc.
 // Supports A-Z (case-insensitive), fullwidth/halfwidth markers.
-var optionLabelPattern = regexp.MustCompile(`^[\s]*([A-Za-z])[\.\．\)\）、：:]\s*`)
+// Note: fullwidth characters like ．）、：must NOT be backslash-escaped in Go regexp.
+var optionLabelPattern = regexp.MustCompile(`^\s*([A-Za-z])[.．)、）：:]\s*`)
 
 // inlineOptionPattern matches option markers anywhere in a line (not just start).
 // Used to split inline options like "A. foo B. bar C. baz".
-var inlineOptionPattern = regexp.MustCompile(`(?:^|[\s　]+)([A-Za-z])[\.\．\)\）、：:]\s*`)
+var inlineOptionPattern = regexp.MustCompile(`([A-Za-z])[.．)、）：:]\s*`)
 
 // bracketAnswerPattern matches answer letters in parentheses at end of stem.
 // Examples: （B）, (E), （A、C、E）, (A,C,E), （a、c、e）
@@ -152,6 +153,15 @@ func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, c
 	inAnalysis := false
 	hasOptionMarkers := false
 
+	// Check if the first line (stem line) contains inline options after the stem.
+	// e.g. "1. 以下哪个是注册器？（E） A. RegistryObject B. EventBus ..."
+	// The stem prefix stays as stem; the option markers go into optionLines.
+	if stemPrefix, optionSource, ok := splitStemInlineOptions(stemLine); ok {
+		stemLines = []string{stemPrefix}
+		optionLines = append(optionLines, optionSource)
+		hasOptionMarkers = true
+	}
+
 	for i := 1; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 		if line == "" {
@@ -250,14 +260,6 @@ func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, c
 		if ok {
 			stemText = cleanStem
 			answerText = extractedAnswer
-		}
-	}
-
-	// Remove any remaining answer bracket from stem if it matches an option label
-	if answerText == "" && len(options) >= 2 {
-		cleaned := bracketAnswerPattern.ReplaceAllString(stemText, "")
-		if cleaned != stemText {
-			stemText = strings.TrimSpace(cleaned)
 		}
 	}
 
@@ -498,6 +500,47 @@ func extractChoiceAnswerFromStem(stem string, optionLabels map[string]bool) (cle
 	cleanStem = strings.TrimSpace(cleanStem)
 
 	return cleanStem, answer, true
+}
+
+// splitStemInlineOptions detects inline option markers on the stem line.
+// When a single line contains both the stem and multiple choice options
+// (e.g. "以下哪个是注册器？（E） A. A选项 B. B选项 C. C选项 D. D选项 E. E选项"),
+// it splits the stem prefix from the option source so that parseOptions can
+// correctly extract every option instead of treating the whole line as stem.
+//
+// To avoid confusing bracket answers like （E） with option markers,
+// matches immediately preceded by （ or ( are excluded.
+//
+// Returns (stem, optionSource, true) when at least 2 option markers are found;
+// otherwise ("", "", false).
+func splitStemInlineOptions(line string) (stem string, optionSource string, ok bool) {
+	matches := inlineOptionPattern.FindAllStringSubmatchIndex(line, -1)
+	if len(matches) < 2 {
+		return "", "", false
+	}
+
+	// Filter out matches that are part of bracket answers: e.g. （E） where E
+	// is followed by ） which is in the delimiter set.
+	var validMatches [][]int
+	for _, m := range matches {
+		start := m[0]
+		if start > 0 {
+			prev := line[start-1]
+			if prev == '（' || prev == '(' {
+				continue
+			}
+		}
+		validMatches = append(validMatches, m)
+	}
+	if len(validMatches) < 2 {
+		return "", "", false
+	}
+
+	// The first valid marker's start position marks the boundary between stem and options.
+	firstMarkerStart := validMatches[0][0]
+	stem = strings.TrimSpace(line[:firstMarkerStart])
+	optionSource = strings.TrimSpace(line[firstMarkerStart:])
+	return stem, optionSource, true
 }
 
 func filterEmpty(lines []string) []string {
