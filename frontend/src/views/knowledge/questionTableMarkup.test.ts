@@ -213,14 +213,19 @@ test('stats moved from main dialog to drawer', () => {
   assert.equal(fileImportSource.includes('previewStats.without_answer'), true)
 })
 
-test('duplicate detection and resolution UI with duplicateMode', () => {
+test('duplicate detection uses groups with raw text comparison', () => {
   assert.equal(fileImportSource.includes('duplicateCount'), true)
   assert.equal(fileImportSource.includes('duplicateMode'), true)
-  assert.equal(fileImportSource.includes('classifyQuestionImportItemsWithinFile'), true)
-  assert.equal(fileImportSource.includes('疑似重复'), true)
+  assert.equal(fileImportSource.includes('duplicateGroups'), true)
+  assert.equal(fileImportSource.includes('getItemRawText'), true)
+  assert.equal(fileImportSource.includes('source_payload'), true)
+  assert.equal(fileImportSource.includes('dup-group'), true)
+  assert.equal(fileImportSource.includes('dup-raw'), true)
+  assert.equal(fileImportSource.includes('重复组 #'), true)
+  assert.equal(fileImportSource.includes('重复原因'), true)
+  assert.equal(fileImportSource.includes('当前仅检测本次文件内重复'), true)
   assert.equal(fileImportSource.includes('保留疑似重复题'), true)
   assert.equal(fileImportSource.includes('忽略疑似重复题'), true)
-  assert.equal(fileImportSource.includes('重复题处理'), true)
 })
 
 test('staged flow action with duplicateMode defaulting to skip', () => {

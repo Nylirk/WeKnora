@@ -136,6 +136,11 @@ test('classifyQuestionImportItemsWithinFile detects duplicates inside same file'
   assert.equal(classified.uniqueItems.length, 2)
   assert.equal(classified.duplicateItems.length, 1)
   assert.equal(classified.duplicateItems[0].line_number, 3)
+  // Verify duplicateGroups structure
+  assert.equal(classified.duplicateGroups.length, 1)
+  assert.equal(classified.duplicateGroups[0].duplicateItems.length, 1)
+  assert.equal(classified.duplicateGroups[0].firstItem.line_number, 1)
+  assert.equal(classified.duplicateGroups[0].duplicateItems[0].line_number, 3)
 })
 
 test('selectQuestionImportItems does not drop duplicates unless skip is explicit', () => {

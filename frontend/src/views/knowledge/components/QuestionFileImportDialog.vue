@@ -195,18 +195,32 @@
       </t-tab-panel>
       <t-tab-panel value="duplicates" :label="`疑似重复（${duplicateCount}）`" :disabled="!duplicateCount">
         <div class="preview-drawer-body">
-          <div v-if="classifiedPreview.duplicateItems.length" class="question-preview-list">
-            <div v-for="(item, index) in classifiedPreview.duplicateItems" :key="index" class="question-preview-item">
-              <div class="preview-item-header">
-                <t-tag size="small">{{ questionTypeLabel(item.question_type as QuestionType) }}</t-tag>
-                <t-tag size="small" variant="light">{{ difficultyLabel(item.difficulty) }}</t-tag>
-                <t-tag theme="warning" size="small" variant="light">本次文件内重复</t-tag>
-                <t-space size="small">
-                  <t-button size="small" variant="text" theme="danger" @click="removePreviewItem(questionItems.indexOf(item))">移除</t-button>
-                </t-space>
+          <p class="dup-scope-note">当前仅检测本次文件内重复</p>
+          <div v-if="duplicateGroups.length">
+            <div v-for="(group, gi) in duplicateGroups" :key="gi" class="dup-group">
+              <div class="dup-group-title">重复组 #{{ gi + 1 }}：第 {{ group.firstIndex }} 题</div>
+
+              <!-- First occurrence -->
+              <div class="dup-block">
+                <div class="dup-label">首次出现 — 第 {{ group.firstItem.line_number }} 题</div>
+                <pre v-if="getItemRawText(group.firstItem)" class="dup-raw">{{ getItemRawText(group.firstItem) }}</pre>
+                <div class="dup-parsed">
+                  <div class="preview-item-stem">{{ group.firstItem.stem_text }}</div>
+                  <div v-if="group.firstItem.answer_text" class="preview-item-answer"><span class="answer-label">答案：</span>{{ group.firstItem.answer_text }}</div>
+                </div>
               </div>
-              <div class="preview-item-stem">{{ item.stem_text }}</div>
-              <div v-if="item.answer_text" class="preview-item-answer"><span class="answer-label">答案：</span>{{ item.answer_text }}</div>
+
+              <!-- Duplicates -->
+              <div v-for="(dup, di) in group.duplicateItems" :key="di" class="dup-block">
+                <div class="dup-label">重复出现 — 第 {{ dup.line_number }} 题</div>
+                <pre v-if="getItemRawText(dup)" class="dup-raw">{{ getItemRawText(dup) }}</pre>
+                <div class="dup-parsed">
+                  <div class="preview-item-stem">{{ dup.stem_text }}</div>
+                  <div v-if="dup.answer_text" class="preview-item-answer"><span class="answer-label">答案：</span>{{ dup.answer_text }}</div>
+                </div>
+                <t-button size="small" variant="text" theme="danger" @click="removePreviewItem(questionItems.indexOf(dup))">移除</t-button>
+              </div>
+              <div class="dup-reason">重复原因：题型 + 题干 + 答案一致</div>
             </div>
           </div>
           <t-empty v-else description="无重复题" />
@@ -371,6 +385,15 @@ const rawTextPreview = computed(() => {
 
 const classifiedPreview = computed(() => classifyQuestionImportItemsWithinFile(questionItems.value))
 const duplicateCount = computed(() => classifiedPreview.value.duplicateItems.length)
+const duplicateGroups = computed(() => classifiedPreview.value.duplicateGroups || [])
+
+// Extract raw text from item: prefer raw_text field, fallback to source_payload.raw_text
+function getItemRawText(item: any): string {
+  if (typeof item.raw_text === 'string' && item.raw_text) return item.raw_text
+  const sp = item.source_payload
+  if (sp && typeof sp.raw_text === 'string' && sp.raw_text) return sp.raw_text
+  return ''
+}
 
 const itemsToImport = computed(() => {
   if (duplicateCount.value === 0) return questionItems.value
@@ -650,6 +673,14 @@ onBeforeUnmount(() => {
 
 .drawer-stats { padding: 0 0 12px; border-bottom: 1px solid var(--td-component-stroke); margin-bottom: 8px; }
 .duplicate-resolution-bar { margin-bottom: 12px; }
+.dup-scope-note { font-size: 12px; color: var(--td-text-color-secondary); margin-bottom: 12px; }
+.dup-group { border: 1px solid var(--td-warning-color); border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+.dup-group-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; color: var(--td-warning-color); }
+.dup-block { margin-bottom: 10px; padding: 8px; background: var(--td-bg-color-secondarycontainer); border-radius: 4px; }
+.dup-label { font-size: 12px; color: var(--td-text-color-secondary); margin-bottom: 4px; }
+.dup-raw { font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow-y: auto; background: var(--td-bg-color-page); padding: 8px; border-radius: 3px; margin-bottom: 6px; }
+.dup-parsed { margin-bottom: 4px; }
+.dup-reason { font-size: 12px; color: var(--td-text-color-placeholder); margin-top: 6px; }
 .drawer-raw-text {
   max-height: calc(100vh - 200px);
   overflow-y: auto;
