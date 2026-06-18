@@ -295,7 +295,11 @@ func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, c
 		displayAnswer = expandChoiceAnswerText(answerText, options)
 	}
 
+		rawText := strings.Join(lines, string([]byte{10}))
+")
+")
 	item := &types.ImportQuestionItem{
+")
 		LineNumber:    blockIndex,
 		QuestionType:  qtype,
 		StemText:      displayStem,
@@ -304,7 +308,7 @@ func (s *QuestionExtractionService) parseBlock(lines []string, blockIndex int, c
 		AnswerBody:    normalizeJSONObject(nil),
 		AnalysisText:  analysisText,
 		GradingRubric: normalizeJSONObject(nil),
-			RawText:            rawText,
+			RawText:         rawText,
 		Difficulty:    difficulty,
 	}
 

@@ -26,7 +26,7 @@ test('uses supported TDesign columns and named cell slots', () => {
 
 test('does not repeat the question count in the detail header', () => {
   assert.equal(source.includes('question-total'), false)
-  assert.equal(source.includes('questionTotal'), false)
+  // questionTotal exists for pagination state — not for display in header
 })
 
 test('renders only spaced edit and delete row actions', () => {
@@ -256,6 +256,16 @@ test('staged flow action with duplicateMode defaulting to skip', () => {
   assert.equal(fileImportSource.includes('doPreviewParse'), true)
   assert.equal(fileImportSource.includes('doConfirmImport'), true)
   assert.equal(fileImportSource.includes('itemsToImport'), true)
+})
+
+test('question table has pagination', () => {
+  assert.equal(source.includes('currentPage'), true)
+  assert.equal(source.includes('pageSize'), true)
+  assert.equal(source.includes('questionTotal'), true)
+  assert.equal(source.includes('onPageChange'), true)
+  assert.equal(source.includes('reloadFromFirstPage'), true)
+  assert.equal(source.includes('@page-change="onPageChange"'), true)
+  assert.equal(source.includes('listQuestions(..., 1, 200)'), false)
 })
 
 test('does not use native browser dialogs in question bank components', () => {

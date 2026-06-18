@@ -37,22 +37,22 @@
     </div>
 
     <div class="filter-bar">
-      <t-select v-model="filter.question_type" :placeholder="$t('questionBank.typeFilter', '题型')" clearable style="width: 120px" @change="loadQuestions">
+      <t-select v-model="filter.question_type" :placeholder="$t('questionBank.typeFilter', '题型')" clearable style="width: 120px" @change="reloadFromFirstPage">
         <t-option v-for="qt in questionTypes" :key="qt" :value="qt" :label="questionTypeLabel(qt)" />
       </t-select>
-      <t-select v-model="filter.status" :placeholder="$t('questionBank.statusFilter', '状态')" clearable style="width: 100px" @change="loadQuestions">
+      <t-select v-model="filter.status" :placeholder="$t('questionBank.statusFilter', '状态')" clearable style="width: 100px" @change="reloadFromFirstPage">
         <t-option value="draft" :label="$t('questionBank.draft', '草稿')" />
         <t-option value="reviewed" :label="$t('questionBank.reviewed', '已审')" />
         <t-option value="rejected" :label="$t('questionBank.rejected', '已拒')" />
       </t-select>
-      <t-select v-model="filter.difficulty" :placeholder="$t('questionBank.difficultyFilter', '难度')" clearable style="width: 100px" @change="loadQuestions">
+      <t-select v-model="filter.difficulty" :placeholder="$t('questionBank.difficultyFilter', '难度')" clearable style="width: 100px" @change="reloadFromFirstPage">
         <t-option value="easy" :label="$t('questionBank.easy', '简单')" />
         <t-option value="medium" :label="$t('questionBank.medium', '中等')" />
         <t-option value="hard" :label="$t('questionBank.hard', '困难')" />
       </t-select>
-      <t-input v-model="filter.knowledge_point" placeholder="知识点" clearable style="width: 140px" @clear="loadQuestions" @enter="loadQuestions" />
-      <t-input v-model="filter.tag" placeholder="标签" clearable style="width: 120px" @clear="loadQuestions" @enter="loadQuestions" />
-      <t-input v-model="filter.keyword" :placeholder="$t('questionBank.searchPlaceholder', '搜索题干...')" clearable style="width: 180px" @clear="loadQuestions" @enter="loadQuestions" />
+      <t-input v-model="filter.knowledge_point" placeholder="知识点" clearable style="width: 140px" @clear="reloadFromFirstPage" @enter="reloadFromFirstPage" />
+      <t-input v-model="filter.tag" placeholder="标签" clearable style="width: 120px" @clear="reloadFromFirstPage" @enter="reloadFromFirstPage" />
+      <t-input v-model="filter.keyword" :placeholder="$t('questionBank.searchPlaceholder', '搜索题干...')" clearable style="width: 180px" @clear="reloadFromFirstPage" @enter="reloadFromFirstPage" />
     </div>
 
     <!-- Batch action bar -->
@@ -71,9 +71,11 @@
       :columns="questionColumns"
       :loading="loading"
       :selected-row-keys="selectedRowKeys"
+      :pagination="{ current: currentPage, pageSize, total: questionTotal, showJumper: true, showPageSize: true, pageSizeOptions: [20, 50, 100, 200] }"
       row-key="id"
       hover
       @select-change="onSelectChange"
+      @page-change="onPageChange"
     >
       <template #question_type="{ row }">
         {{ questionTypeLabel(row.question_type) }}
@@ -188,9 +190,25 @@ const exportDescription = ref('')
 const exporting = ref(false)
 const editingQuestion = ref<Question | null>(null)
 const selectedRowKeys = ref<string[]>([])
+const currentPage = ref(1)
+const pageSize = ref(50)
+const questionTotal = ref(0)
 
 function onSelectChange(value: string[]) {
   selectedRowKeys.value = value
+}
+
+function onPageChange(pageInfo: { current: number; pageSize: number }) {
+  currentPage.value = pageInfo.current
+  pageSize.value = pageInfo.pageSize
+  selectedRowKeys.value = []
+  loadQuestions()
+}
+
+function reloadFromFirstPage() {
+  currentPage.value = 1
+  selectedRowKeys.value = []
+  loadQuestions()
 }
 
 async function reviewSingleQuestion(row: Question) {
@@ -242,10 +260,12 @@ async function batchDelete() {
 async function loadQuestions(): Promise<number | null> {
   loading.value = true
   try {
-    const res = await listQuestions(props.knowledgeBaseId, props.setId, filter.value, 1, 200)
+    const res = await listQuestions(props.knowledgeBaseId, props.setId, filter.value, currentPage.value, pageSize.value)
     const rows = resolveQuestionRows<Question>(res)
+    const total = resolveQuestionTotal(res, rows)
     questions.value = rows
-    return resolveQuestionTotal(res, rows)
+    questionTotal.value = total
+    return total
   } catch (e: any) {
     MessagePlugin.error(e?.message || '加载题目失败')
     questions.value = []
@@ -300,8 +320,12 @@ function handleGenerated() {
 
 async function refreshAfterMutation() {
   selectedRowKeys.value = []
-  filter.value = {}
   const total = await loadQuestions()
+  // If current page is empty and past page 1, go back one page
+  if (total !== null && questions.value.length === 0 && currentPage.value > 1) {
+    currentPage.value -= 1
+    await loadQuestions()
+  }
   if (total !== null) emit('changed', total)
 }
 
