@@ -199,29 +199,24 @@
           <p class="dup-scope-note">当前仅检测本次文件内重复</p>
           <div v-if="duplicateGroups.length">
             <div v-for="(group, gi) in duplicateGroups" :key="gi" class="dup-group">
-              <div class="dup-group-title">重复组 #{{ gi + 1 }}：第 {{ group.firstIndex }} 题</div>
+              <div class="dup-group-title">重复组 #{{ gi + 1 }}</div>
 
               <!-- First occurrence -->
               <div class="dup-block">
                 <div class="dup-label">首次出现 — 第 {{ group.firstItem.line_number }} 题</div>
                 <pre v-if="getItemRawText(group.firstItem)" class="dup-raw">{{ getItemRawText(group.firstItem) }}</pre>
-                <div class="dup-parsed">
-                  <div class="preview-item-stem">{{ group.firstItem.stem_text }}</div>
-                  <div v-if="group.firstItem.answer_text" class="preview-item-answer"><span class="answer-label">答案：</span>{{ group.firstItem.answer_text }}</div>
-                </div>
+                <t-empty v-else description="暂无原始文本" />
               </div>
 
               <!-- Duplicates -->
               <div v-for="(dup, di) in group.duplicateItems" :key="di" class="dup-block">
-                <div class="dup-label">重复出现 — 第 {{ dup.line_number }} 题</div>
-                <pre v-if="getItemRawText(dup)" class="dup-raw">{{ getItemRawText(dup) }}</pre>
-                <div class="dup-parsed">
-                  <div class="preview-item-stem">{{ dup.stem_text }}</div>
-                  <div v-if="dup.answer_text" class="preview-item-answer"><span class="answer-label">答案：</span>{{ dup.answer_text }}</div>
+                <div class="dup-block-header">
+                  <div class="dup-label">重复出现 — 第 {{ dup.line_number }} 题</div>
+                  <t-button size="small" variant="text" theme="danger" @click="removePreviewItem(questionItems.indexOf(dup))">移除</t-button>
                 </div>
-                <t-button size="small" variant="text" theme="danger" @click="removePreviewItem(questionItems.indexOf(dup))">移除</t-button>
+                <pre v-if="getItemRawText(dup)" class="dup-raw">{{ getItemRawText(dup) }}</pre>
+                <t-empty v-else description="暂无原始文本" />
               </div>
-              <div class="dup-reason">重复原因：题型 + 题干 + 答案一致</div>
             </div>
           </div>
           <t-empty v-else description="无重复题" />
@@ -713,13 +708,12 @@ onBeforeUnmount(() => {
 .drawer-stats { padding: 0 0 12px; border-bottom: 1px solid var(--td-component-stroke); margin-bottom: 8px; }
 .duplicate-resolution-bar { margin-bottom: 12px; }
 .dup-scope-note { font-size: 12px; color: var(--td-text-color-secondary); margin-bottom: 12px; }
-.dup-group { border: 1px solid var(--td-warning-color); border-radius: 6px; padding: 12px; margin-bottom: 12px; }
-.dup-group-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; color: var(--td-warning-color); }
-.dup-block { margin-bottom: 10px; padding: 8px; background: var(--td-bg-color-secondarycontainer); border-radius: 4px; }
-.dup-label { font-size: 12px; color: var(--td-text-color-secondary); margin-bottom: 4px; }
-.dup-raw { font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow-y: auto; background: var(--td-bg-color-page); padding: 8px; border-radius: 3px; margin-bottom: 6px; }
-.dup-parsed { margin-bottom: 4px; }
-.dup-reason { font-size: 12px; color: var(--td-text-color-placeholder); margin-top: 6px; }
+.dup-group { border: 1px solid var(--td-component-stroke); border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+.dup-group-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; color: var(--td-brand-color); }
+.dup-block { margin-top: 12px; padding: 12px; background: var(--td-bg-color-container-hover); border-radius: 6px; }
+.dup-block-header { display: flex; align-items: center; justify-content: space-between; }
+.dup-label { font-size: 12px; color: var(--td-text-color-secondary); margin-bottom: 8px; }
+.dup-raw { margin: 0; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow-y: auto; background: var(--td-bg-color-page); padding: 8px; border-radius: 4px; }
 
 /* Raw compare dialog — top-bottom layout */
 .raw-compare-body { display: flex; flex-direction: column; gap: 16px; }

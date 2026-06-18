@@ -213,19 +213,21 @@ test('stats moved from main dialog to drawer', () => {
   assert.equal(fileImportSource.includes('previewStats.without_answer'), true)
 })
 
-test('duplicate detection uses groups with raw text comparison', () => {
+test('duplicate detection uses groups with raw text only', () => {
   assert.equal(fileImportSource.includes('duplicateCount'), true)
   assert.equal(fileImportSource.includes('duplicateMode'), true)
   assert.equal(fileImportSource.includes('duplicateGroups'), true)
   assert.equal(fileImportSource.includes('getItemRawText'), true)
-  assert.equal(fileImportSource.includes('source_payload'), true)
   assert.equal(fileImportSource.includes('dup-group'), true)
   assert.equal(fileImportSource.includes('dup-raw'), true)
   assert.equal(fileImportSource.includes('重复组 #'), true)
-  assert.equal(fileImportSource.includes('重复原因'), true)
+  assert.equal(fileImportSource.includes('首次出现'), true)
+  assert.equal(fileImportSource.includes('重复出现'), true)
   assert.equal(fileImportSource.includes('当前仅检测本次文件内重复'), true)
-  assert.equal(fileImportSource.includes('保留疑似重复题'), true)
-  assert.equal(fileImportSource.includes('忽略疑似重复题'), true)
+  // No parsed content or reason in duplicates tab
+  assert.equal(fileImportSource.includes('dup-parsed'), false)
+  assert.equal(fileImportSource.includes('dup-reason'), false)
+  // firstIndex is used in questionData.ts classification, not template
 })
 
 test('raw text comparison dialog is top-level with top-bottom layout', () => {
