@@ -68,6 +68,18 @@ test('offers JSON, Word, and PDF import entry points', () => {
   assert.equal((source.match(/class="import-type-item" disabled/g) || []).length, 0)
 })
 
+test('closes import type menu before opening import dialogs', () => {
+  assert.equal(source.includes('headerImportMenuVisible'), true)
+  assert.equal(source.includes('emptyImportMenuVisible'), true)
+  assert.equal(source.includes('closeAllImportMenus'), true)
+  assert.equal(source.includes('await closeAllImportMenus()'), true)
+  assert.equal(source.includes('v-model:visible="headerImportMenuVisible"'), true)
+  assert.equal(source.includes('v-model:visible="emptyImportMenuVisible"'), true)
+  // openFileImport must close menu, destroy old dialog, then open fresh session
+  assert.equal(source.includes("fileImportVisible.value = false"), true)
+  assert.equal(source.includes("fileImportSession.value += 1"), true)
+})
+
 test('uses a compact JSON import dialog with local file parsing', () => {
   assert.equal(importSource.includes('class="format-hint"'), false)
   assert.equal(importSource.includes('class="format-examples"'), false)
