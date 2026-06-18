@@ -315,19 +315,21 @@ func (s *QuestionExtractionService) inferQuestionType(
 		return string(types.QuestionTypeFillBlank)
 	}
 
-	// Check for true/false answer patterns
-	lowerAnswer := strings.TrimSpace(strings.ToLower(answerText))
-	switch lowerAnswer {
-	case "对", "错", "正确", "错误", "是", "否", "true", "false", "t", "f", "√", "×":
-		return string(types.QuestionTypeTrueFalse)
-	}
-
+	// Options take precedence over true/false shorthand. In a choice question,
+	// answer "F" refers to option F rather than the false marker.
 	if len(options) >= 2 {
 		cleanAnswer := normalizeMultiChoiceAnswer(answerText)
 		if len(cleanAnswer) >= 2 && isMultiChoiceAnswer(answerText) {
 			return string(types.QuestionTypeMultipleChoice)
 		}
 		return string(types.QuestionTypeSingleChoice)
+	}
+
+	// Check for true/false answer patterns
+	lowerAnswer := strings.TrimSpace(strings.ToLower(answerText))
+	switch lowerAnswer {
+	case "对", "错", "正确", "错误", "是", "否", "true", "false", "t", "f", "√", "×":
+		return string(types.QuestionTypeTrueFalse)
 	}
 
 	return defaultType
@@ -510,8 +512,8 @@ func extractChoiceAnswerFromStem(stem string, optionLabels map[string]bool) (cle
 // it splits the stem prefix from the option source so that parseOptions can
 // correctly extract every option instead of treating the whole line as stem.
 //
-// To avoid confusing bracket answers like （E） with option markers,
-// matches immediately preceded by （ or ( are excluded.
+// The required whitespace/line-start boundary prevents bracket answers like
+// （E） from being confused with option markers.
 //
 // Returns (stem, optionSource, true) when at least 2 option markers are found;
 // otherwise ("", "", false).
@@ -521,25 +523,8 @@ func splitStemInlineOptions(line string) (stem string, optionSource string, ok b
 		return "", "", false
 	}
 
-	// Filter out matches that are part of bracket answers: e.g. （E） where E
-	// is followed by ） which is in the delimiter set.
-	var validMatches [][]int
-	for _, m := range matches {
-		start := m[0]
-		if start > 0 {
-			prev := line[start-1]
-			if prev == '（' || prev == '(' {
-				continue
-			}
-		}
-		validMatches = append(validMatches, m)
-	}
-	if len(validMatches) < 2 {
-		return "", "", false
-	}
-
-	// The first valid marker's start position marks the boundary between stem and options.
-	firstMarkerStart := validMatches[0][0]
+	// The first marker's start position marks the boundary between stem and options.
+	firstMarkerStart := matches[0][0]
 	stem = strings.TrimSpace(line[:firstMarkerStart])
 	optionSource = strings.TrimSpace(line[firstMarkerStart:])
 	return stem, optionSource, true

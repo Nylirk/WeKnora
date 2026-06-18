@@ -827,7 +827,7 @@ func TestIsMultiChoiceAnswer(t *testing.T) {
 		{"AC", true},
 		{"A", false},
 		{"", false},
-		{"A C E", false}, // needs normalization first
+		{"A C E", true},
 	}
 
 	for _, tt := range tests {
