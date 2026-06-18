@@ -221,3 +221,50 @@ Reworked evaluation UI into knowledge-base-style dataset cards, query-driven det
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: 修复选择题选项切分与展示：A-Z范围、顺序标签、答案展示
+
+**Date**: 2026-06-18
+**Task**: 修复选择题选项切分与展示：A-Z范围、顺序标签、答案展示
+**Branch**: `fix/question-import-choice-parsing`
+
+### Summary
+
+在 fix/question-import-choice-parsing stacked PR 上修复 QuestionExtractionService 的选择题解析。
+
+选项标签 A-D → A-Z，支持全角/半角标记（.．、）、：）。
+inlineOptionPattern 加 boundary anchor 防误切 e.g./Node.js。
+splitInlineOptions 和 splitStemInlineOptions 强制顺序标签（A→B→C→...），跳过非连续候选。
+extractChoiceAnswerFromStem 从题干括号抽取答案并交叉校验 option labels。
+appendOptionsToStem 生成展示用题干（含选项），expandChoiceAnswerText 将单字母答案展开为完整选项内容。
+修复 Go regexp panic（全角字符反斜杠转义非法）、首行 inline options 未拆分、bracket fallback 无校验删除。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `28f0519a` | (see git log) |
+| `6283d681` | (see git log) |
+| `9e94c440` | (see git log) |
+| `eb3128db` | (see git log) |
+| `0814f91b` | (see git log) |
+| `d49e9666` | (see git log) |
+| `9e7fc668` | (see git log) |
+| `e2b1d1ae` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -26,7 +26,7 @@ test('uses supported TDesign columns and named cell slots', () => {
 
 test('does not repeat the question count in the detail header', () => {
   assert.equal(source.includes('question-total'), false)
-  assert.equal(source.includes('questionTotal'), false)
+  // questionTotal exists for pagination state — not for display in header
 })
 
 test('renders only spaced edit and delete row actions', () => {
@@ -36,7 +36,7 @@ test('renders only spaced edit and delete row actions', () => {
   assert.equal(operationSlot.includes('openEditDialog(row)'), true)
   assert.equal(operationSlot.includes('removeQuestion(row)'), true)
   assert.equal(operationSlot.includes('reviewQuestion(row)'), false)
-  assert.equal(source.includes('updateQuestionStatus'), false)
+  assert.equal(source.includes('updateQuestionStatus'), true)
 })
 
 test('passes current questions into duplicate detection and syncs totals to the selected set', () => {
@@ -74,11 +74,9 @@ test('offers JSON, Word, and PDF import entry points', () => {
 
 test('closes import type menu before opening import dialogs', () => {
   assert.equal(source.includes('headerImportMenuVisible'), true)
-  assert.equal(source.includes('emptyImportMenuVisible'), true)
   assert.equal(source.includes('closeAllImportMenus'), true)
   assert.equal(source.includes('await closeAllImportMenus()'), true)
   assert.equal(source.includes('v-model:visible="headerImportMenuVisible"'), true)
-  assert.equal(source.includes('v-model:visible="emptyImportMenuVisible"'), true)
   // openFileImport must close menu, destroy old dialog, then open fresh session
   assert.equal(source.includes("fileImportVisible.value = false"), true)
   assert.equal(source.includes("fileImportSession.value += 1"), true)
@@ -123,6 +121,153 @@ test('normalizes import file preview response arrays', () => {
   assert.equal(questionApiSource.includes('Array.isArray(source.items)'), true)
   assert.equal(questionApiSource.includes('Array.isArray(source.errors)'), true)
   assert.equal(questionApiSource.includes('Array.isArray(source.warnings)'), true)
+})
+
+test('empty state no longer has action slot', () => {
+  assert.equal(source.includes('<template #action>'), false)
+  assert.equal(source.includes('emptyImportMenuVisible'), false)
+})
+
+test('narrows file import dialog width to 560px', () => {
+  assert.equal(fileImportSource.includes('width="560px"'), true)
+  assert.equal(fileImportSource.includes(':width="680"'), false)
+  assert.equal(fileImportSource.includes(':width="800"'), false)
+})
+
+test('opens a non-modal drawer with tabs for questions and raw text', () => {
+  assert.equal(fileImportSource.includes('t-drawer'), true)
+  assert.equal(fileImportSource.includes('previewDrawerVisible'), true)
+  assert.equal(fileImportSource.includes('previewDrawerTitle'), true)
+  assert.equal(fileImportSource.includes('解析预览'), true)
+  assert.equal(fileImportSource.includes('attach="body"'), true)
+  assert.equal(fileImportSource.includes(':show-overlay="false"'), true)
+  assert.equal(fileImportSource.includes('size="440px"'), true)
+  assert.equal(fileImportSource.includes('size="520px"'), false)
+  // Drawer uses t-tabs for questions + raw text
+  assert.equal(fileImportSource.includes('t-tabs'), true)
+  assert.equal(fileImportSource.includes('t-tab-panel'), true)
+  assert.equal(fileImportSource.includes('drawerTab'), true)
+  assert.equal(fileImportSource.includes('全部'), true)
+})
+
+test('raw text preview moved from dialog to drawer', () => {
+  // Raw text t-collapse should not be in the dialog body
+  assert.equal(fileImportSource.includes('class="raw-text"'), false)
+  // Raw text is in the drawer now
+  assert.equal(fileImportSource.includes('drawer-raw-text'), true)
+})
+
+test('preview drawer opens on successful parse and closes on cleanup', () => {
+  assert.equal(fileImportSource.includes('previewDrawerVisible.value = true'), true)
+  // cleanupDialogState must close drawer
+  const cleanupBody = fileImportSource.match(/function cleanupDialogState\(\) \{([\s\S]*?)  \}/)?.[1] || ''
+  assert.equal(cleanupBody.includes('previewDrawerVisible.value = false'), true)
+  // onFileSelected must also close drawer
+  const onFileBody = fileImportSource.match(/function onFileSelected\([^)]+\) \{([\s\S]*?)  \}/)?.[1] || ''
+  assert.equal(onFileBody.includes('previewDrawerVisible.value = false'), true)
+})
+
+test('has a view-results button to reopen the drawer', () => {
+  assert.equal(fileImportSource.includes('查看解析结果'), true)
+  assert.equal(fileImportSource.includes('previewDrawerVisible = true'), true)
+})
+
+test('import button stays in dialog footer, drawer has no footer', () => {
+  assert.equal(fileImportSource.includes('doConfirmImport'), true)
+  assert.equal(fileImportSource.includes(':footer="false"'), true)
+})
+
+test('dialog shifted left when drawer open', () => {
+  assert.equal(fileImportSource.includes('dialog-shifted-left'), true)
+})
+
+test('question table has row selection and batch actions', () => {
+  assert.equal(source.includes("type: 'multiple'"), true)
+  assert.equal(source.includes('selectedRowKeys'), true)
+  assert.equal(source.includes('onSelectChange'), true)
+  assert.equal(source.includes('batchReview'), true)
+  assert.equal(source.includes('batchDelete'), true)
+  assert.equal(source.includes('批量审核'), true)
+  assert.equal(source.includes('批量删除'), true)
+  assert.equal(source.includes('清空选择'), true)
+})
+
+test('draft status is clickable for single question review', () => {
+  assert.equal(source.includes('reviewSingleQuestion'), true)
+  assert.equal(source.includes('updateQuestionStatus'), true)
+  assert.equal(source.includes("row.status === 'draft'"), true)
+  // No old review button in operation column
+  assert.equal(source.includes('reviewQuestion(row)'), false)
+})
+
+test('reviewed status shows reviewer tooltip', () => {
+  assert.equal(source.includes('reviewed_by'), true)
+  assert.equal(source.includes('reviewed_at'), true)
+  assert.equal(source.includes('t-tooltip'), true)
+})
+
+test('stats moved from main dialog to drawer', () => {
+  assert.equal(fileImportSource.includes('drawer-stats'), true)
+  assert.equal(fileImportSource.includes('previewStats.detected_questions'), true)
+  assert.equal(fileImportSource.includes('previewStats.with_answer'), true)
+  assert.equal(fileImportSource.includes('previewStats.without_answer'), true)
+})
+
+test('duplicate detection uses groups with raw text only', () => {
+  assert.equal(fileImportSource.includes('duplicateCount'), true)
+  assert.equal(fileImportSource.includes('duplicateMode'), true)
+  assert.equal(fileImportSource.includes('duplicateGroups'), true)
+  assert.equal(fileImportSource.includes('getItemRawText'), true)
+  assert.equal(fileImportSource.includes('dup-group'), true)
+  assert.equal(fileImportSource.includes('dup-raw'), true)
+  assert.equal(fileImportSource.includes('重复组 #'), true)
+  assert.equal(fileImportSource.includes('首次出现'), true)
+  assert.equal(fileImportSource.includes('重复出现'), true)
+  assert.equal(fileImportSource.includes('当前仅检测本次文件内重复'), true)
+  // No parsed content or reason in duplicates tab
+  assert.equal(fileImportSource.includes('dup-parsed'), false)
+  assert.equal(fileImportSource.includes('dup-reason'), false)
+  // firstIndex is used in questionData.ts classification, not template
+})
+
+test('raw text comparison dialog is top-level with top-bottom layout', () => {
+  assert.equal(fileImportSource.includes('openRawCompare'), true)
+  assert.equal(fileImportSource.includes('rawCompareVisible'), true)
+  assert.equal(fileImportSource.includes('rawCompareItem'), true)
+  assert.equal(fileImportSource.includes('原文对比'), true)
+  // Renders above drawer via attach="body" and z-index
+  assert.equal(fileImportSource.includes('attach="body"'), true)
+  assert.equal(fileImportSource.includes(':z-index="3000"'), true)
+  // Top-bottom layout (no t-row/t-col)
+  assert.equal(fileImportSource.includes('raw-compare-section'), true)
+  assert.equal(fileImportSource.includes('<t-row'), false)
+  assert.equal(fileImportSource.includes('getItemRawText'), true)
+  assert.equal(fileImportSource.includes('暂无原始文本'), true)
+  // Does not break import or parse
+  assert.equal(fileImportSource.includes('doPreviewParse'), true)
+  assert.equal(fileImportSource.includes('doConfirmImport'), true)
+})
+
+test('staged flow action with duplicateMode defaulting to skip', () => {
+  assert.equal(fileImportSource.includes('handleFlowAction'), true)
+  assert.equal(fileImportSource.includes('flowActionLabel'), true)
+  assert.equal(fileImportSource.includes('flowActionDisabled'), true)
+  assert.equal(fileImportSource.includes('!previewResult'), true)
+  // duplicateMode defaults to 'skip' — no empty-string blocking state
+  assert.equal(fileImportSource.includes("duplicateMode = ref<'include' | 'skip'>('skip')"), true)
+  assert.equal(fileImportSource.includes('doPreviewParse'), true)
+  assert.equal(fileImportSource.includes('doConfirmImport'), true)
+  assert.equal(fileImportSource.includes('itemsToImport'), true)
+})
+
+test('question table has pagination', () => {
+  assert.equal(source.includes('currentPage'), true)
+  assert.equal(source.includes('pageSize'), true)
+  assert.equal(source.includes('questionTotal'), true)
+  assert.equal(source.includes('onPageChange'), true)
+  assert.equal(source.includes('reloadFromFirstPage'), true)
+  assert.equal(source.includes('@page-change="onPageChange"'), true)
+  assert.equal(source.includes('listQuestions(..., 1, 200)'), false)
 })
 
 test('does not use native browser dialogs in question bank components', () => {

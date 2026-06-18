@@ -2,7 +2,8 @@
   <t-dialog
     v-model:visible="dialogVisible"
     :header="dialogTitle"
-    :width="800"
+    width="560px"
+    :class="{ 'dialog-shifted-left': previewDrawerVisible }"
     :confirm-btn="null"
     :cancel-btn="{ content: $t('common.cancel') }"
     :close-on-overlay-click="false"
@@ -19,7 +20,7 @@
           @change="onFileSelected"
         />
         <div class="file-upload-body">
-          <t-icon name="upload" size="28px" />
+          <t-icon name="upload" size="24px" />
           <span v-if="selectedFile">{{ $t('questionBank.fileImportSelected', { name: selectedFile.name, size: formatFileSize(selectedFile.size) }) }}</span>
           <span v-else>{{ $t('questionBank.fileImportSelect') }}</span>
           <t-button size="small" variant="outline" @click.stop="fileInputRef?.click()">
@@ -46,27 +47,11 @@
             <t-option value="hard" :label="$t('questionBank.hard', '困难')" />
           </t-select>
         </div>
-        <t-button variant="outline" :loading="parsing" :disabled="!selectedFile" @click="doPreviewParse">
-          {{ parsing ? $t('questionBank.fileImportParsing') : $t('questionBank.fileImportParsePreview') }}
-        </t-button>
       </t-space>
     </div>
 
-    <!-- 3. Preview area -->
+    <!-- 3. Preview summary (brief warnings/errors only; stats in drawer) -->
     <div v-if="previewResult" class="preview-area">
-      <!-- Stats -->
-      <div class="preview-stats">
-        <t-space size="small" break-line>
-          <t-tag variant="light">{{ $t('questionBank.fileImportDetected') }}：{{ previewStats.detected_questions }}</t-tag>
-          <t-tag theme="success" variant="light">{{ $t('questionBank.fileImportWithAnswer') }}：{{ previewStats.with_answer }}</t-tag>
-          <t-tag theme="warning" variant="light">{{ $t('questionBank.fileImportWithoutAnswer') }}：{{ previewStats.without_answer }}</t-tag>
-          <t-tag v-if="previewWarnings.length" theme="danger" variant="light">
-            {{ previewWarnings.length }} 条警告
-          </t-tag>
-        </t-space>
-      </div>
-
-      <!-- Warnings -->
       <t-alert v-if="previewWarnings.length" theme="warning" :close-btn="false">
         <t-list size="small">
           <t-list-item v-for="(w, i) in previewWarnings" :key="'warn-' + i">
@@ -74,55 +59,24 @@
           </t-list-item>
         </t-list>
       </t-alert>
-
-      <!-- Errors -->
       <t-alert v-if="previewErrors.length" theme="error" :close-btn="false">
         <t-list size="small">
           <t-list-item v-for="(e, i) in previewErrors" :key="'err-' + i">
-            <span class="error-text">{{ $t('questionBank.fileImportError', '错误') }}：{{ e.message }}</span>
+            <span class="error-text">{{ e.message }}</span>
           </t-list-item>
         </t-list>
       </t-alert>
-
-      <!-- Raw text (collapsible) -->
-      <t-collapse v-if="rawTextPreview">
-        <t-collapse-panel :header="$t('questionBank.fileImportRawText')">
-          <pre class="raw-text">{{ rawTextPreview }}</pre>
-        </t-collapse-panel>
-      </t-collapse>
-
-      <!-- Question preview list -->
-      <div v-if="questionItems.length" class="question-preview-list">
-        <h4>{{ $t('questionBank.fileImportPreviewList') }}（{{ questionItems.length }}）</h4>
-        <div v-for="(item, index) in questionItems" :key="index" class="question-preview-item">
-          <div class="preview-item-header">
-            <t-tag size="small">{{
-              questionTypeLabel(item.question_type as QuestionType)
-            }}</t-tag>
-            <t-tag size="small" variant="light">{{ difficultyLabel(item.difficulty) }}</t-tag>
-            <span v-if="!item.answer_text" class="no-answer-tag">{{ $t('questionBank.fileImportEmptyAnswer') }}</span>
-            <t-space size="small">
-              <t-button size="small" variant="text" @click="editPreviewItem(index)">
-                {{ $t('questionBank.fileImportEdit') }}
-              </t-button>
-              <t-button size="small" variant="text" theme="danger" @click="removePreviewItem(index)">
-                {{ $t('questionBank.fileImportDelete') }}
-              </t-button>
-            </t-space>
-          </div>
-          <div class="preview-item-stem">{{ item.stem_text }}</div>
-          <div v-if="item.answer_text" class="preview-item-answer">
-            <span class="answer-label">答案：</span>{{ item.answer_text }}
-          </div>
-          <div v-if="item.analysis_text" class="preview-item-analysis">
-            <span class="analysis-label">解析：</span>{{ item.analysis_text }}
-          </div>
-        </div>
-      </div>
-      <t-empty v-else :description="$t('questionBank.fileImportNoQuestions')" />
+      <t-button
+        v-if="!previewDrawerVisible"
+        variant="outline"
+        block
+        @click="previewDrawerVisible = true"
+      >
+        查看解析结果（{{ questionItems.length }} 题）
+      </t-button>
     </div>
 
-    <!-- 4. Import mode selector (shown after preview) -->
+    <!-- 4. Import mode + duplicate handling -->
     <div v-if="previewResult && questionItems.length" class="import-mode-section">
       <div class="section-title">{{ $t('questionBank.fileImportImportMode') }}</div>
       <t-radio-group v-model="importMode" variant="default-filled">
@@ -130,9 +84,21 @@
         <t-radio-button value="reviewed">{{ $t('questionBank.fileImportModeReviewed') }}</t-radio-button>
       </t-radio-group>
       <p class="import-mode-hint">{{ $t('questionBank.fileImportModeDraftHelp') }}</p>
+
+      <!-- Duplicate handling -->
+      <div v-if="duplicateCount > 0" class="duplicate-mode-section">
+        <div class="section-title">重复题处理</div>
+        <t-radio-group v-model="duplicateMode" variant="default-filled">
+          <t-radio-button value="include">保留疑似重复题</t-radio-button>
+          <t-radio-button value="skip">忽略疑似重复题</t-radio-button>
+        </t-radio-group>
+        <p class="import-mode-hint">
+          {{ duplicateMode === 'skip' ? `将忽略 ${duplicateCount} 条疑似重复题，导入 ${classifiedPreview.uniqueItems.length} 题` : `保留全部重复题，导入 ${questionItems.length} 题` }}
+        </p>
+      </div>
     </div>
 
-    <!-- Custom footer -->
+    <!-- Custom footer: staged flow-action button -->
     <template #footer>
       <t-space size="small">
         <t-button variant="outline" @click="closeAndReset">
@@ -140,11 +106,11 @@
         </t-button>
         <t-button
           theme="primary"
-          :loading="importing"
-          :disabled="!previewResult || !questionItems.length"
-          @click="doConfirmImport"
+          :loading="parsing || importing"
+          :disabled="flowActionDisabled"
+          @click="handleFlowAction"
         >
-          {{ $t('questionBank.fileImportConfirm', '确认导入') }}
+          {{ flowActionLabel }}
         </t-button>
       </t-space>
     </template>
@@ -185,6 +151,113 @@
       </template>
     </t-dialog>
   </t-dialog>
+
+  <!-- Preview drawer: stats + questions + duplicates + raw text -->
+  <t-drawer
+    v-model:visible="previewDrawerVisible"
+    :header="previewDrawerTitle"
+    size="440px"
+    placement="right"
+    :footer="false"
+    :show-overlay="false"
+    attach="body"
+  >
+    <!-- Stats bar at drawer top -->
+    <div class="drawer-stats">
+      <t-space size="small" break-line>
+        <t-tag variant="light">识别 {{ previewStats.detected_questions }} 题</t-tag>
+        <t-tag theme="success" variant="light">有答案 {{ previewStats.with_answer }}</t-tag>
+        <t-tag theme="warning" variant="light">缺答案 {{ previewStats.without_answer }}</t-tag>
+        <t-tag v-if="duplicateCount" theme="danger" variant="light">疑似重复 {{ duplicateCount }}</t-tag>
+      </t-space>
+    </div>
+
+    <t-tabs v-model="drawerTab" class="preview-drawer-tabs">
+      <t-tab-panel value="questions" :label="`全部（${questionItems.length}）`">
+        <div class="preview-drawer-body">
+          <div v-if="questionItems.length" class="question-preview-list">
+            <div v-for="(item, index) in questionItems" :key="index" class="question-preview-item">
+              <div class="preview-item-header">
+                <t-tag size="small">{{ questionTypeLabel(item.question_type as QuestionType) }}</t-tag>
+                <t-tag size="small" variant="light">{{ difficultyLabel(item.difficulty) }}</t-tag>
+                <span v-if="!item.answer_text" class="no-answer-tag">缺答案</span>
+                <t-space size="small">
+                  <t-button size="small" variant="text" @click="openRawCompare(item)">原文对比</t-button>
+                  <t-button size="small" variant="text" @click="editPreviewItem(index)">编辑</t-button>
+                  <t-button size="small" variant="text" theme="danger" @click="removePreviewItem(index)">移除</t-button>
+                </t-space>
+              </div>
+              <div class="preview-item-stem">{{ item.stem_text }}</div>
+              <div v-if="item.answer_text" class="preview-item-answer"><span class="answer-label">答案：</span>{{ item.answer_text }}</div>
+            </div>
+          </div>
+          <t-empty v-else description="无题目" />
+        </div>
+      </t-tab-panel>
+      <t-tab-panel value="duplicates" :label="`疑似重复（${duplicateCount}）`" :disabled="!duplicateCount">
+        <div class="preview-drawer-body">
+          <p class="dup-scope-note">当前仅检测本次文件内重复</p>
+          <div v-if="duplicateGroups.length">
+            <div v-for="(group, gi) in duplicateGroups" :key="gi" class="dup-group">
+              <div class="dup-group-title">重复组 #{{ gi + 1 }}</div>
+
+              <!-- First occurrence -->
+              <div class="dup-block">
+                <div class="dup-label">首次出现 — 第 {{ group.firstItem.line_number }} 题</div>
+                <pre v-if="getItemRawText(group.firstItem)" class="dup-raw">{{ getItemRawText(group.firstItem) }}</pre>
+                <t-empty v-else description="暂无原始文本" />
+              </div>
+
+              <!-- Duplicates -->
+              <div v-for="(dup, di) in group.duplicateItems" :key="di" class="dup-block">
+                <div class="dup-block-header">
+                  <div class="dup-label">重复出现 — 第 {{ dup.line_number }} 题</div>
+                  <t-button size="small" variant="text" theme="danger" @click="removePreviewItem(questionItems.indexOf(dup))">移除</t-button>
+                </div>
+                <pre v-if="getItemRawText(dup)" class="dup-raw">{{ getItemRawText(dup) }}</pre>
+                <t-empty v-else description="暂无原始文本" />
+              </div>
+            </div>
+          </div>
+          <t-empty v-else description="无重复题" />
+        </div>
+      </t-tab-panel>
+      <t-tab-panel value="raw" label="原始文本" :disabled="!rawTextPreview">
+        <pre v-if="rawTextPreview" class="drawer-raw-text">{{ rawTextPreview }}</pre>
+        <t-empty v-else description="无原始文本" />
+      </t-tab-panel>
+    </t-tabs>
+  </t-drawer>
+
+  <!-- Raw text comparison dialog (top-level, after drawer so it renders above) -->
+  <t-dialog
+    v-model:visible="rawCompareVisible"
+    :header="`原文对比 · 第 ${rawCompareItem?.line_number || ''} 题`"
+    width="720px"
+    :confirm-btn="null"
+    :cancel-btn="{ content: '关闭' }"
+    attach="body"
+    :z-index="3000"
+  >
+    <div v-if="rawCompareItem" class="raw-compare-body">
+      <!-- Source text on top -->
+      <div class="raw-compare-section">
+        <div class="raw-compare-label">原始文本</div>
+        <pre v-if="getItemRawText(rawCompareItem)" class="raw-compare-text">{{ getItemRawText(rawCompareItem) }}</pre>
+        <t-empty v-else description="暂无原始文本，请检查后端 preview 是否返回 raw_text。" />
+      </div>
+      <!-- Parsed result below -->
+      <div class="raw-compare-section">
+        <div class="raw-compare-label">解析结果</div>
+        <div class="raw-compare-parsed">
+          <p><t-tag size="small">{{ questionTypeLabel(rawCompareItem.question_type as QuestionType) }}</t-tag> <t-tag size="small" variant="light">{{ difficultyLabel(rawCompareItem.difficulty) }}</t-tag></p>
+          <p><strong>题干：</strong>{{ rawCompareItem.stem_text }}</p>
+          <p v-if="rawCompareItem.answer_text"><strong>答案：</strong>{{ rawCompareItem.answer_text }}</p>
+          <p v-if="rawCompareItem.analysis_text"><strong>解析：</strong>{{ rawCompareItem.analysis_text }}</p>
+        </div>
+      </div>
+    </div>
+  </t-dialog>
 </template>
 
 <script setup lang="ts">
@@ -192,7 +265,7 @@ import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { previewImportFile, importQuestions, type ImportFilePreviewResponse, type ImportQuestionItem, type QuestionType, type QuestionDifficulty } from '@/api/question'
-import { classifyQuestionImportItems, selectQuestionImportItems } from '../questionData'
+import { classifyQuestionImportItemsWithinFile } from '../questionData'
 
 const { t } = useI18n()
 
@@ -226,6 +299,8 @@ const dialogTitle = computed(() => {
     : (t('questionBank.fileImportPdf') || 'PDF 导入题目')
 })
 
+const previewDrawerTitle = computed(() => `解析预览 · ${questionItems.value.length} 题`)
+
 const questionTypes = [
   { value: 'single_choice', label: '单选' },
   { value: 'multiple_choice', label: '多选' },
@@ -241,10 +316,20 @@ const selectedFile = ref<File | null>(null)
 const parsing = ref(false)
 const importing = ref(false)
 const previewResult = ref<ImportFilePreviewResponse | null>(null)
+const previewDrawerVisible = ref(false)
+const drawerTab = ref('questions')
 const importMode = ref<'draft' | 'reviewed'>('draft')
+const duplicateMode = ref<'include' | 'skip'>('skip')
 const editVisible = ref(false)
 const editingIndex = ref(-1)
 const editingItem = ref<ImportQuestionItem | null>(null)
+const rawCompareVisible = ref(false)
+const rawCompareItem = ref<ImportQuestionItem | null>(null)
+
+function openRawCompare(item: ImportQuestionItem) {
+  rawCompareItem.value = item
+  rawCompareVisible.value = true
+}
 
 const parseConfig = ref({
   default_question_type: 'short_answer',
@@ -267,6 +352,8 @@ function abortCurrentRequest() {
 
 function cleanupDialogState() {
   abortCurrentRequest()
+  previewDrawerVisible.value = false
+  drawerTab.value = 'questions'
   selectedFile.value = null
   previewResult.value = null
   parsing.value = false
@@ -274,7 +361,9 @@ function cleanupDialogState() {
   editVisible.value = false
   editingIndex.value = -1
   editingItem.value = null
+  rawCompareItem.value = null
   importMode.value = 'draft'
+  duplicateMode.value = 'skip'
   parseConfig.value = {
     default_question_type: 'short_answer',
     default_difficulty: 'medium',
@@ -328,6 +417,47 @@ const rawTextPreview = computed(() => {
   return typeof raw === 'string' ? raw : ''
 })
 
+const classifiedPreview = computed(() => classifyQuestionImportItemsWithinFile(questionItems.value))
+const duplicateCount = computed(() => classifiedPreview.value.duplicateItems.length)
+const duplicateGroups = computed(() => classifiedPreview.value.duplicateGroups || [])
+
+// Extract raw text from item: prefer raw_text field, fallback to source_payload.raw_text
+function getItemRawText(item: any): string {
+  if (typeof item.raw_text === 'string' && item.raw_text) return item.raw_text
+  const sp = item.source_payload
+  if (sp && typeof sp.raw_text === 'string' && sp.raw_text) return sp.raw_text
+  return ''
+}
+
+const itemsToImport = computed(() => {
+  if (duplicateCount.value === 0) return questionItems.value
+  if (duplicateMode.value === 'include') return questionItems.value
+  if (duplicateMode.value === 'skip') return classifiedPreview.value.uniqueItems
+  return questionItems.value
+})
+
+// Staged flow-action: parse → resolve duplicates → import
+const flowActionLabel = computed(() => {
+  if (!previewResult.value) return parsing.value ? '解析中...' : '解析预览'
+  return `导入 ${itemsToImport.value.length} 题`
+})
+
+const flowActionDisabled = computed(() => {
+  if (!previewResult.value) return !selectedFile.value || parsing.value
+  return importing.value || !itemsToImport.value.length
+})
+
+async function handleFlowAction() {
+  if (!previewResult.value) {
+    await doPreviewParse()
+    return
+  }
+
+  // duplicateMode defaults to skip; user can toggle to include in import-mode-section
+
+  await doConfirmImport()
+}
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
@@ -354,6 +484,7 @@ function onFileSelected(event: Event) {
 
   // Abort any in-flight preview, clear old results
   abortCurrentRequest()
+  previewDrawerVisible.value = false
   previewResult.value = null
   parsing.value = false
   importing.value = false
@@ -403,6 +534,10 @@ async function doPreviewParse() {
     if (!props.visible) return
 
     previewResult.value = result
+    // Open drawer on successful parse with items
+    if (result.items && result.items.length > 0) {
+      previewDrawerVisible.value = true
+    }
   } catch (e: any) {
     // Guard: ignore cancelled requests
     if (controller.signal.aborted) return
@@ -456,32 +591,18 @@ function removePreviewItem(index: number) {
 
 async function doConfirmImport() {
   if (!previewResult.value) return
-  const items = previewResult.value.items
-  if (!items.length) {
+  const toImport = itemsToImport.value
+  if (!toImport.length) {
     MessagePlugin.warning('没有可导入的题目')
     return
   }
 
-  // Classify and select (respect duplicates)
-  const fingerprints = (props.currentQuestions || []).map((q: any) => ({
-    question_type: q.question_type,
-    stem_text: q.stem_text,
-    answer_text: q.answer_text,
-  }))
-  const classified = classifyQuestionImportItems(items, fingerprints)
-  const toImport = selectQuestionImportItems(items, classified, false)
-
-  if (!toImport.length && classified.duplicateItems.length > 0) {
-    MessagePlugin.warning('没有可导入的新题，已跳过重复题。')
-    return
-  }
-
+  // Guard: duplicates unresolved — require explicit user decision
   const requestId = importingRequestId.value + 1
   importingRequestId.value = requestId
 
   importing.value = true
   try {
-    // Apply import mode status to items
     const itemsWithStatus = toImport.map(item => ({
       ...item,
       status: importMode.value,
@@ -489,22 +610,25 @@ async function doConfirmImport() {
     const response: any = await importQuestions(props.knowledgeBaseId, props.setId, { items: itemsWithStatus })
     const result = response?.data ?? response
 
-    // Guard: ignore response if dialog was closed
     if (requestId !== importingRequestId.value) return
     if (!props.visible) return
 
     const errors = Array.isArray(result?.errors) ? result.errors : []
     const created = result?.created ?? 0
+    const skipped = duplicateCount.value > 0 && duplicateMode.value === 'skip' ? duplicateCount.value : 0
+
+    let msg = `解析 ${questionItems.value.length} 题，成功导入 ${created} 题`
+    if (skipped) msg += `，跳过重复 ${skipped} 题`
+    if (errors.length) msg += `，失败 ${errors.length} 题`
 
     if (created > 0) {
-      MessagePlugin.success(`成功导入 ${created} 道题目`)
+      MessagePlugin.success(msg)
       emit('imported')
     }
     if (errors.length) {
-      MessagePlugin.warning(`导入成功 ${created} 道，${errors.length} 道失败`)
+      MessagePlugin.warning(`导入 ${created}/${toImport.length} 题，${errors.length} 条错误`)
     }
     if (created > 0 && !errors.length) {
-      // Successful import — close dialog, which triggers closeAndReset
       closeAndReset()
     }
   } catch (e: any) {
@@ -552,17 +676,17 @@ onBeforeUnmount(() => {
 .file-input { display: none; }
 .file-upload-body {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 10px; min-height: 120px; border: 1px dashed var(--td-component-stroke);
+  gap: 8px; min-height: 100px; border: 1px dashed var(--td-component-stroke);
   border-radius: 6px; color: var(--td-text-color-secondary);
   background: var(--td-bg-color-secondarycontainer); cursor: pointer;
-  padding: 16px;
+  padding: 12px; max-width: 100%; overflow-wrap: anywhere;
 }
 .parse-config { margin: 16px 0; }
 .config-item { display: flex; align-items: center; gap: 6px; }
 .config-label { font-size: 13px; color: var(--td-text-color-secondary); }
 .preview-area { margin-top: 16px; }
 .preview-stats { margin-bottom: 12px; }
-.raw-text { max-height: 200px; overflow-y: auto; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; background: var(--td-bg-color-secondarycontainer); padding: 12px; border-radius: 4px; }
+.raw-text { max-height: 160px; overflow-y: auto; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; background: var(--td-bg-color-secondarycontainer); padding: 12px; border-radius: 4px; }
 .question-preview-list { margin-top: 16px; }
 .question-preview-list h4 { margin: 0 0 12px; }
 .question-preview-item {
@@ -580,4 +704,39 @@ onBeforeUnmount(() => {
 .import-mode-hint { margin: 8px 0 0; font-size: 12px; color: var(--td-text-color-secondary); }
 .warning-text { color: var(--td-warning-color); }
 .error-text { color: var(--td-error-color); }
+
+.drawer-stats { padding: 0 0 12px; border-bottom: 1px solid var(--td-component-stroke); margin-bottom: 8px; }
+.duplicate-resolution-bar { margin-bottom: 12px; }
+.dup-scope-note { font-size: 12px; color: var(--td-text-color-secondary); margin-bottom: 12px; }
+.dup-group { border: 1px solid var(--td-component-stroke); border-radius: 6px; padding: 12px; margin-bottom: 12px; }
+.dup-group-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; color: var(--td-brand-color); }
+.dup-block { margin-top: 12px; padding: 12px; background: var(--td-bg-color-container-hover); border-radius: 6px; }
+.dup-block-header { display: flex; align-items: center; justify-content: space-between; }
+.dup-label { font-size: 12px; color: var(--td-text-color-secondary); margin-bottom: 8px; }
+.dup-raw { margin: 0; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow-y: auto; background: var(--td-bg-color-page); padding: 8px; border-radius: 4px; }
+
+/* Raw compare dialog — top-bottom layout */
+.raw-compare-body { display: flex; flex-direction: column; gap: 16px; }
+.raw-compare-section { min-width: 0; }
+.raw-compare-label { font-weight: 600; margin-bottom: 6px; font-size: 14px; }
+.raw-compare-text { max-height: 320px; overflow-y: auto; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; background: var(--td-bg-color-secondarycontainer); padding: 12px; border-radius: 4px; margin: 0; }
+.raw-compare-parsed { font-size: 13px; line-height: 1.5; }
+.raw-compare-parsed p { margin: 4px 0; }
+.drawer-raw-text {
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--td-bg-color-secondarycontainer);
+  padding: 12px;
+  border-radius: 4px;
+}
+
+/* Shift dialog left slightly when drawer is open so the 440px drawer
+   does not overlap dialog footer at 1366px viewport (560px dialog). */
+.dialog-shifted-left {
+  margin-left: -44px;
+}
 </style>

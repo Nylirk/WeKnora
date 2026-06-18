@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
+- **Total Sessions**: 7
 - **Last Active**: 2026-06-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~223 | Active |
+| `journal-1.md` | ~270 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-06-18 | 修复选择题选项切分与展示：A-Z范围、顺序标签、答案展示 | `28f0519a`, `6283d681`, `9e94c440`, `eb3128db`, `0814f91b`, `d49e9666`, `9e7fc668`, `e2b1d1ae` | `fix/question-import-choice-parsing` |
 | 6 | 2026-06-18 | 实现题库 DOC/DOCX/PDF 文件导入与预览 | `d324df99`, `51bab9e1`, `4bb3216e`, `f045a189`, `f934ddab`, `a0b23a7d`, `9453d9e3`, `4d05cc2e` | `feat/document-question-import` |
 | 5 | 2026-06-16 | Align evaluation UI with knowledge base cards | `d1300a0e`, `e0e716a1`, `abb8a68a` | `-` |
 | 4 | 2026-06-16 | Fix frontend vendor chunk cycle | `2ea770f1` | `codex/rag-evaluation-v2` |

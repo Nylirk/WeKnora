@@ -34,6 +34,7 @@ export interface Question {
   source_knowledge_id: string; evidence_chunk_ids: string[]
   source_payload: Record<string, unknown>; extraction_metadata: Record<string, unknown>
   sort_order: number; created_at: string; updated_at: string
+  reviewed_by?: string; reviewed_at?: string
 }
 
 export interface QuestionListFilter {
@@ -48,7 +49,7 @@ export interface ImportQuestionItem {
   analysis_text: string; grading_rubric: Record<string, unknown>
   difficulty: QuestionDifficulty; knowledge_points: string[]; tags: string[]
   source_knowledge_id: string; evidence_chunk_ids: string[]
-  status?: QuestionStatus
+  status?: QuestionStatus; raw_text?: string
 }
 
 export interface ImportQuestionError { line_number: number; message: string }

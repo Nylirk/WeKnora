@@ -19,27 +19,27 @@ const (
 type QuestionSetStatus string
 
 const (
-	QuestionSetStatusActive   QuestionSetStatus = "active"
+	QuestionSetStatusActive    QuestionSetStatus = "active"
 	QuestionSetStatusCompleted QuestionSetStatus = "completed"
-	QuestionSetStatusPending  QuestionSetStatus = "pending"
-	QuestionSetStatusFailed   QuestionSetStatus = "failed"
+	QuestionSetStatusPending   QuestionSetStatus = "pending"
+	QuestionSetStatusFailed    QuestionSetStatus = "failed"
 )
 
 type QuestionSet struct {
-	ID               string            `json:"id" gorm:"type:varchar(36);primaryKey"`
-	TenantID         uint64            `json:"tenant_id" gorm:"index;not null"`
-	KnowledgeBaseID  string            `json:"knowledge_base_id" gorm:"type:varchar(36);index;not null"`
-	Name             string            `json:"name" gorm:"type:varchar(255);not null"`
-	Description      string            `json:"description" gorm:"type:text;not null;default:''"`
+	ID               string                `json:"id" gorm:"type:varchar(36);primaryKey"`
+	TenantID         uint64                `json:"tenant_id" gorm:"index;not null"`
+	KnowledgeBaseID  string                `json:"knowledge_base_id" gorm:"type:varchar(36);index;not null"`
+	Name             string                `json:"name" gorm:"type:varchar(255);not null"`
+	Description      string                `json:"description" gorm:"type:text;not null;default:''"`
 	SourceType       QuestionSetSourceType `json:"source_type" gorm:"type:varchar(32);not null;default:'manual'"`
-	Status           QuestionSetStatus `json:"status" gorm:"type:varchar(32);not null;default:'active'"`
-	QuestionCount    int               `json:"question_count" gorm:"column:question_count;not null;default:0"`
-	GenerationConfig JSON             `json:"generation_config" gorm:"type:jsonb;not null"`
-	GenerationScope  JSON             `json:"generation_scope" gorm:"type:jsonb;not null"`
-	ErrorMessage     string           `json:"error_message" gorm:"type:text;not null;default:''"`
-	CreatedAt        time.Time         `json:"created_at"`
-	UpdatedAt        time.Time         `json:"updated_at"`
-	DeletedAt        gorm.DeletedAt    `json:"-" gorm:"index"`
+	Status           QuestionSetStatus     `json:"status" gorm:"type:varchar(32);not null;default:'active'"`
+	QuestionCount    int                   `json:"question_count" gorm:"column:question_count;not null;default:0"`
+	GenerationConfig JSON                  `json:"generation_config" gorm:"type:jsonb;not null"`
+	GenerationScope  JSON                  `json:"generation_scope" gorm:"type:jsonb;not null"`
+	ErrorMessage     string                `json:"error_message" gorm:"type:text;not null;default:''"`
+	CreatedAt        time.Time             `json:"created_at"`
+	UpdatedAt        time.Time             `json:"updated_at"`
+	DeletedAt        gorm.DeletedAt        `json:"-" gorm:"index"`
 }
 
 func (*QuestionSet) TableName() string { return "question_sets" }
@@ -67,30 +67,32 @@ const (
 )
 
 type Question struct {
-	ID                 string          `json:"id" gorm:"type:varchar(36);primaryKey"`
-	TenantID           uint64          `json:"tenant_id" gorm:"index;not null"`
-	QuestionSetID      string          `json:"question_set_id" gorm:"type:varchar(36);index;not null"`
-	KnowledgeBaseID    string          `json:"knowledge_base_id" gorm:"type:varchar(36);index;not null"`
-	QuestionType       string          `json:"question_type" gorm:"type:varchar(64);not null;default:'single_choice'"`
-	SchemaVersion      string          `json:"schema_version" gorm:"type:varchar(16);not null;default:'v1'"`
-	StemText           string          `json:"stem_text" gorm:"type:text;not null;default:''"`
-	QuestionBody       JSON            `json:"question_body" gorm:"type:jsonb;not null"`
-	AnswerText         string          `json:"answer_text" gorm:"type:text;not null;default:''"`
-	AnswerBody         JSON            `json:"answer_body" gorm:"type:jsonb;not null"`
-	AnalysisText       string          `json:"analysis_text" gorm:"type:text;not null;default:''"`
-	GradingRubric      JSON            `json:"grading_rubric" gorm:"type:jsonb;not null"`
+	ID                 string             `json:"id" gorm:"type:varchar(36);primaryKey"`
+	TenantID           uint64             `json:"tenant_id" gorm:"index;not null"`
+	QuestionSetID      string             `json:"question_set_id" gorm:"type:varchar(36);index;not null"`
+	KnowledgeBaseID    string             `json:"knowledge_base_id" gorm:"type:varchar(36);index;not null"`
+	QuestionType       string             `json:"question_type" gorm:"type:varchar(64);not null;default:'single_choice'"`
+	SchemaVersion      string             `json:"schema_version" gorm:"type:varchar(16);not null;default:'v1'"`
+	StemText           string             `json:"stem_text" gorm:"type:text;not null;default:''"`
+	QuestionBody       JSON               `json:"question_body" gorm:"type:jsonb;not null"`
+	AnswerText         string             `json:"answer_text" gorm:"type:text;not null;default:''"`
+	AnswerBody         JSON               `json:"answer_body" gorm:"type:jsonb;not null"`
+	AnalysisText       string             `json:"analysis_text" gorm:"type:text;not null;default:''"`
+	GradingRubric      JSON               `json:"grading_rubric" gorm:"type:jsonb;not null"`
 	Difficulty         QuestionDifficulty `json:"difficulty" gorm:"type:varchar(16);not null;default:'medium'"`
-	Status             QuestionStatus  `json:"status" gorm:"type:varchar(32);not null;default:'draft'"`
-	KnowledgePoints    JSON            `json:"knowledge_points" gorm:"type:jsonb;not null"`
-	Tags                JSON            `json:"tags" gorm:"type:jsonb;not null"`
-	SourceKnowledgeID  string          `json:"source_knowledge_id" gorm:"type:varchar(36);not null;default:''"`
-	EvidenceChunkIDs   JSON            `json:"evidence_chunk_ids" gorm:"type:jsonb;not null"`
-	SourcePayload      JSON            `json:"source_payload" gorm:"type:jsonb;not null"`
-	ExtractionMetadata JSON            `json:"extraction_metadata" gorm:"type:jsonb;not null"`
-	SortOrder          int             `json:"sort_order" gorm:"not null;default:0"`
-	CreatedAt           time.Time       `json:"created_at"`
-	UpdatedAt           time.Time       `json:"updated_at"`
-	DeletedAt           gorm.DeletedAt  `json:"-" gorm:"index"`
+	Status             QuestionStatus     `json:"status" gorm:"type:varchar(32);not null;default:'draft'"`
+	ReviewedBy         string             `json:"reviewed_by" gorm:"type:varchar(36);not null;default:''"`
+	ReviewedAt         *time.Time         `json:"reviewed_at"`
+	KnowledgePoints    JSON               `json:"knowledge_points" gorm:"type:jsonb;not null"`
+	Tags               JSON               `json:"tags" gorm:"type:jsonb;not null"`
+	SourceKnowledgeID  string             `json:"source_knowledge_id" gorm:"type:varchar(36);not null;default:''"`
+	EvidenceChunkIDs   JSON               `json:"evidence_chunk_ids" gorm:"type:jsonb;not null"`
+	SourcePayload      JSON               `json:"source_payload" gorm:"type:jsonb;not null"`
+	ExtractionMetadata JSON               `json:"extraction_metadata" gorm:"type:jsonb;not null"`
+	SortOrder          int                `json:"sort_order" gorm:"not null;default:0"`
+	CreatedAt          time.Time          `json:"created_at"`
+	UpdatedAt          time.Time          `json:"updated_at"`
+	DeletedAt          gorm.DeletedAt     `json:"-" gorm:"index"`
 }
 
 func (*Question) TableName() string { return "questions" }
@@ -102,12 +104,12 @@ func (q *Question) BeforeCreate(*gorm.DB) error {
 }
 
 type QuestionListFilter struct {
-	QuestionType    string `form:"question_type"`
-	Difficulty      string `form:"difficulty"`
-	Status          string `form:"status"`
-	KnowledgePoint  string `form:"knowledge_point"`
-	Tag             string `form:"tag"`
-	Keyword         string `form:"keyword"`
+	QuestionType   string `form:"question_type"`
+	Difficulty     string `form:"difficulty"`
+	Status         string `form:"status"`
+	KnowledgePoint string `form:"knowledge_point"`
+	Tag            string `form:"tag"`
+	Keyword        string `form:"keyword"`
 }
 
 type CreateQuestionSetRequest struct {
@@ -124,17 +126,17 @@ type UpdateQuestionSetRequest struct {
 type CreateQuestionRequest struct {
 	QuestionType      string `json:"question_type" binding:"required"`
 	StemText          string `json:"stem_text" binding:"required"`
-	QuestionBody       JSON   `json:"question_body"`
-	AnswerText         string `json:"answer_text"`
-	AnswerBody         JSON   `json:"answer_body"`
-	AnalysisText       string `json:"analysis_text"`
-	GradingRubric      JSON   `json:"grading_rubric"`
-	Difficulty         string `json:"difficulty"`
-	KnowledgePoints    JSON   `json:"knowledge_points"`
-	Tags               JSON   `json:"tags"`
-	SourceKnowledgeID  string `json:"source_knowledge_id"`
-	EvidenceChunkIDs   JSON   `json:"evidence_chunk_ids"`
-	SortOrder          int    `json:"sort_order"`
+	QuestionBody      JSON   `json:"question_body"`
+	AnswerText        string `json:"answer_text"`
+	AnswerBody        JSON   `json:"answer_body"`
+	AnalysisText      string `json:"analysis_text"`
+	GradingRubric     JSON   `json:"grading_rubric"`
+	Difficulty        string `json:"difficulty"`
+	KnowledgePoints   JSON   `json:"knowledge_points"`
+	Tags              JSON   `json:"tags"`
+	SourceKnowledgeID string `json:"source_knowledge_id"`
+	EvidenceChunkIDs  JSON   `json:"evidence_chunk_ids"`
+	SortOrder         int    `json:"sort_order"`
 }
 
 type UpdateQuestionRequest struct {
@@ -160,18 +162,19 @@ type UpdateQuestionStatusRequest struct {
 type ImportQuestionItem struct {
 	LineNumber        int    `json:"line_number"`
 	QuestionType      string `json:"question_type"`
-	StemText           string `json:"stem_text"`
-	QuestionBody       JSON   `json:"question_body"`
-	AnswerText         string `json:"answer_text"`
-	AnswerBody         JSON   `json:"answer_body"`
-	AnalysisText       string `json:"analysis_text"`
-	GradingRubric      JSON   `json:"grading_rubric"`
-	Difficulty         string `json:"difficulty"`
-	KnowledgePoints    JSON   `json:"knowledge_points"`
-	Tags               JSON   `json:"tags"`
-	SourceKnowledgeID  string `json:"source_knowledge_id"`
-	EvidenceChunkIDs   JSON   `json:"evidence_chunk_ids"`
-	Status             string `json:"status,omitempty"`
+	StemText          string `json:"stem_text"`
+	QuestionBody      JSON   `json:"question_body"`
+	AnswerText        string `json:"answer_text"`
+	AnswerBody        JSON   `json:"answer_body"`
+	AnalysisText      string `json:"analysis_text"`
+	GradingRubric     JSON   `json:"grading_rubric"`
+	Difficulty        string `json:"difficulty"`
+	KnowledgePoints   JSON   `json:"knowledge_points"`
+	Tags              JSON   `json:"tags"`
+	SourceKnowledgeID string `json:"source_knowledge_id"`
+	EvidenceChunkIDs  JSON   `json:"evidence_chunk_ids"`
+	Status            string `json:"status,omitempty"`
+	RawText           string `json:"raw_text,omitempty"`
 }
 
 type ImportQuestionError struct {
@@ -184,7 +187,7 @@ type ImportQuestionsRequest struct {
 }
 
 type ImportQuestionsResult struct {
-	Created int                  `json:"created"`
+	Created int                   `json:"created"`
 	Errors  []ImportQuestionError `json:"errors"`
 }
 
@@ -194,10 +197,10 @@ type ExportToEvaluationRequest struct {
 }
 
 type GenerateQuestionsRequest struct {
-	Name              string `json:"name" binding:"required"`
-	Description       string `json:"description"`
-	GenerationConfig  JSON   `json:"generation_config"`
-	GenerationScope   JSON   `json:"generation_scope"`
+	Name             string `json:"name" binding:"required"`
+	Description      string `json:"description"`
+	GenerationConfig JSON   `json:"generation_config"`
+	GenerationScope  JSON   `json:"generation_scope"`
 }
 
 type ImportFilePreviewRequest struct {
@@ -213,9 +216,9 @@ type ImportFilePreviewStats struct {
 }
 
 type ImportFilePreviewResponse struct {
-	Items          []ImportQuestionItem  `json:"items"`
-	Errors         []ImportQuestionError `json:"errors"`
-	Warnings       []string              `json:"warnings"`
-	RawTextPreview string                `json:"raw_text_preview"`
+	Items          []ImportQuestionItem   `json:"items"`
+	Errors         []ImportQuestionError  `json:"errors"`
+	Warnings       []string               `json:"warnings"`
+	RawTextPreview string                 `json:"raw_text_preview"`
 	Stats          ImportFilePreviewStats `json:"stats"`
 }

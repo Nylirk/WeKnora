@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   classifyQuestionImportItems,
+  classifyQuestionImportItemsWithinFile,
   normalizeQuestionText,
   parseQuestionImportInput,
   questionFingerprint,
@@ -123,4 +124,31 @@ test('returns no importable items when every parsed question already exists', ()
   assert.equal(classified.uniqueItems.length, 0)
   assert.equal(classified.duplicateItems.length, 1)
   assert.deepEqual(selectQuestionImportItems(parsed.items, classified, false), [])
+})
+
+test('classifyQuestionImportItemsWithinFile detects duplicates inside same file', () => {
+  const items = [
+    { line_number: 1, question_type: 'short_answer', stem_text: '题A', answer_text: '答案', difficulty: 'medium' } as any,
+    { line_number: 2, question_type: 'short_answer', stem_text: '题B', answer_text: '答案', difficulty: 'medium' } as any,
+    { line_number: 3, question_type: 'short_answer', stem_text: '题A', answer_text: '答案', difficulty: 'medium' } as any,
+  ]
+  const classified = classifyQuestionImportItemsWithinFile(items)
+  assert.equal(classified.uniqueItems.length, 2)
+  assert.equal(classified.duplicateItems.length, 1)
+  assert.equal(classified.duplicateItems[0].line_number, 3)
+  // Verify duplicateGroups structure
+  assert.equal(classified.duplicateGroups.length, 1)
+  assert.equal(classified.duplicateGroups[0].duplicateItems.length, 1)
+  assert.equal(classified.duplicateGroups[0].firstItem.line_number, 1)
+  assert.equal(classified.duplicateGroups[0].duplicateItems[0].line_number, 3)
+})
+
+test('selectQuestionImportItems does not drop duplicates unless skip is explicit', () => {
+  const items = [
+    { line_number: 1, question_type: 'short_answer', stem_text: '题A', answer_text: '答案', difficulty: 'medium' } as any,
+    { line_number: 2, question_type: 'short_answer', stem_text: '题A', answer_text: '答案', difficulty: 'medium' } as any,
+  ]
+  const classified = classifyQuestionImportItemsWithinFile(items)
+  assert.equal(selectQuestionImportItems(items, classified, true).length, 2)
+  assert.equal(selectQuestionImportItems(items, classified, false).length, 1)
 })

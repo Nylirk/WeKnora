@@ -20,6 +20,7 @@ type QuestionFingerprintInput = {
 export type QuestionImportClassification = {
   uniqueItems: ImportQuestionItem[]
   duplicateItems: ImportQuestionItem[]
+  duplicateGroups: QuestionImportDuplicateGroup[]
 }
 
 const asRecord = (value: unknown): Record<string, any> =>
@@ -173,7 +174,43 @@ export function classifyQuestionImportItems(
     uniqueItems.push(item)
   }
 
-  return { uniqueItems, duplicateItems }
+  return { uniqueItems, duplicateItems, duplicateGroups: [] }
+}
+
+export function classifyQuestionImportItemsWithinFile(
+  items: ImportQuestionItem[],
+): QuestionImportClassification {
+  const seenFingerprints = new Map<string, number>() // fingerprint → index into uniqueItems
+  const uniqueItems: ImportQuestionItem[] = []
+  const duplicateItems: ImportQuestionItem[] = []
+  const groupMap = new Map<string, QuestionImportDuplicateGroup>()
+
+  items.forEach((item, index) => {
+    const fp = questionFingerprint(item)
+    const existingIdx = seenFingerprints.get(fp)
+    if (existingIdx !== undefined) {
+      duplicateItems.push(item)
+      const group = groupMap.get(fp)
+      if (group) {
+        group.duplicateItems.push(item)
+      }
+    } else {
+      seenFingerprints.set(fp, index)
+      uniqueItems.push(item)
+      groupMap.set(fp, {
+        fingerprint: fp,
+        firstIndex: index + 1, // 1-based for display
+        firstItem: item,
+        duplicateItems: [],
+      })
+    }
+  })
+
+  return {
+    uniqueItems,
+    duplicateItems,
+    duplicateGroups: [...groupMap.values()].filter(g => g.duplicateItems.length > 0),
+  }
 }
 
 export function selectQuestionImportItems(
@@ -182,4 +219,11 @@ export function selectQuestionImportItems(
   allowDuplicates: boolean,
 ): ImportQuestionItem[] {
   return allowDuplicates ? items : classified.uniqueItems
+}
+
+export type QuestionImportDuplicateGroup = {
+  fingerprint: string
+  firstIndex: number
+  firstItem: ImportQuestionItem
+  duplicateItems: ImportQuestionItem[]
 }
