@@ -39,6 +39,7 @@ type QuestionService interface {
 	DeleteQuestion(context.Context, string, string, string) error
 	UpdateQuestionStatus(context.Context, string, string, string, *types.UpdateQuestionStatusRequest) (*types.Question, error)
 	ImportQuestions(context.Context, string, string, *types.ImportQuestionsRequest) (*types.ImportQuestionsResult, error)
+	PreviewImportQuestionsFromFile(ctx context.Context, kbID, setID string, fileData []byte, fileName string, req *types.ImportFilePreviewRequest) (*types.ImportFilePreviewResponse, error)
 	ExportToEvaluationDataset(context.Context, string, string, *types.ExportToEvaluationRequest) (*types.EvaluationDataset, error)
 	GenerateQuestions(context.Context, string, *types.GenerateQuestionsRequest) (*types.QuestionSet, error)
 }

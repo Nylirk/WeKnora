@@ -2,6 +2,7 @@ package handler
 
 import (
 	stderrors "errors"
+	"io"
 	"net/http"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
@@ -241,6 +242,41 @@ func (h *QuestionHandler) GenerateQuestions(c *gin.Context) {
 	}
 	kbID := c.Param("id")
 	result, err := h.questionService.GenerateQuestions(c.Request.Context(), kbID, &req)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, result)
+}
+
+func (h *QuestionHandler) PreviewImportQuestionsFromFile(c *gin.Context) {
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+
+	// Parse query params
+	var req types.ImportFilePreviewRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		questionBadRequest(c, err)
+		return
+	}
+
+	// Read uploaded file
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		questionBadRequest(c, apperrors.NewBadRequestError("需要上传文件"))
+		return
+	}
+	defer file.Close()
+
+	fileData, err := io.ReadAll(file)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+
+	result, err := h.questionService.PreviewImportQuestionsFromFile(
+		c.Request.Context(), kbID, setID, fileData, header.Filename, &req,
+	)
 	if err != nil {
 		questionHandleError(c, err)
 		return

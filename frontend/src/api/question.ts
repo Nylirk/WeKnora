@@ -1,4 +1,4 @@
-import { del, get, post, put } from '@/utils/request'
+import { del, get, post, postUpload, put } from '@/utils/request'
 import type { PageResult } from './evaluation'
 
 export type QuestionType = 'single_choice' | 'multiple_choice' | 'true_false' | 'fill_blank' | 'short_answer' | 'essay' | 'composite'
@@ -48,6 +48,7 @@ export interface ImportQuestionItem {
   analysis_text: string; grading_rubric: Record<string, unknown>
   difficulty: QuestionDifficulty; knowledge_points: string[]; tags: string[]
   source_knowledge_id: string; evidence_chunk_ids: string[]
+  status?: QuestionStatus
 }
 
 export interface ImportQuestionError { line_number: number; message: string }
@@ -107,3 +108,37 @@ export const importQuestions = (kbId: string, setId: string, data: ImportQuestio
 
 export const exportToEvaluationDataset = (kbId: string, setId: string, data: { name: string; description?: string }) =>
   post(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/export`, data).then(unwrap<any>)
+
+export interface ImportFilePreviewStats {
+  detected_questions: number
+  with_answer: number
+  without_answer: number
+}
+
+export interface ImportFilePreviewResponse {
+  items: ImportQuestionItem[]
+  errors: ImportQuestionError[]
+  warnings: string[]
+  raw_text_preview: string
+  stats: ImportFilePreviewStats
+}
+
+export const previewImportFile = (
+  kbId: string,
+  setId: string,
+  file: File,
+  params: { default_question_type?: string; default_difficulty?: string; mode?: string } = {},
+): Promise<ImportFilePreviewResponse> => {
+  const fd = new FormData()
+  fd.append('file', file)
+  // Query params for the handler's ShouldBindQuery
+  const qs = new URLSearchParams()
+  if (params.default_question_type) qs.set('default_question_type', params.default_question_type)
+  if (params.default_difficulty) qs.set('default_difficulty', params.default_difficulty)
+  if (params.mode) qs.set('mode', params.mode)
+  const query = qs.toString()
+  return postUpload(
+    `/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/import-file/preview${query ? '?' + query : ''}`,
+    fd,
+  ).then(unwrap<ImportFilePreviewResponse>)
+}

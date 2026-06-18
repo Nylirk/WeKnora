@@ -15,21 +15,13 @@
                 <span class="import-type-title">{{ $t('questionBank.jsonImport') }}</span>
                 <span class="import-type-description">{{ $t('questionBank.jsonImportDescription') }}</span>
               </button>
-              <button type="button" class="import-type-item" disabled>
-                <span class="import-type-title">
-                  {{ $t('questionBank.wordImport') }}
-                  <t-tag size="small" variant="light">{{ $t('questionBank.comingSoon') }}</t-tag>
-                </span>
+              <button type="button" class="import-type-item" @click="openFileImport('word')">
+                <span class="import-type-title">{{ $t('questionBank.wordImport') }}</span>
                 <span class="import-type-description">{{ $t('questionBank.wordImportDescription') }}</span>
-                <span class="import-type-help">{{ $t('questionBank.wordImportHelp') }}</span>
               </button>
-              <button type="button" class="import-type-item" disabled>
-                <span class="import-type-title">
-                  {{ $t('questionBank.pdfImport') }}
-                  <t-tag size="small" variant="light">{{ $t('questionBank.comingSoon') }}</t-tag>
-                </span>
+              <button type="button" class="import-type-item" @click="openFileImport('pdf')">
+                <span class="import-type-title">{{ $t('questionBank.pdfImport') }}</span>
                 <span class="import-type-description">{{ $t('questionBank.pdfImportDescription') }}</span>
-                <span class="import-type-help">{{ $t('questionBank.pdfImportHelp') }}</span>
               </button>
             </div>
           </template>
@@ -96,12 +88,12 @@
                   <span class="import-type-title">{{ $t('questionBank.jsonImport') }}</span>
                   <span class="import-type-description">{{ $t('questionBank.jsonImportDescription') }}</span>
                 </button>
-                <button type="button" class="import-type-item" disabled>
-                  <span class="import-type-title">{{ $t('questionBank.wordImport') }} · {{ $t('questionBank.comingSoon') }}</span>
+                <button type="button" class="import-type-item" @click="openFileImport('word')">
+                  <span class="import-type-title">{{ $t('questionBank.wordImport') }}</span>
                   <span class="import-type-description">{{ $t('questionBank.wordImportDescription') }}</span>
                 </button>
-                <button type="button" class="import-type-item" disabled>
-                  <span class="import-type-title">{{ $t('questionBank.pdfImport') }} · {{ $t('questionBank.comingSoon') }}</span>
+                <button type="button" class="import-type-item" @click="openFileImport('pdf')">
+                  <span class="import-type-title">{{ $t('questionBank.pdfImport') }}</span>
                   <span class="import-type-description">{{ $t('questionBank.pdfImportDescription') }}</span>
                 </button>
               </div>
@@ -122,6 +114,14 @@
       v-model:visible="importVisible"
       :set-id="setId"
       :knowledge-base-id="knowledgeBaseId"
+      :current-questions="questions"
+      @imported="refreshAfterMutation"
+    />
+    <QuestionFileImportDialog
+      v-model:visible="fileImportVisible"
+      :set-id="setId"
+      :knowledge-base-id="knowledgeBaseId"
+      :import-type="fileImportType"
       :current-questions="questions"
       @imported="refreshAfterMutation"
     />
@@ -177,6 +177,8 @@ const loading = ref(false)
 const filter = ref<QuestionListFilter>({})
 const editVisible = ref(false)
 const importVisible = ref(false)
+const fileImportVisible = ref(false)
+const fileImportType = ref<'word' | 'pdf'>('word')
 const generateVisible = ref(false)
 const exportVisible = ref(false)
 const exportName = ref('')
@@ -214,9 +216,10 @@ function openJsonImport() {
   importVisible.value = true
 }
 
-// TODO: Word/PDF import: upload document -> docreader text extraction ->
-// QuestionExtractionService structure recognition -> preview -> confirmed import.
-// docreader extracts text only; it does not identify question structure.
+function openFileImport(type: 'word' | 'pdf') {
+  fileImportType.value = type
+  fileImportVisible.value = true
+}
 
 function handleGenerated() {
   emit('generated')
@@ -293,6 +296,7 @@ onMounted(async () => {
 
 import QuestionEditDialog from './QuestionEditDialog.vue'
 import QuestionImportDialog from './QuestionImportDialog.vue'
+import QuestionFileImportDialog from './QuestionFileImportDialog.vue'
 import QuestionGenerateDialog from './QuestionGenerateDialog.vue'
 </script>
 

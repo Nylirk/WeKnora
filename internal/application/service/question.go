@@ -9,15 +9,18 @@ import (
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
 type QuestionService struct {
-	repository        interfaces.QuestionRepository
-	evaluationService interfaces.EvaluationService
-	evaluationRepo    interfaces.EvaluationRepository
-	knowledgeBaseSvc  interfaces.KnowledgeBaseService
-	chunkService      interfaces.ChunkService
-	knowledgeService  interfaces.KnowledgeService
+	repository         interfaces.QuestionRepository
+	evaluationService  interfaces.EvaluationService
+	evaluationRepo     interfaces.EvaluationRepository
+	knowledgeBaseSvc   interfaces.KnowledgeBaseService
+	chunkService       interfaces.ChunkService
+	knowledgeService   interfaces.KnowledgeService
+	docReader          interfaces.DocumentReader
+	extractionService  *QuestionExtractionService
 }
 
 func NewQuestionService(
@@ -27,6 +30,8 @@ func NewQuestionService(
 	kbSvc interfaces.KnowledgeBaseService,
 	chunkSvc interfaces.ChunkService,
 	knowledgeSvc interfaces.KnowledgeService,
+	docReader interfaces.DocumentReader,
+	extractionSvc *QuestionExtractionService,
 ) interfaces.QuestionService {
 	return &QuestionService{
 		repository:        repo,
@@ -35,6 +40,8 @@ func NewQuestionService(
 		knowledgeBaseSvc:  kbSvc,
 		chunkService:      chunkSvc,
 		knowledgeService:  knowledgeSvc,
+		docReader:         docReader,
+		extractionService: extractionSvc,
 	}
 }
 
@@ -355,7 +362,12 @@ func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID strin
 		if q.Difficulty == "" {
 			q.Difficulty = types.QuestionDifficultyMedium
 		}
-		q.Status = structuredQuestionStatus(q)
+		// Respect caller-supplied status; otherwise auto-determine.
+		if item.Status != "" {
+			q.Status = types.QuestionStatus(item.Status)
+		} else {
+			q.Status = structuredQuestionStatus(q)
+		}
 		draftQ := &types.Question{QuestionType: q.QuestionType, StemText: q.StemText}
 		if errs := types.ValidateQuestionForDraft(draftQ); len(errs) > 0 {
 			for _, e := range errs {
@@ -536,6 +548,134 @@ func (s *QuestionService) buildReferenceContexts(ctx context.Context, q *types.Q
 		}
 	}
 	return contexts, nil
+}
+
+var validImportFileExtensions = map[string]bool{
+	".doc":  true,
+	".docx": true,
+	".pdf":  true,
+}
+
+func isValidImportFileExtension(name string) bool {
+	lower := strings.ToLower(name)
+	for ext := range validImportFileExtensions {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *QuestionExtractionService) fileExtension(name string) string {
+	lower := strings.ToLower(name)
+	for ext := range validImportFileExtensions {
+		if strings.HasSuffix(lower, ext) {
+			return ext
+		}
+	}
+	return ""
+}
+
+// PreviewImportQuestionsFromFile extracts text from a document file and parses
+// questions from it without persisting to the database.
+func (s *QuestionService) PreviewImportQuestionsFromFile(
+	ctx context.Context,
+	kbID, setID string,
+	fileData []byte,
+	fileName string,
+	req *types.ImportFilePreviewRequest,
+) (*types.ImportFilePreviewResponse, error) {
+	// 1. Validate KB is question_bank
+	qs, err := s.getQuestionSetForKB(ctx, kbID, setID)
+	if err != nil {
+		return nil, err
+	}
+	_ = qs
+
+	// 2. Validate file extension
+	if !isValidImportFileExtension(fileName) {
+		return nil, apperrors.NewBadRequestError("仅支持 DOC、DOCX、PDF 文件。")
+	}
+
+	// 3. Validate file size
+	maxSize := secutils.GetMaxFileSize()
+	if int64(len(fileData)) > maxSize {
+		return nil, apperrors.NewBadRequestError(
+			fmt.Sprintf("文件大小超过限制 (%d MB)", maxSize/(1024*1024)),
+		)
+	}
+
+	// 4. Determine file type for docreader
+	fileType := s.extractionService.fileExtension(fileName) // use service method
+	if fileType == "" {
+		fileType = strings.ToLower(fileName[strings.LastIndex(fileName, "."):])
+	}
+	// Strip dot
+	fileType = strings.TrimPrefix(fileType, ".")
+
+	// 5. Extract text using docreader
+	if s.docReader == nil || !s.docReader.IsConnected() {
+		return nil, apperrors.NewBadRequestError("文档解析服务不可用，请稍后重试。")
+	}
+	readResp, err := s.docReader.Read(ctx, &types.ReadRequest{
+		FileContent: fileData,
+		FileName:    fileName,
+		FileType:    fileType,
+	})
+	if err != nil {
+		return nil, apperrors.NewBadRequestError(
+			fmt.Sprintf("文档解析失败: %s", err.Error()),
+		)
+	}
+	if readResp.Error != "" {
+		return nil, apperrors.NewBadRequestError(
+			fmt.Sprintf("文档解析失败: %s", readResp.Error),
+		)
+	}
+
+	extractedText := strings.TrimSpace(readResp.MarkdownContent)
+	if extractedText == "" {
+		return nil, apperrors.NewBadRequestError(
+			"未能从文件中抽取文本，请确认文件内容可复制，或等待 OCR 支持。",
+		)
+	}
+
+	// 6. Parse questions from extracted text
+	defaultType := req.DefaultQuestionType
+	if defaultType == "" {
+		defaultType = string(types.QuestionTypeShortAnswer)
+	}
+	defaultDifficulty := req.DefaultDifficulty
+	if defaultDifficulty == "" {
+		defaultDifficulty = string(types.QuestionDifficultyMedium)
+	}
+
+	items, parseErrors, parseWarnings := s.extractionService.Extract(
+		extractedText, defaultType, defaultDifficulty,
+	)
+
+	// 7. Build response stats
+	withAnswer := 0
+	withoutAnswer := 0
+	for _, item := range items {
+		if strings.TrimSpace(item.AnswerText) != "" {
+			withAnswer++
+		} else {
+			withoutAnswer++
+		}
+	}
+
+	return &types.ImportFilePreviewResponse{
+		Items:          items,
+		Errors:         parseErrors,
+		Warnings:       parseWarnings,
+		RawTextPreview: extractedText,
+		Stats: types.ImportFilePreviewStats{
+			DetectedQuestions: len(items),
+			WithAnswer:        withAnswer,
+			WithoutAnswer:     withoutAnswer,
+		},
+	}, nil
 }
 
 func normalizeJSONObject(val types.JSON) types.JSON {
