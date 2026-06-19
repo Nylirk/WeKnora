@@ -209,6 +209,7 @@ func (r *questionVectorIndexRepository) Get(
 func (r *questionVectorIndexRepository) Upsert(ctx context.Context, index *types.QuestionVectorIndex) error {
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{
+			{Name: "tenant_id"},
 			{Name: "question_id"},
 			{Name: "embedding_model_id"},
 			{Name: "retriever_engine_type"},

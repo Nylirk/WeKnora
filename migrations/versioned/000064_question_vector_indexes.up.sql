@@ -14,7 +14,7 @@ CREATE TABLE question_vector_indexes (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_question_vector_index_target UNIQUE (
-        question_id, embedding_model_id, retriever_engine_type, index_mode
+        tenant_id, question_id, embedding_model_id, retriever_engine_type, index_mode
     ),
     CONSTRAINT chk_question_vector_index_status CHECK (
         status IN ('pending', 'indexing', 'indexed', 'failed', 'deleted')

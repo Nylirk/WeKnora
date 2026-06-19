@@ -21,7 +21,7 @@ const (
 
 type QuestionVectorIndex struct {
 	ID                  string                    `json:"id" gorm:"type:varchar(36);primaryKey"`
-	TenantID            uint64                    `json:"tenant_id" gorm:"not null;index"`
+	TenantID            uint64                    `json:"tenant_id" gorm:"not null;index;uniqueIndex:uq_question_vector_index_target"`
 	KnowledgeBaseID     string                    `json:"knowledge_base_id" gorm:"type:varchar(36);not null;index"`
 	QuestionSetID       string                    `json:"question_set_id" gorm:"type:varchar(36);not null;index"`
 	QuestionID          string                    `json:"question_id" gorm:"type:varchar(36);not null;index;uniqueIndex:uq_question_vector_index_target"`

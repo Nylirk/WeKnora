@@ -101,10 +101,14 @@ func (*questionIndexEmbedder) GetModelID() string   { return "model-1" }
 
 type questionIndexEngine struct {
 	interfaces.RetrieveEngineService
-	batchCalls  int
-	deleteCalls int
-	lastIndexes []*types.IndexInfo
-	batchErr    error
+	batchCalls    int
+	deleteCalls   int
+	lastIndexes   []*types.IndexInfo
+	lastDeletedIDs []string
+	batchErr      error
+	deleteErr     error
+	// callOrder records "delete" or "batch" in the order they were called.
+	callOrder []string
 }
 
 func (*questionIndexEngine) EngineType() types.RetrieverEngineType {
@@ -118,11 +122,14 @@ func (e *questionIndexEngine) BatchIndex(
 ) error {
 	e.batchCalls++
 	e.lastIndexes = indexes
+	e.callOrder = append(e.callOrder, "batch")
 	return e.batchErr
 }
-func (e *questionIndexEngine) DeleteBySourceIDList(context.Context, []string, int, string) error {
+func (e *questionIndexEngine) DeleteBySourceIDList(_ context.Context, ids []string, _ int, _ string) error {
 	e.deleteCalls++
-	return nil
+	e.lastDeletedIDs = ids
+	e.callOrder = append(e.callOrder, "delete")
+	return e.deleteErr
 }
 
 type questionIndexRegistry struct {
@@ -217,8 +224,14 @@ func TestQuestionIndexServiceIndexesReviewedAndSkipsUnchangedHash(t *testing.T) 
 	if err := service.IndexQuestions(questionIndexTestContext(), []*types.Question{question}); err != nil {
 		t.Fatalf("IndexQuestions() error = %v", err)
 	}
-	if engine.batchCalls != 1 || len(engine.lastIndexes) != 1 {
-		t.Fatalf("BatchIndex calls = %d, indexes = %d", engine.batchCalls, len(engine.lastIndexes))
+	if engine.deleteCalls != 1 || engine.batchCalls != 1 || len(engine.lastIndexes) != 1 {
+		t.Fatalf("delete=%d batch=%d indexes=%d", engine.deleteCalls, engine.batchCalls, len(engine.lastIndexes))
+	}
+	if got := engine.callOrder; len(got) != 2 || got[0] != "delete" || got[1] != "batch" {
+		t.Fatalf("call order = %v, want [delete batch]", got)
+	}
+	if engine.lastDeletedIDs == nil || len(engine.lastDeletedIDs) != 1 || engine.lastDeletedIDs[0] != "q-1" {
+		t.Fatalf("DeleteBySourceIDList ids = %v, want [q-1]", engine.lastDeletedIDs)
 	}
 	if !engine.lastIndexes[0].IsEnabled {
 		t.Fatal("reviewed question IsEnabled = false")
@@ -234,20 +247,36 @@ func TestQuestionIndexServiceIndexesReviewedAndSkipsUnchangedHash(t *testing.T) 
 	if err := service.IndexQuestions(questionIndexTestContext(), []*types.Question{question}); err != nil {
 		t.Fatalf("second IndexQuestions() error = %v", err)
 	}
-	if engine.batchCalls != 1 {
-		t.Fatalf("unchanged content called BatchIndex %d times", engine.batchCalls)
+	if engine.deleteCalls != 1 || engine.batchCalls != 1 {
+		t.Fatalf("unchanged content called delete=%d batch=%d", engine.deleteCalls, engine.batchCalls)
 	}
 
+	// Transition reviewed -> draft must delete stale enabled vectors and
+	// re-index with IsEnabled=false.
 	question.Status = types.QuestionStatusDraft
 	if err := service.IndexQuestions(questionIndexTestContext(), []*types.Question{question}); err != nil {
 		t.Fatalf("draft IndexQuestions() error = %v", err)
 	}
-	if engine.batchCalls != 2 || engine.lastIndexes[0].IsEnabled {
-		t.Fatalf("draft mapping calls=%d IsEnabled=%v", engine.batchCalls, engine.lastIndexes[0].IsEnabled)
+	if engine.deleteCalls != 2 || engine.batchCalls != 2 || engine.lastIndexes[0].IsEnabled {
+		t.Fatalf("draft mapping delete=%d batch=%d IsEnabled=%v", engine.deleteCalls, engine.batchCalls, engine.lastIndexes[0].IsEnabled)
+	}
+
+	// Transition reviewed -> rejected must also delete stale enabled vectors.
+	question.Status = types.QuestionStatusReviewed
+	if err := service.IndexQuestions(questionIndexTestContext(), []*types.Question{question}); err != nil {
+		t.Fatalf("reviewed re-IndexQuestions() error = %v", err)
+	}
+	question.Status = types.QuestionStatusRejected
+	if err := service.IndexQuestions(questionIndexTestContext(), []*types.Question{question}); err != nil {
+		t.Fatalf("rejected IndexQuestions() error = %v", err)
+	}
+	if engine.deleteCalls != 4 || engine.lastIndexes[0].IsEnabled {
+		t.Fatalf("rejected mapping delete=%d batch=%d IsEnabled=%v", engine.deleteCalls, engine.batchCalls, engine.lastIndexes[0].IsEnabled)
 	}
 }
 
 func TestQuestionIndexServiceRecordsFailureAndDeletes(t *testing.T) {
+	// BatchIndex failure
 	repository := newMemoryQuestionVectorIndexRepository()
 	engine := &questionIndexEngine{batchErr: errors.New("embedding unavailable")}
 	service := newQuestionIndexTestService(repository, engine, nil)
@@ -268,7 +297,31 @@ func TestQuestionIndexServiceRecordsFailureAndDeletes(t *testing.T) {
 	if err := service.DeleteQuestionIndexes(questionIndexTestContext(), []string{"q-1"}); err != nil {
 		t.Fatalf("DeleteQuestionIndexes() error = %v", err)
 	}
-	if engine.deleteCalls != 1 || state.Status != types.QuestionVectorIndexStatusDeleted {
+	if engine.deleteCalls != 2 || state.Status != types.QuestionVectorIndexStatusDeleted {
+		// deleteCalls counts both the pre-index cleanup and the explicit
+		// DeleteQuestionIndexes call.
 		t.Fatalf("delete calls=%d state=%+v", engine.deleteCalls, state)
+	}
+
+	// DeleteBySourceIDList failure during reindex must not call BatchIndex.
+	repository2 := newMemoryQuestionVectorIndexRepository()
+	engine2 := &questionIndexEngine{deleteErr: errors.New("vector store unavailable")}
+	service2 := newQuestionIndexTestService(repository2, engine2, nil)
+	question2 := &types.Question{
+		ID: "q-2", TenantID: 1, KnowledgeBaseID: "kb-1", QuestionSetID: "set-1",
+		QuestionType: "short_answer", StemText: "题干", Status: types.QuestionStatusReviewed,
+	}
+	if err := service2.IndexQuestions(questionIndexTestContext(), []*types.Question{question2}); err != nil {
+		t.Fatalf("IndexQuestions() scheduling error = %v", err)
+	}
+	if engine2.batchCalls != 0 {
+		t.Fatalf("BatchIndex called %d times after delete failure", engine2.batchCalls)
+	}
+	state2 := repository2.items[questionVectorIndexKey("q-2", "model-1", types.PostgresRetrieverEngineType, types.QuestionVectorIndexModePrompt)]
+	if state2.Status != types.QuestionVectorIndexStatusFailed {
+		t.Fatalf("delete-failed state = %+v, want failed", state2)
+	}
+	if !strings.Contains(state2.ErrorMessage, "delete stale vectors") || !strings.Contains(state2.ErrorMessage, "vector store unavailable") {
+		t.Fatalf("delete-failed error message = %q", state2.ErrorMessage)
 	}
 }

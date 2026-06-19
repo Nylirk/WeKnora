@@ -367,14 +367,26 @@ func (s *questionIndexService) processIndexJobs(ctx context.Context, jobs map[st
 		if job.target.err != nil {
 			err = job.target.err
 		} else {
-			var embedderErr error
 			embedder, embedderErr := s.modelService.GetEmbeddingModel(ctx, job.embeddingModelID)
 			if embedderErr != nil {
 				err = embedderErr
 			} else {
-				err = job.target.service.BatchIndex(
-					ctx, embedder, job.indexInfos, []types.RetrieverType{types.VectorRetrieverType},
-				)
+				// Remove stale vectors before writing new ones so that a
+				// content-hash or enabled-state change does not leave old
+				// vectors behind in the store.
+				sourceIDs := make([]string, 0, len(job.indexes))
+				for _, state := range job.indexes {
+					sourceIDs = append(sourceIDs, state.QuestionID)
+				}
+				if delErr := job.target.service.DeleteBySourceIDList(
+					ctx, sourceIDs, embedder.GetDimensions(), types.KnowledgeTypeQuestion,
+				); delErr != nil {
+					err = fmt.Errorf("delete stale vectors before reindex: %w", delErr)
+				} else {
+					err = job.target.service.BatchIndex(
+						ctx, embedder, job.indexInfos, []types.RetrieverType{types.VectorRetrieverType},
+					)
+				}
 			}
 		}
 
