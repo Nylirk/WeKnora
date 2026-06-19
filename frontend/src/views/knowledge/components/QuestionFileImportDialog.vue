@@ -193,13 +193,14 @@ async function handleStartParsing() {
       { timeout: 120000 },
     )
 
-    if (result.blocks.length === 0) {
+    const blocks = Array.isArray(result.blocks) ? result.blocks : []
+    if (blocks.length === 0) {
       previewError.value = '未识别到题目块，请检查文件格式。'
       return
     }
 
     emit('parsed', {
-      blocks: result.blocks,
+      blocks,
       summary: result.summary,
       strategyPreset: strategyPreset.value,
       importFormat: importFormat.value,

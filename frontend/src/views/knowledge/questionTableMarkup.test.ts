@@ -305,3 +305,43 @@ test('defines every questionBank locale key used by question components', () => 
   const missingKeys = [...usedKeys].filter(key => !(key in translations))
   assert.deepEqual(missingKeys, [])
 })
+
+
+// ===== Null-safety regression: anomalies / tags / metadata =====
+
+test('BlockReviewPanel does not access .length or .some() without null guard', () => {
+  const rawAnomaliesLen = blockReviewSource.match(/block\.anomalies\.length(?!\s*\?)/g) || []
+  assert.equal(rawAnomaliesLen.length, 0, 'block.anomalies.length should not be accessed without guard')
+})
+
+test('BlockReviewPanel tags access is guarded', () => {
+  const rawTagsLen = blockReviewSource.match(/selectedBlock\.tags\.length(?!\s*\?)/g) || []
+  assert.equal(rawTagsLen.length, 0, 'selectedBlock.tags.length should not be accessed without guard')
+})
+
+test('QuestionImportWorkbench anomalyCounts guarded against null anomalies', () => {
+  const hasGuard = workbenchSource.includes('Array.isArray(block.anomalies)')
+  assert.equal(hasGuard, true, 'anomalyCounts must guard block.anomalies with Array.isArray')
+})
+
+test('QuestionFileImportDialog guards result.blocks with Array.isArray', () => {
+  assert.equal(fileImportSource.includes('Array.isArray(result.blocks)'), true)
+})
+
+test('normalizeImportBlock returns safe defaults for null fields', () => {
+  const storeSource = readFileSync(new URL('../../stores/importWorkbench.ts', import.meta.url), 'utf8')
+  assert.equal(storeSource.includes('export function normalizeImportBlock'), true)
+  assert.equal(storeSource.includes('export function normalizeImportBlocks'), true)
+  assert.equal(storeSource.includes('Array.isArray(block.anomalies) ? block.anomalies : []'), true)
+  assert.equal(storeSource.includes('Array.isArray(block.tags) ? block.tags : []'), true)
+})
+
+test('setBlocksFromResponse uses normalizeImportBlocks', () => {
+  const storeSource = readFileSync(new URL('../../stores/importWorkbench.ts', import.meta.url), 'utf8')
+  assert.equal(storeSource.includes('normalizeImportBlocks(input)'), true)
+})
+
+test('validateBlocks filters anomalies safely with Array.isArray', () => {
+  const storeSource = readFileSync(new URL('../../stores/importWorkbench.ts', import.meta.url), 'utf8')
+  assert.equal(storeSource.includes('Array.isArray(block.anomalies) ? block.anomalies : []'), true)
+})

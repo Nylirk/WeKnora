@@ -112,9 +112,10 @@ const anomalyCounts = computed(() => {
   let error = 0
   let warning = 0
   for (const block of store.blocks) {
-    for (const anomaly of block.anomalies) {
-      if (anomaly.severity === 'error') error += 1
-      if (anomaly.severity === 'warning') warning += 1
+    const anomalies = Array.isArray(block.anomalies) ? block.anomalies : []
+    for (const anomaly of anomalies) {
+      if (anomaly?.severity === 'error') error += 1
+      if (anomaly?.severity === 'warning') warning += 1
     }
   }
   return { error, warning }

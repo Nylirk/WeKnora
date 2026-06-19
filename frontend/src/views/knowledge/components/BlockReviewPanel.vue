@@ -21,7 +21,7 @@
           v-for="block in store.filteredBlocks"
           :key="block.id"
           class="block-item"
-          :class="{ selected: store.selectedBlockId === block.id, 'has-error': block.anomalies.some(a => a.severity === 'error') }"
+          :class="{ selected: store.selectedBlockId === block.id, 'has-error': (Array.isArray(block.anomalies) ? block.anomalies : []).some(a => a?.severity === 'error') }"
           @click="store.selectBlock(block.id)"
         >
           <div class="block-item-header">
@@ -68,7 +68,7 @@
       <aside class="block-meta-panel" v-if="store.selectedBlock">
         <section class="meta-section">
           <h4>标签</h4>
-          <div v-if="store.selectedBlock.tags.length" class="tag-list">
+          <div v-if="(Array.isArray(store.selectedBlock.tags) ? store.selectedBlock.tags : []).length" class="tag-list">
             <t-tag v-for="(tag, i) in store.selectedBlock.tags" :key="i" size="small" variant="outline">{{ tag }}</t-tag>
           </div>
           <span v-else class="meta-empty">暂无标签</span>

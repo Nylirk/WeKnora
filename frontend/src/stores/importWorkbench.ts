@@ -5,6 +5,29 @@ import type { ImportQuestionItem } from '@/api/question'
 
 export type WorkbenchStep = 'block-review' | 'question-review'
 
+// Normalize a single ImportBlock from backend, ensuring safe defaults.
+export function normalizeImportBlock(block: ImportBlock, index: number): ImportBlock {
+  return {
+    ...block,
+    id: typeof block.id === 'string' && block.id ? block.id : crypto.randomUUID(),
+    index: typeof block.index === 'number' ? block.index : index,
+    original_text: typeof block.original_text === 'string' ? block.original_text : '',
+    current_text: typeof block.current_text === 'string'
+      ? block.current_text
+      : typeof block.original_text === 'string'
+        ? block.original_text
+        : '',
+    question_number: typeof block.question_number === 'number' ? block.question_number : null,
+    tags: Array.isArray(block.tags) ? block.tags : [],
+    metadata: block.metadata && typeof block.metadata === 'object' && !Array.isArray(block.metadata) ? block.metadata : {},
+    anomalies: Array.isArray(block.anomalies) ? block.anomalies : [],
+  }
+}
+
+export function normalizeImportBlocks(blocks: ImportBlock[] | null | undefined): ImportBlock[] {
+  return Array.isArray(blocks) ? blocks.map(normalizeImportBlock) : []
+}
+
 export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
   const kbId = ref('')
   const setId = ref('')
@@ -25,17 +48,19 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
   const isImporting = ref(false)
   const draftExists = ref(false)
 
-  // --- Computed summary (fix 10) ---
   const summary = computed(() => {
     let blocksWithAnomalies = 0
     let questionNumbers = 0
     const breakdown: Record<string, number> = {}
     for (const b of blocks.value) {
       if (b.question_number != null) questionNumbers++
-      if (b.anomalies.length > 0) {
+      const anomalies = Array.isArray(b.anomalies) ? b.anomalies : []
+      if (anomalies.length > 0) {
         blocksWithAnomalies++
-        for (const a of b.anomalies) {
-          breakdown[a.code] = (breakdown[a.code] || 0) + 1
+        for (const a of anomalies) {
+          if (a && typeof a.code === 'string') {
+            breakdown[a.code] = (breakdown[a.code] || 0) + 1
+          }
         }
       }
     }
@@ -49,9 +74,10 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
 
   const filteredBlocks = computed(() => {
     if (anomalyFilter.value === 'all') return blocks.value
-    return blocks.value.filter(b =>
-      b.anomalies.some(a => a.severity === anomalyFilter.value)
-    )
+    return blocks.value.filter(b => {
+      const anomalies = Array.isArray(b.anomalies) ? b.anomalies : []
+      return anomalies.some(a => a?.severity === anomalyFilter.value)
+    })
   })
 
   const selectedBlock = computed(() => {
@@ -61,14 +87,13 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
 
   const hasDeletedBlocks = computed(() => deletedBlocks.value.length > 0)
 
-  // Lightweight question number extraction (fix 9)
   function extractQuestionNumber(text: string): number | null {
+    if (typeof text !== 'string') return null
     const m = text.match(/^\s*(\d+)[\.\)、]/)
     if (m) {
       const n = parseInt(m[1], 10)
       if (n > 0 && n <= 99999) return n
     }
-    // Also try bare number + CJK (PDF-style)
     const m2 = text.match(/^\s*(\d{1,4})\s+[一-鿿]/)
     if (m2) {
       const n = parseInt(m2[1], 10)
@@ -88,9 +113,8 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     const block = blocks.value.find(b => b.id === id)
     if (!block) return
     block.current_text = block.original_text
-    // Re-validate
-    block.anomalies = block.anomalies.filter(a =>
-      ['OPTION_ONLY_BLOCK', 'PAGE_NOISE_DETECTED', 'SECTION_HEADING_IN_STEM', 'QUESTION_TYPE_HEADING_IN_STEM'].includes(a.code)
+    block.anomalies = (Array.isArray(block.anomalies) ? block.anomalies : []).filter(a =>
+      a && ['OPTION_ONLY_BLOCK', 'PAGE_NOISE_DETECTED', 'SECTION_HEADING_IN_STEM', 'QUESTION_TYPE_HEADING_IN_STEM'].includes(a.code)
     )
   }
 
@@ -143,8 +167,8 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
         current_text: part,
         original_text: part,
         question_number: qNum,
-        tags: i === 0 ? [...block.tags] : [],
-        metadata: { ...block.metadata },
+        tags: i === 0 ? [...(Array.isArray(block.tags) ? block.tags : [])] : [],
+        metadata: { ...(block.metadata && typeof block.metadata === 'object' ? block.metadata : {}) },
         anomalies: [],
       }
     })
@@ -192,8 +216,8 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     const seen = new Map<number, string>()
     let prevNum: number | null = null
     for (const block of blocks.value) {
-      block.anomalies = block.anomalies.filter(a =>
-        ['OPTION_ONLY_BLOCK', 'PAGE_NOISE_DETECTED', 'SECTION_HEADING_IN_STEM', 'QUESTION_TYPE_HEADING_IN_STEM'].includes(a.code)
+      block.anomalies = (Array.isArray(block.anomalies) ? block.anomalies : []).filter(a =>
+        a && ['OPTION_ONLY_BLOCK', 'PAGE_NOISE_DETECTED', 'SECTION_HEADING_IN_STEM', 'QUESTION_TYPE_HEADING_IN_STEM'].includes(a.code)
       )
       const n = block.question_number
       if (n != null) {
@@ -212,25 +236,20 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     }
   }
 
-  function setBlocksFromResponse(b: ImportBlock[]) {
-    blocks.value = b
+  function setBlocksFromResponse(input: ImportBlock[] | null | undefined) {
+    const normalized = normalizeImportBlocks(input)
+    blocks.value = normalized
     deletedBlocks.value = []
-    selectedBlockId.value = b.length > 0 ? b[0].id : null
+    selectedBlockId.value = normalized.length > 0 ? normalized[0].id : null
+    validateBlocks()
   }
 
   function goToStep(step: WorkbenchStep) { currentStep.value = step }
 
   function reset() {
-    kbId.value = ''
-    setId.value = ''
-    strategyPreset.value = 'general'
-    defaultDifficulty.value = 'medium'
-    importMode.value = 'single'
-    importFormat.value = 'word'
     blocks.value = []
     currentStep.value = 'block-review'
     selectedBlockId.value = null
-    anomalyFilter.value = 'all'
     deletedBlocks.value = []
     questions.value = []
     questionErrors.value = []
