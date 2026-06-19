@@ -103,17 +103,16 @@ test('uses a compact JSON import dialog with local file parsing', () => {
   assert.equal(importSource.includes('parseErrorCount'), true)
 })
 
-test('file import dialog uses compact pill-style format selection and top actions', () => {
+test('file import dialog uses horizontal format cards and top actions', () => {
   assert.equal(fileImportSource.includes(':close-on-overlay-click="false"'), true)
-  assert.equal(fileImportSource.includes('导入格式'), true)
-  assert.equal(fileImportSource.includes('class="format-pill"'), true)
-  assert.equal(fileImportSource.includes('class="format-group"'), false)
+  assert.equal(fileImportSource.includes('导入题目'), true)
+  assert.equal(fileImportSource.includes('class="format-card"'), true)
+  assert.equal(fileImportSource.includes('class="format-cards"'), true)
   assert.equal(fileImportSource.includes('<t-radio'), false)
-  assert.equal(fileImportSource.includes('class="coming-soon"'), true)
   assert.equal(fileImportSource.includes('class="dialog-topbar"'), true)
   assert.equal(fileImportSource.includes('class="dialog-footer"'), true)
-  assert.equal(fileImportSource.includes('width="560px"'), true)
-  assert.equal(fileImportSource.includes('min-height: 96px'), true)
+  assert.equal(fileImportSource.includes('width="580px"'), true)
+  assert.equal(fileImportSource.includes('min-height: 100px'), true)
   assert.equal(fileImportSource.includes('previewImportBlocks('), true)
   assert.equal(fileImportSource.includes('timeout: 120000'), true)
 })

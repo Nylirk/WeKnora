@@ -675,6 +675,47 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
 
   // --- Parse questions ---
 
+  /** Convert JSON block metadata.source_payload to ImportQuestionItem */
+  function convertJsonBlockToQuestion(block: ImportBlock, index: number): ImportQuestionItem {
+    const payload = (block.metadata && typeof block.metadata === 'object' ? (block.metadata as Record<string, unknown>).source_payload : null) as Record<string, unknown> | null
+    const item = payload && typeof payload === 'object' ? payload : {}
+
+    const stem = (typeof item.stem_text === 'string' && item.stem_text) ||
+      (typeof item.stem === 'string' && item.stem) ||
+      (typeof item.question === 'string' && item.question) ||
+      (typeof item.title === 'string' && item.title) || ''
+    const answer = (typeof item.answer_text === 'string' && item.answer_text) ||
+      (typeof item.answer === 'string' && item.answer) || ''
+    const analysis = (typeof item.analysis_text === 'string' && item.analysis_text) ||
+      (typeof item.analysis === 'string' && item.analysis) ||
+      (typeof item.explanation === 'string' && item.explanation) || ''
+    const qType = (typeof item.question_type === 'string' && item.question_type) ||
+      (typeof item.type === 'string' && item.type) || 'short_answer'
+    const difficulty = (typeof item.difficulty === 'string' && item.difficulty) || defaultDifficulty.value
+    const tags = Array.isArray(item.tags) ? item.tags.map(t => String(t ?? '')) : []
+    const kps = Array.isArray(item.knowledge_points) ? item.knowledge_points.map(kp => String(kp ?? '')) : []
+    const status = (typeof item.status === 'string' && item.status) || 'draft'
+
+    return {
+      line_number: index + 1,
+      question_type: qType as ImportQuestionItem['question_type'],
+      stem_text: stem,
+      question_body: (item.question_body && typeof item.question_body === 'object') ? item.question_body as Record<string, unknown> : {},
+      answer_text: answer,
+      answer_body: {},
+      analysis_text: analysis,
+      grading_rubric: {},
+      difficulty,
+      knowledge_points: kps,
+      tags,
+      source_knowledge_id: '',
+      evidence_chunk_ids: [],
+      status,
+      raw_text: JSON.stringify(item, null, 2),
+      source_payload: item as Record<string, unknown>,
+    }
+  }
+
   async function parseQuestionsAction() {
     if (blockOrder.value.length === 0) {
       MessagePlugin.warning('请先完成 block review')
@@ -685,6 +726,45 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
 
     isParsing.value = true
     try {
+      // P4: JSON blocks → convert locally, no API call
+      if (importFormat.value === 'json') {
+        const ordered = orderedBlocks.value
+        const items: ImportQuestionItem[] = []
+        const errors: { line_number: number; message: string }[] = []
+        const warnings: string[] = []
+        let withAnswer = 0
+        let withoutAnswer = 0
+
+        for (let i = 0; i < ordered.length; i++) {
+          const block = ordered[i]
+          const item = convertJsonBlockToQuestion(block, i)
+          items.push(item)
+          if (item.answer_text) withAnswer++
+          else withoutAnswer++
+          // Collect anomalies from the block as warnings/errors
+          const anomalies = getMergedAnomalies(block.id)
+          for (const a of anomalies) {
+            if (a.severity === 'error') {
+              errors.push({ line_number: i + 1, message: a.message })
+            } else {
+              warnings.push(a.message)
+            }
+          }
+        }
+
+        questions.value = items
+        questionErrors.value = errors
+        questionWarnings.value = warnings
+        questionStats.value = { detected_questions: items.length, with_answer: withAnswer, without_answer: withoutAnswer }
+
+        if (items.length === 0) {
+          MessagePlugin.warning('未解析到题目，请检查 block 内容')
+          return false
+        }
+        return true
+      }
+
+      // Word / PDF → call parseImportedBlocks API
       const ordered = orderedBlocks.value
       const result = await parseImportedBlocks(kbId.value, setId.value, {
         blocks: ordered,
