@@ -4639,7 +4639,6 @@ export default {
       outputFull: 'Полное выходное значение',
       callbackUrl: 'URL обратного вызова',
       empty: 'Нет IM-каналов',
-      emptyHint: 'Нет IM-каналов. Добавьте канал для подключения вашей IM-платформы.',
       unnamed: 'Неименованный канал',
       docLink: 'Руководство по интеграции',
       feishuConsole: 'Платформа Feishu',

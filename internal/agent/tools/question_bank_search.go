@@ -112,6 +112,15 @@ func (t *QuestionBankSearchTool) Execute(ctx context.Context, args json.RawMessa
 		limit = 50
 	}
 
+	// Validate status if provided: only allow known statuses.
+	validStatuses := map[string]bool{"": true, "draft": true, "reviewed": true, "rejected": true}
+	if !validStatuses[input.Status] {
+		return &types.ToolResult{
+			Success: false,
+			Error:   fmt.Sprintf("Invalid status %q: must be one of draft, reviewed, rejected, or empty", input.Status),
+		}, fmt.Errorf("invalid status %q", input.Status)
+	}
+
 	// Build empty-result Data shape used on all success paths.
 	emptyData := func() map[string]interface{} {
 		return map[string]interface{}{
@@ -168,7 +177,8 @@ func (t *QuestionBankSearchTool) Execute(ctx context.Context, args json.RawMessa
 				` OR questions.knowledge_points::text ILIKE ? ESCAPE '\'` +
 				` OR questions.tags::text ILIKE ? ESCAPE '\'` +
 				`)`
-		case dialect == "sqlite" || dialect == "sqlite3":
+		default:
+			// SQLite (including test environments); project does not use MySQL.
 			searchClause = ` AND (` +
 				`LOWER(questions.stem_text) LIKE LOWER(?) ESCAPE '\'` +
 				` OR LOWER(questions.answer_text) LIKE LOWER(?) ESCAPE '\'` +
@@ -177,17 +187,6 @@ func (t *QuestionBankSearchTool) Execute(ctx context.Context, args json.RawMessa
 				` OR LOWER(CAST(questions.answer_body AS TEXT)) LIKE LOWER(?) ESCAPE '\'` +
 				` OR LOWER(CAST(questions.knowledge_points AS TEXT)) LIKE LOWER(?) ESCAPE '\'` +
 				` OR LOWER(CAST(questions.tags AS TEXT)) LIKE LOWER(?) ESCAPE '\'` +
-				`)`
-		default:
-			// MySQL / other — use CHAR cast
-			searchClause = ` AND (` +
-				`LOWER(questions.stem_text) LIKE LOWER(?) ESCAPE '\'` +
-				` OR LOWER(questions.answer_text) LIKE LOWER(?) ESCAPE '\'` +
-				` OR LOWER(questions.analysis_text) LIKE LOWER(?) ESCAPE '\'` +
-				` OR LOWER(CAST(questions.question_body AS CHAR)) LIKE LOWER(?) ESCAPE '\'` +
-				` OR LOWER(CAST(questions.answer_body AS CHAR)) LIKE LOWER(?) ESCAPE '\'` +
-				` OR LOWER(CAST(questions.knowledge_points AS CHAR)) LIKE LOWER(?) ESCAPE '\'` +
-				` OR LOWER(CAST(questions.tags AS CHAR)) LIKE LOWER(?) ESCAPE '\'` +
 				`)`
 		}
 		searchArgs = []interface{}{pattern, pattern, pattern, pattern, pattern, pattern, pattern}
@@ -223,6 +222,8 @@ func (t *QuestionBankSearchTool) Execute(ctx context.Context, args json.RawMessa
 		AND knowledge_bases.type = 'question_bank'
 		AND knowledge_bases.deleted_at IS NULL
 	JOIN question_sets ON question_sets.id = questions.question_set_id
+		AND question_sets.tenant_id = questions.tenant_id
+		AND question_sets.knowledge_base_id = questions.knowledge_base_id
 		AND question_sets.deleted_at IS NULL
 	WHERE questions.deleted_at IS NULL
 		AND ` + kbFilter + searchClause + statusFilter + `

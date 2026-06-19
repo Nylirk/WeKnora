@@ -7,11 +7,26 @@
       </div>
 
       <t-loading :loading="loading" size="small" class="channels-loading-wrap">
+        <!-- Empty state -->
         <div v-if="!loading && channels.length === 0" class="channels-empty">
-          <t-empty :description="$t('agentEditor.im.empty')" />
+          <div class="channels-empty-content">
+            <p class="channels-empty-text">{{ $t('agentEditor.im.empty') }}</p>
+            <button
+              v-if="authStore.hasRole('admin')"
+              type="button"
+              class="channel-card channel-card--add channel-card--add-standalone"
+              @click="openCreate"
+            >
+              <span class="channel-card--add__icon" aria-hidden="true">
+                <t-icon name="add" />
+              </span>
+              <span class="channel-card--add__label">{{ $t('agentEditor.im.addChannel') }}</span>
+            </button>
+          </div>
         </div>
 
-        <div v-else-if="!loading" class="channel-grid">
+        <!-- Channel grid -->
+        <div v-if="!loading && channels.length > 0" class="channel-grid">
           <button
             v-for="channel in channels"
             :key="channel.id"
@@ -55,11 +70,13 @@
               </t-dropdown>
             </div>
           </button>
+        </div>
 
+        <!-- "Add channel" button row — visible for admins when there are existing channels -->
+        <div v-if="!loading && channels.length > 0 && authStore.hasRole('admin')" class="channels-add-row">
           <button
-            v-if="authStore.hasRole('admin')"
             type="button"
-            class="channel-card channel-card--add"
+            class="channel-card channel-card--add channel-card--add-standalone"
             @click="openCreate"
           >
             <span class="channel-card--add__icon" aria-hidden="true">
@@ -805,6 +822,28 @@ onUnmounted(() => {
 
 .channels-empty {
   padding: 32px 0;
+}
+
+.channels-empty-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.channels-empty-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--td-text-color-secondary);
+  text-align: center;
+}
+
+.channels-add-row {
+  margin-top: 12px;
+}
+
+.channel-card--add-standalone {
+  max-width: 320px;
 }
 
 .channel-grid {

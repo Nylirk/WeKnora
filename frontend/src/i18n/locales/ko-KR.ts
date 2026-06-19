@@ -5066,7 +5066,6 @@ export default {
       outputFull: "전체 응답",
       callbackUrl: "콜백 URL",
       empty: "IM 채널이 없습니다",
-      emptyHint: "IM 채널이 없습니다. 채널을 추가하여 IM 플랫폼을 연결하세요.",
       unnamed: "이름 없는 채널",
       docLink: "통합 가이드 보기",
       feishuConsole: "Feishu 개발 플랫폼",

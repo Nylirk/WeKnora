@@ -5110,7 +5110,6 @@ export default {
       outputFull: 'Full Response',
       callbackUrl: 'Callback URL',
       empty: 'No IM channels yet',
-      emptyHint: 'No IM channels yet. Add a channel to connect your IM platform.',
       unnamed: 'Unnamed Channel',
       docLink: 'Integration Guide',
       feishuConsole: 'Feishu Open Platform',

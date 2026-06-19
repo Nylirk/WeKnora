@@ -566,6 +566,28 @@ func TestQuestionBankSearch_StatusFilter(t *testing.T) {
 	}
 }
 
+func TestQuestionBankSearch_InvalidStatus(t *testing.T) {
+	db := setupQuestionBankTestDB(t)
+	seedQuestionBank(t, db)
+
+	targets := searchTargetsWithKBs([]string{"qb1"})
+	tool := NewQuestionBankSearchTool(db, targets)
+
+	args, _ := json.Marshal(map[string]interface{}{
+		"status": "invalid_status",
+	})
+	result, err := tool.Execute(context.Background(), args)
+	if err == nil {
+		t.Error("expected error for invalid status")
+	}
+	if result.Success {
+		t.Error("expected failure for invalid status")
+	}
+	if !strings.Contains(result.Error, "Invalid status") {
+		t.Errorf("expected 'Invalid status' in error, got %q", result.Error)
+	}
+}
+
 func TestQuestionBankSearch_ToolImplementsInterface(t *testing.T) {
 	// Compile-time check — if this compiles, QuestionBankSearchTool implements types.Tool
 	var _ types.Tool = (*QuestionBankSearchTool)(nil)

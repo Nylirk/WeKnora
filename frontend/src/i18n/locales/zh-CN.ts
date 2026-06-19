@@ -5131,7 +5131,6 @@ export default {
       outputFull: "完整输出",
       callbackUrl: "回调地址",
       empty: "暂无 IM 渠道",
-      emptyHint: "暂无 IM 渠道，添加一个渠道开始接入",
       unnamed: "未命名渠道",
       docLink: "查看接入文档",
       feishuConsole: "飞书开放平台",
