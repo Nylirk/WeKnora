@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -19,10 +20,25 @@ type QuestionRepository interface {
 	CreateQuestion(context.Context, *types.Question) error
 	CreateQuestions(context.Context, []*types.Question) error
 	GetQuestion(context.Context, uint64, string, string) (*types.Question, error)
+	GetQuestionByID(context.Context, uint64, string) (*types.Question, error)
 	ListQuestions(context.Context, uint64, string, *types.QuestionListFilter, *types.Pagination) (*types.PageResult, error)
 	UpdateQuestion(context.Context, *types.Question) error
 	DeleteQuestion(context.Context, uint64, string, string) error
 	ListQuestionsByKB(context.Context, uint64, string, *types.QuestionListFilter, *types.Pagination) (*types.PageResult, error)
+}
+
+type QuestionVectorIndexRepository interface {
+	Get(context.Context, uint64, string, string, types.RetrieverEngineType, string) (*types.QuestionVectorIndex, error)
+	Upsert(context.Context, *types.QuestionVectorIndex) error
+	UpdateStatus(context.Context, uint64, string, string, types.RetrieverEngineType, string, types.QuestionVectorIndexStatus, string, string, *time.Time) error
+	ListByQuestionIDs(context.Context, uint64, []string) ([]*types.QuestionVectorIndex, error)
+}
+
+type QuestionIndexService interface {
+	IndexQuestions(context.Context, []*types.Question) error
+	ReindexQuestion(context.Context, string) error
+	ReindexQuestionSet(context.Context, string) error
+	DeleteQuestionIndexes(context.Context, []string) error
 }
 
 type QuestionService interface {

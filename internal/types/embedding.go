@@ -4,9 +4,10 @@ package types
 type SourceType int
 
 const (
-	ChunkSourceType   SourceType = iota // Source is a text chunk
-	PassageSourceType                   // Source is a passage
-	SummarySourceType                   // Source is a summary
+	ChunkSourceType    SourceType = iota // Source is a text chunk
+	PassageSourceType                    // Source is a passage
+	SummarySourceType                    // Source is a summary
+	QuestionSourceType                   // Source is a question bank question
 )
 
 // MatchType represents the type of matching algorithm

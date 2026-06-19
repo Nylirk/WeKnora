@@ -24,6 +24,7 @@ type QuestionService struct {
 	docReader            interfaces.DocumentReader
 	extractionService    *QuestionExtractionService
 	blockAnalysisService *BlockAnalysisService
+	questionIndexService interfaces.QuestionIndexService
 }
 
 func NewQuestionService(
@@ -36,6 +37,7 @@ func NewQuestionService(
 	docReader interfaces.DocumentReader,
 	extractionSvc *QuestionExtractionService,
 	blockAnalysisSvc *BlockAnalysisService,
+	questionIndexSvc interfaces.QuestionIndexService,
 ) interfaces.QuestionService {
 	return &QuestionService{
 		repository:           repo,
@@ -47,6 +49,7 @@ func NewQuestionService(
 		docReader:            docReader,
 		extractionService:    extractionSvc,
 		blockAnalysisService: blockAnalysisSvc,
+		questionIndexService: questionIndexSvc,
 	}
 }
 
@@ -195,6 +198,7 @@ func (s *QuestionService) CreateQuestion(ctx context.Context, kbID, setID string
 		return nil, err
 	}
 	_ = s.repository.UpdateQuestionCount(ctx, tenantID(ctx), setID)
+	s.scheduleQuestionIndex(ctx, []*types.Question{q})
 	return q, nil
 }
 
@@ -237,6 +241,7 @@ func (s *QuestionService) UpdateQuestion(ctx context.Context, kbID, setID, quest
 	if q.KnowledgeBaseID != kbID {
 		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question does not belong to knowledge base %s", kbID))
 	}
+	before := *q
 	if req.QuestionType != nil {
 		q.QuestionType = *req.QuestionType
 	}
@@ -283,6 +288,9 @@ func (s *QuestionService) UpdateQuestion(ctx context.Context, kbID, setID, quest
 	if err := s.repository.UpdateQuestion(ctx, q); err != nil {
 		return nil, err
 	}
+	if questionIndexFieldsChanged(&before, q) {
+		s.scheduleQuestionIndex(ctx, []*types.Question{q})
+	}
 	return q, nil
 }
 
@@ -301,6 +309,7 @@ func (s *QuestionService) DeleteQuestion(ctx context.Context, kbID, setID, quest
 		return err
 	}
 	_ = s.repository.UpdateQuestionCount(ctx, tenantID(ctx), setID)
+	s.scheduleQuestionIndexDelete(ctx, []string{questionID})
 	return nil
 }
 
@@ -337,6 +346,7 @@ func (s *QuestionService) UpdateQuestionStatus(ctx context.Context, kbID, setID,
 	if err := s.repository.UpdateQuestion(ctx, q); err != nil {
 		return nil, err
 	}
+	s.scheduleQuestionIndex(ctx, []*types.Question{q})
 	return q, nil
 }
 
@@ -438,7 +448,33 @@ func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID strin
 	if err := s.repository.UpdateQuestionCount(ctx, tenantID(ctx), setID); err != nil {
 		return nil, err
 	}
+	s.scheduleQuestionIndex(ctx, created)
 	return result, nil
+}
+
+func questionIndexFieldsChanged(before, after *types.Question) bool {
+	if before == nil || after == nil {
+		return before != after
+	}
+	return before.Status != after.Status || BuildQuestionIndexContent(before) != BuildQuestionIndexContent(after)
+}
+
+func (s *QuestionService) scheduleQuestionIndex(ctx context.Context, questions []*types.Question) {
+	if s.questionIndexService == nil || len(questions) == 0 {
+		return
+	}
+	if err := s.questionIndexService.IndexQuestions(ctx, questions); err != nil {
+		logger.Errorf(ctx, "failed to schedule question vector indexing: %v", err)
+	}
+}
+
+func (s *QuestionService) scheduleQuestionIndexDelete(ctx context.Context, questionIDs []string) {
+	if s.questionIndexService == nil || len(questionIDs) == 0 {
+		return
+	}
+	if err := s.questionIndexService.DeleteQuestionIndexes(ctx, questionIDs); err != nil {
+		logger.Errorf(ctx, "failed to schedule question vector index deletion: %v", err)
+	}
 }
 
 func (s *QuestionService) ExportToEvaluationDataset(ctx context.Context, kbID, setID string, req *types.ExportToEvaluationRequest) (*types.EvaluationDataset, error) {
