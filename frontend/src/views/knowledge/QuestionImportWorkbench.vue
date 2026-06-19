@@ -64,7 +64,7 @@
           @add-tag="handleAddTag"
           @remove-tag="handleRemoveTag"
         />
-        <QuestionReviewPanel v-else @changed="saveDebounced" @imported="handleImported" @import="handleImport" />
+        <QuestionReviewPanel v-else @changed="saveDebounced" @imported="handleImported" />
       </div>
     </div>
   </t-dialog>
@@ -196,10 +196,6 @@ async function confirmAbandonDiscard() {
   } catch (e: any) { MessagePlugin.error(e?.message || '清除草稿失败，请重试') }
 }
 
-async function handleImport() {
-  await importUI.withImportLoading('正在导入题目…', async () => {})
-  // QuestionReviewPanel.doImport handles its own importUI wrapping
-}
 async function handleImported() { clearSaveTimer(); emit('update:visible', false); emit('imported') }
 </script>
 

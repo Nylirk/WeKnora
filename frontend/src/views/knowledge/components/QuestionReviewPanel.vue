@@ -54,7 +54,7 @@
         :z-index="4000"
         :confirm-btn="{ content: '确认导入', theme: 'primary' }"
         :cancel-btn="{ content: '取消' }"
-        @confirm="emit('import')"
+        @confirm="doImport"
       >
         <div class="import-confirm-body">
           <div class="import-confirm-row">
@@ -118,7 +118,7 @@ const importConfirmVisible = ref(false)
 const editVisible = ref(false)
 const editingIndex = ref(-1)
 const editingItem = ref<ImportQuestionItem | null>(null)
-const emit = defineEmits<{ changed: []; imported: []; import: [] }>()
+const emit = defineEmits<{ changed: []; imported: [] }>()
 
 const filteredWarnings = computed(() => {
   if (store.questions.length > 0) {

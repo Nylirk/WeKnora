@@ -80,6 +80,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useImportUIStore } from '@/stores/importUIStore'
 import { previewImportBlocks, type BlockPreviewSummary, type ImportBlock } from '@/api/question_block'
 
 type ImportFormat = 'json' | 'word' | 'pdf'
@@ -94,6 +95,7 @@ interface ParsedPayload {
 
 const props = withDefaults(defineProps<{ visible: boolean; knowledgeBaseId: string; setId: string; importMode?: 'single' | 'batch' }>(), { importMode: 'single' })
 const emit = defineEmits<{ 'update:visible': [value: boolean]; parsed: [payload: ParsedPayload] }>()
+const importUI = useImportUIStore()
 
 const formatOptions: Array<{ value: ImportFormat; title: string; description: string; disabled?: boolean }> = [
   { value: 'json', title: 'JSON / JSONL', description: '结构化导入', disabled: true },
@@ -138,17 +140,20 @@ function handleVisibleUpdate(value: boolean) { if (!value) closeAndReset() }
 async function handleStartParsing() {
   if (!selectedFile.value || importFormat.value === 'json') return
   parsing.value = true; previewError.value = ''
-  try {
-    const result = await previewImportBlocks(props.knowledgeBaseId, props.setId, selectedFile.value, {
+
+  await importUI.withImportLoading('正在解析文件…', async () => {
+    const result = await previewImportBlocks(props.knowledgeBaseId, props.setId, selectedFile.value!, {
       default_difficulty: 'medium', strategy_preset: strategyPreset.value, import_mode: props.importMode,
     }, { timeout: 120000 })
     const blocks = Array.isArray(result.blocks) ? result.blocks : []
     if (blocks.length === 0) { previewError.value = '未识别到题目块，请检查文件格式。'; return }
     emit('parsed', { blocks, summary: result.summary, strategyPreset: strategyPreset.value, importFormat: importFormat.value, importMode: props.importMode })
-  } catch (error: any) {
+  }).catch((error: any) => {
     if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') return
     previewError.value = error?.message || '解析失败，请重试'
-  } finally { parsing.value = false }
+  })
+
+  parsing.value = false
 }
 </script>
 
