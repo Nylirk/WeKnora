@@ -221,9 +221,16 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
   function goToStep(step: WorkbenchStep) { currentStep.value = step }
 
   function reset() {
+    kbId.value = ''
+    setId.value = ''
+    strategyPreset.value = 'general'
+    defaultDifficulty.value = 'medium'
+    importMode.value = 'single'
+    importFormat.value = 'word'
     blocks.value = []
     currentStep.value = 'block-review'
     selectedBlockId.value = null
+    anomalyFilter.value = 'all'
     deletedBlocks.value = []
     questions.value = []
     questionErrors.value = []

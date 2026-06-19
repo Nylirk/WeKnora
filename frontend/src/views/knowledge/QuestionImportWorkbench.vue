@@ -1,46 +1,74 @@
 <template>
-  <div class="workbench-page">
-    <div class="workbench-header">
-      <t-button variant="text" @click="handleAbandon">
-        <t-icon name="chevron-left" /> 返回
-      </t-button>
-      <h3 class="workbench-title">题库导入工作台</h3>
-      <div class="header-steps">
-        <t-steps :current="store.currentStep === 'block-review' ? 0 : 1" size="small" style="width: 280px">
-          <t-step-item title="Block Review" />
-          <t-step-item title="Question Review" />
-        </t-steps>
+  <t-dialog
+    :visible="visible"
+    :header="false"
+    :footer="false"
+    :close-btn="false"
+    width="90vw"
+    top="5vh"
+    dialog-class-name="question-import-workbench-dialog"
+    :close-on-overlay-click="false"
+    :close-on-esc-keydown="false"
+    @update:visible="handleVisibleUpdate"
+  >
+    <div class="workbench-shell">
+      <div class="workbench-header">
+        <div class="workbench-heading">
+          <h3>题库导入工作台</h3>
+          <t-steps :current="store.currentStep === 'block-review' ? 0 : 1" size="small" class="header-steps">
+            <t-step-item title="Block Review" />
+            <t-step-item title="Question Review" />
+          </t-steps>
+        </div>
+        <t-space size="small">
+          <t-button variant="outline" @click="handleAbandon">放弃导入</t-button>
+          <t-button v-if="store.currentStep === 'block-review'" theme="primary" @click="goToQuestionReview">
+            下一步：题目解析
+          </t-button>
+          <t-button v-else variant="outline" @click="returnToBlockReview">
+            返回 Block Review
+          </t-button>
+        </t-space>
       </div>
-      <t-space size="small">
-        <t-button variant="outline" @click="handleAbandon">放弃导入</t-button>
-        <t-button v-if="store.currentStep === 'block-review'" theme="primary" @click="goToQuestionReview">
-          下一步：题目解析
-        </t-button>
-        <t-button v-else variant="outline" @click="store.goToStep('block-review'); saveProgress()">
-          返回 Block Review
-        </t-button>
-      </t-space>
-    </div>
 
-    <div class="summary-bar" v-if="store.summary.total_blocks > 0">
-      <t-space size="small">
+      <div class="workbench-configbar">
+        <div class="config-control">
+          <span class="config-label">默认难度</span>
+          <t-select v-model="store.defaultDifficulty" size="small" style="width: 104px" @change="saveDebounced">
+            <t-option value="easy" label="简单" />
+            <t-option value="medium" label="中等" />
+            <t-option value="hard" label="困难" />
+          </t-select>
+        </div>
+        <span class="config-divider" />
+        <div class="config-meta"><span>当前格式</span><strong>{{ importFormatLabel }}</strong></div>
+        <div class="config-meta"><span>Preset</span><strong>{{ store.strategyPreset }}</strong></div>
+        <span class="config-divider" />
         <t-tag variant="light">{{ store.summary.total_blocks }} blocks</t-tag>
-        <t-tag variant="light">{{ store.summary.question_numbers }} 题号</t-tag>
-        <t-tag v-if="store.summary.blocks_with_anomalies > 0" theme="warning" variant="light">
-          {{ store.summary.blocks_with_anomalies }} 异常
-        </t-tag>
-      </t-space>
-    </div>
+        <t-tag v-if="anomalyCounts.error > 0" theme="danger" variant="light">{{ anomalyCounts.error }} errors</t-tag>
+        <t-tag v-if="anomalyCounts.warning > 0" theme="warning" variant="light">{{ anomalyCounts.warning }} warnings</t-tag>
+        <t-tag v-if="anomalyCounts.error === 0 && anomalyCounts.warning === 0" theme="success" variant="light">无异常</t-tag>
+      </div>
 
-    <div class="workbench-body">
-      <BlockReviewPanel v-if="store.currentStep === 'block-review'" @changed="saveDebounced" />
-      <QuestionReviewPanel v-else ref="questionReviewRef" @changed="saveDebounced" />
+      <div class="workbench-body">
+        <BlockReviewPanel v-if="store.currentStep === 'block-review'" @changed="saveDebounced" />
+        <QuestionReviewPanel
+          v-else
+          ref="questionReviewRef"
+          @changed="saveDebounced"
+          @imported="handleImported"
+        />
+      </div>
     </div>
-  </div>
+  </t-dialog>
 
   <t-dialog
     v-model:visible="abandonVisible"
     header="放弃导入"
+    attach="body"
+    :z-index="4000"
+    :close-btn="false"
+    :close-on-overlay-click="false"
     :confirm-btn="{ content: '保存草稿', theme: 'primary' }"
     :cancel-btn="{ content: '直接放弃' }"
     @confirm="abandonSaveDraft"
@@ -51,95 +79,66 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
-import { loadDraft, deleteDraft, saveDraft, cleanExpiredDrafts } from '@/utils/importDraftDB'
+import { deleteDraft, saveDraft } from '@/utils/importDraftDB'
 import BlockReviewPanel from './components/BlockReviewPanel.vue'
 import QuestionReviewPanel from './components/QuestionReviewPanel.vue'
 
-const route = useRoute()
-const router = useRouter()
+const props = defineProps<{
+  visible: boolean
+  kbId: string
+  setId: string
+}>()
+
+const emit = defineEmits<{
+  'update:visible': [value: boolean]
+  imported: []
+  abandoned: []
+}>()
+
 const store = useImportWorkbenchStore()
 const questionReviewRef = ref<InstanceType<typeof QuestionReviewPanel> | null>(null)
 const abandonVisible = ref(false)
 
-const kbId = route.params.kbId as string
-const setId = route.params.setId as string
-
-// --- Debounced save (fix 4) ---
-let saveTimer: ReturnType<typeof setTimeout> | null = null
-function saveDebounced() {
-  if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => saveProgress(), 800)
-}
-function saveProgress() {
-  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
-  if (!store.kbId || !store.setId || store.blocks.length === 0) return
-  saveDraft({
-    kbId: store.kbId,
-    setId: store.setId,
-    blocks: store.blocks,
-    strategyPreset: store.strategyPreset,
-    defaultDifficulty: store.defaultDifficulty,
-    importMode: store.importMode,
-    importFormat: store.importFormat,
-    currentStep: store.currentStep,
-    questions: store.questions,
-    timestamp: Date.now(),
-  }).catch(() => {})
-}
-onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
-
-onMounted(async () => {
-  await cleanExpiredDrafts()
-
-  // If store already has blocks (from dialog navigation), skip loading
-  if (store.blocks.length > 0 && store.kbId === kbId && store.setId === setId) {
-    return
-  }
-
-  const draft = await loadDraft(kbId, setId)
-  if (draft) {
-    const confirmed = confirm(`发现未完成的草稿（${new Date(draft.timestamp).toLocaleString()}），是否恢复？`)
-    if (confirmed) {
-      store.kbId = kbId
-      store.setId = setId
-      store.strategyPreset = draft.strategyPreset
-      store.defaultDifficulty = draft.defaultDifficulty
-      store.importMode = draft.importMode as 'single' | 'batch'
-      store.importFormat = (draft.importFormat as 'json' | 'word' | 'pdf') || 'word'
-      store.setBlocksFromResponse(draft.blocks)
-      store.questions = draft.questions ?? []
-      store.currentStep = draft.currentStep || 'block-review'
-      store.draftExists = true
-      return
-    } else {
-      await deleteDraft(kbId, setId)
-    }
-  }
-
-  MessagePlugin.warning('没有可用的 blocks，请先上传文件。')
-  router.replace({ name: 'knowledgeBaseDetail', params: { kbId } })
+const importFormatLabel = computed(() => {
+  if (store.importFormat === 'pdf') return 'PDF'
+  if (store.importFormat === 'word') return 'Word / DOCX'
+  return 'JSON / JSONL'
 })
 
-async function goToQuestionReview() {
-  store.goToStep('question-review')
-  saveProgress()
-  await nextTick()
-  if (questionReviewRef.value) {
-    await questionReviewRef.value.parseQuestions()
+const anomalyCounts = computed(() => {
+  let error = 0
+  let warning = 0
+  for (const block of store.blocks) {
+    for (const anomaly of block.anomalies) {
+      if (anomaly.severity === 'error') error += 1
+      if (anomaly.severity === 'warning') warning += 1
+    }
   }
+  return { error, warning }
+})
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearSaveTimer() {
+  if (!saveTimer) return
+  clearTimeout(saveTimer)
+  saveTimer = null
 }
 
-// Fix 6: back button uses same abandon flow
-function handleAbandon() {
-  abandonVisible.value = true
+function saveDebounced() {
+  clearSaveTimer()
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    void saveProgress().catch(() => {})
+  }, 800)
 }
 
-async function abandonSaveDraft() {
-  await saveProgress()
+async function saveProgress() {
+  clearSaveTimer()
+  if (!store.kbId || !store.setId || store.blocks.length === 0) return
   await saveDraft({
     kbId: store.kbId,
     setId: store.setId,
@@ -152,26 +151,73 @@ async function abandonSaveDraft() {
     questions: store.questions,
     timestamp: Date.now(),
   })
+}
+
+onBeforeUnmount(() => {
+  if (saveTimer) void saveProgress().catch(() => {})
+})
+
+async function goToQuestionReview() {
+  store.goToStep('question-review')
+  await saveProgress()
+  await nextTick()
+  await questionReviewRef.value?.parseQuestions()
+}
+
+function returnToBlockReview() {
+  store.goToStep('block-review')
+  saveDebounced()
+}
+
+function handleVisibleUpdate(value: boolean) {
+  if (!value && props.visible) handleAbandon()
+}
+
+function handleAbandon() {
+  abandonVisible.value = true
+}
+
+async function abandonSaveDraft() {
+  await saveProgress()
   MessagePlugin.success('草稿已保存（7 天有效）')
   abandonVisible.value = false
-  router.push({ name: 'knowledgeBaseDetail', params: { kbId: store.kbId } })
+  store.reset()
+  emit('update:visible', false)
+  emit('abandoned')
 }
 
 async function abandonDiscard() {
-  const targetKbId = store.kbId
-  const targetSetId = store.setId
-  await deleteDraft(targetKbId, targetSetId)
+  await deleteDraft(props.kbId, props.setId)
+  clearSaveTimer()
   store.reset()
   abandonVisible.value = false
-  router.push({ name: 'knowledgeBaseDetail', params: { kbId: targetKbId } })
+  emit('update:visible', false)
+  emit('abandoned')
+}
+
+function handleImported() {
+  clearSaveTimer()
+  emit('update:visible', false)
+  emit('imported')
 }
 </script>
 
 <style scoped>
-.workbench-page { display: flex; flex-direction: column; height: 100%; min-height: 100vh; padding: 0; }
-.workbench-header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--td-component-stroke); background: var(--td-bg-color-container); flex-wrap: wrap; }
-.workbench-title { margin: 0; font-size: 16px; font-weight: 600; }
-.header-steps { margin-left: auto; }
-.summary-bar { padding: 8px 20px; border-bottom: 1px solid var(--td-component-stroke); background: var(--td-bg-color-page); }
-.workbench-body { flex: 1; overflow: hidden; padding: 0 20px; }
+.workbench-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.workbench-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 20px; border-bottom: 1px solid var(--td-component-stroke); background: var(--td-bg-color-container); }
+.workbench-heading { min-width: 0; display: flex; align-items: center; gap: 28px; }
+.workbench-heading h3 { flex-shrink: 0; margin: 0; font-size: 17px; font-weight: 600; }
+.header-steps { width: 300px; }
+.workbench-configbar { min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 7px 20px; border-bottom: 1px solid var(--td-component-stroke); background: var(--td-bg-color-page); }
+.config-control { display: flex; align-items: center; gap: 7px; }
+.config-label, .config-meta span { font-size: 12px; color: var(--td-text-color-secondary); }
+.config-meta { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+.config-meta strong { font-weight: 600; color: var(--td-text-color-primary); }
+.config-divider { width: 1px; height: 20px; background: var(--td-component-stroke); }
+.workbench-body { flex: 1; min-height: 0; overflow: hidden; padding: 0 20px 14px; }
+</style>
+
+<style>
+.question-import-workbench-dialog { height: 90vh; max-height: 90vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.question-import-workbench-dialog .t-dialog__body { flex: 1; min-height: 0; padding: 0; overflow: hidden; }
 </style>

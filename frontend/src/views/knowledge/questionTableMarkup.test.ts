@@ -17,6 +17,7 @@ const questionApiSource = readFileSync(
 const workbenchSource = readFileSync(new URL('./QuestionImportWorkbench.vue', import.meta.url), 'utf8')
 const blockReviewSource = readFileSync(new URL('./components/BlockReviewPanel.vue', import.meta.url), 'utf8')
 const questionReviewSource = readFileSync(new URL('./components/QuestionReviewPanel.vue', import.meta.url), 'utf8')
+const routerSource = readFileSync(new URL('../../router/index.ts', import.meta.url), 'utf8')
 
 test('uses supported TDesign columns and named cell slots', () => {
   assert.equal(source.includes('<t-table-column'), false)
@@ -79,7 +80,9 @@ test('closes import type menu before opening the single import dialog', () => {
   assert.equal(source.includes('closeAllImportMenus'), true)
   assert.equal(source.includes('await closeAllImportMenus()'), true)
   assert.equal(source.includes('v-model:visible="headerImportMenuVisible"'), true)
-  // openSingleImport must close menu, destroy old dialog, then open fresh session
+  assert.equal(source.includes('loadDraft(props.knowledgeBaseId, props.setId)'), true)
+  assert.equal(source.includes('restoreDraftVisible.value = true'), true)
+  // A new import destroys the previous dialog instance before opening a fresh session.
   assert.equal(source.includes("fileImportVisible.value = false"), true)
   assert.equal(source.includes("fileImportSession.value += 1"), true)
 })
@@ -94,24 +97,32 @@ test('uses a compact JSON import dialog with local file parsing', () => {
   assert.equal(importSource.includes('parseErrorCount'), true)
 })
 
-test('file import dialog selects format on the left and has one cancel button', () => {
+test('file import dialog uses compact pill-style format selection and top actions', () => {
   assert.equal(fileImportSource.includes(':close-on-overlay-click="false"'), true)
   assert.equal(fileImportSource.includes('导入格式'), true)
-  assert.equal(fileImportSource.includes('value="json"'), true)
-  assert.equal(fileImportSource.includes('value="word"'), true)
-  assert.equal(fileImportSource.includes('value="pdf"'), true)
-  assert.equal(fileImportSource.includes(':confirm-btn="null"'), true)
-  assert.equal(fileImportSource.includes(':cancel-btn="null"'), true)
-  assert.equal((fileImportSource.match(/>取消<\/t-button>/g) || []).length, 1)
+  assert.equal(fileImportSource.includes('class="format-pill"'), true)
+  assert.equal(fileImportSource.includes('class="format-group"'), false)
+  assert.equal(fileImportSource.includes('<t-radio'), false)
+  assert.equal(fileImportSource.includes('class="coming-soon"'), true)
+  assert.equal(fileImportSource.includes('class="dialog-topbar"'), true)
+  assert.equal(fileImportSource.includes('class="dialog-actions"'), true)
+  assert.equal(fileImportSource.includes('width="600px"'), true)
+  assert.equal(fileImportSource.includes('min-height: 112px'), true)
   assert.equal(fileImportSource.includes('previewImportBlocks('), true)
   assert.equal(fileImportSource.includes('timeout: 120000'), true)
 })
 
-test('PDF format defaults to the PDF preset and parsing enters the workbench', () => {
-  assert.equal(fileImportSource.includes("format === 'pdf' ? 'pdf' : 'general'"), true)
+test('upload dialog owns only file format and PDF preset configuration', () => {
+  assert.equal(fileImportSource.includes('默认难度'), false)
+  assert.equal(fileImportSource.includes("strategyPreset.value = format === 'pdf' ? 'pdf' : 'general'"), true)
+  assert.equal(fileImportSource.includes('v-if="importFormat === \'pdf\'"'), true)
+  assert.equal(fileImportSource.includes('<t-option value="general"'), true)
+  assert.equal(fileImportSource.includes('<t-option value="pdf"'), true)
   assert.equal(fileImportSource.includes('import_mode: props.importMode'), true)
-  assert.equal(fileImportSource.includes('workbenchStore.importMode = props.importMode'), true)
-  assert.equal(fileImportSource.includes("name: 'questionImportWorkbench'"), true)
+  assert.equal(fileImportSource.includes("default_difficulty: 'medium'"), true)
+  assert.equal(fileImportSource.includes("emit('parsed'"), true)
+  assert.equal(fileImportSource.includes('useRouter'), false)
+  assert.equal(fileImportSource.includes('saveDraft'), false)
 })
 
 test('normalizes import file preview response arrays', () => {
@@ -128,23 +139,64 @@ test('empty state no longer has action slot', () => {
 
 test('question review changes trigger debounced draft saves', () => {
   assert.equal(workbenchSource.includes('@changed="saveDebounced"'), true)
-  assert.equal(questionReviewSource.includes("const emit = defineEmits<{ changed: [] }>()"), true)
+  assert.equal(questionReviewSource.includes("changed: []; imported: []"), true)
   assert.equal((questionReviewSource.match(/emit\('changed'\)/g) || []).length, 4)
 })
 
-test('success and discard navigation preserve route params before reset', () => {
-  assert.equal(questionReviewSource.includes('const targetKbId = store.kbId'), true)
-  assert.equal(questionReviewSource.includes('const targetSetId = store.setId'), true)
-  assert.equal(questionReviewSource.includes("params: { kbId: targetKbId }"), true)
-  assert.equal(workbenchSource.includes('const targetKbId = store.kbId'), true)
-  assert.equal(workbenchSource.includes('const targetSetId = store.setId'), true)
-  assert.equal(workbenchSource.includes("params: { kbId: targetKbId }"), true)
+test('workbench is a controlled 90vw modal and no longer uses a route', () => {
+  assert.equal(workbenchSource.includes('visible: boolean'), true)
+  assert.equal(workbenchSource.includes('kbId: string'), true)
+  assert.equal(workbenchSource.includes('setId: string'), true)
+  assert.equal(workbenchSource.includes("'update:visible': [value: boolean]"), true)
+  assert.equal(workbenchSource.includes('imported: []'), true)
+  assert.equal(workbenchSource.includes('abandoned: []'), true)
+  assert.equal(workbenchSource.includes('width="90vw"'), true)
+  assert.equal(workbenchSource.includes('height: 90vh'), true)
+  assert.equal(workbenchSource.includes('useRoute'), false)
+  assert.equal(workbenchSource.includes('useRouter'), false)
+  assert.equal(routerSource.includes('questionImportWorkbench'), false)
+  assert.equal(routerSource.includes('question-import-workbench'), false)
+})
+
+test('workbench header owns parse configuration and anomaly summary', () => {
+  assert.equal(workbenchSource.includes('v-model="store.defaultDifficulty"'), true)
+  assert.equal(workbenchSource.includes('当前格式'), true)
+  assert.equal(workbenchSource.includes('store.strategyPreset'), true)
+  assert.equal(workbenchSource.includes('store.summary.total_blocks'), true)
+  assert.equal(workbenchSource.includes('anomalyCounts.error'), true)
+  assert.equal(workbenchSource.includes('anomalyCounts.warning'), true)
+})
+
+test('successful import closes the modal and partial failures stay editable', () => {
+  assert.equal(questionReviewSource.includes("emit('imported')"), true)
+  assert.equal(questionReviewSource.includes('useRouter'), false)
+  assert.equal(questionReviewSource.includes('store.questionErrors = errors.map'), true)
+  assert.equal(workbenchSource.includes('@imported="handleImported"'), true)
+  assert.equal(workbenchSource.includes("emit('update:visible', false)"), true)
+  assert.equal(source.includes('@imported="handleWorkbenchImported"'), true)
+  assert.equal(source.includes('await refreshAfterMutation()'), true)
+})
+
+test('draft restore is handled from the question set without route navigation', () => {
+  assert.equal(source.includes('restoreImportDraft'), true)
+  assert.equal(source.includes('applyDraftToWorkbench'), true)
+  assert.equal(source.includes('workbenchVisible.value = true'), true)
+  assert.equal(source.includes('@parsed="handleFileParsed"'), true)
+  assert.equal(source.includes('await saveDraft({'), true)
+  assert.equal(source.includes('router.push'), false)
 })
 
 test('restoring original block text synchronizes the textarea model', () => {
   assert.equal(blockReviewSource.includes('@click="restoreSelectedBlock"'), true)
   assert.equal(blockReviewSource.includes('store.selectedBlock?.current_text'), true)
   assert.equal(blockReviewSource.includes('editingText.value = store.selectedBlock.current_text'), true)
+})
+
+test('block review uses list, editor, and metadata columns', () => {
+  assert.equal(blockReviewSource.includes('class="block-list"'), true)
+  assert.equal(blockReviewSource.includes('class="block-editor"'), true)
+  assert.equal(blockReviewSource.includes('class="block-meta-panel"'), true)
+  assert.equal(blockReviewSource.includes('异常信息'), true)
 })
 
 test('question table has row selection and batch actions', () => {

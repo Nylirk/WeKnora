@@ -91,20 +91,18 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
 import { importQuestions, type ImportQuestionItem, type QuestionType } from '@/api/question'
 import { parseImportedBlocks } from '@/api/question_block'
 import { deleteDraft } from '@/utils/importDraftDB'
 
-const router = useRouter()
 const store = useImportWorkbenchStore()
 const importStatus = ref<'draft' | 'reviewed'>('draft')
 const editVisible = ref(false)
 const editingIndex = ref(-1)
 const editingItem = ref<ImportQuestionItem | null>(null)
-const emit = defineEmits<{ changed: [] }>()
+const emit = defineEmits<{ changed: []; imported: [] }>()
 
 const questionTypes = [
   { value: 'single_choice', label: '单选' },
@@ -169,16 +167,16 @@ async function handleImport() {
     const errors = Array.isArray(result?.errors) ? result.errors : []
 
     if (errors.length === 0) {
-      // Fix 7: all success — clear draft and navigate back
       MessagePlugin.success(`成功导入 ${created} 题`)
-      const targetKbId = store.kbId
-      const targetSetId = store.setId
-      await deleteDraft(targetKbId, targetSetId)
+      await deleteDraft(store.kbId, store.setId)
       store.reset()
-      router.push({ name: 'knowledgeBaseDetail', params: { kbId: targetKbId } })
+      emit('imported')
     } else {
-      // Fix 8: partial failure — keep draft and questions
       MessagePlugin.warning(`导入 ${created}/${store.questions.length} 题，${errors.length} 条错误。请修复后重试。`)
+      store.questionErrors = errors.map((error: any, index: number) => ({
+        line_number: Number(error?.line_number ?? index + 1),
+        message: String(error?.message ?? error ?? '导入失败'),
+      }))
       emit('changed')
     }
   } catch (e: any) {
