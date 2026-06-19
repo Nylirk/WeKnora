@@ -674,20 +674,8 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 	log.Infof("[import-file preview] docreader read finished: file=%s markdown_len=%d", fileName, len(readResp.MarkdownContent))
 
 	extractedText := strings.TrimSpace(readResp.MarkdownContent)
-	if extractedText == "" {
-		// Return an empty preview response instead of a hard error,
-		// so the frontend can show the warning without getting stuck.
-		log.Warnf("[import-file preview] empty text extracted: file=%s", fileName)
-		return &types.ImportFilePreviewResponse{
-			Items:   nil,
-			Errors:  nil,
-			Warnings: []string{"未能从文件中抽取文本，请确认文件内容可复制，或等待 OCR 支持。"},
-			RawTextPreview: "",
-			Stats: types.ImportFilePreviewStats{},
-		}, nil
-	}
 
-	// 6. Parse questions from extracted text
+	// 6. Set defaults (needed by both normal and debug-export paths)
 	defaultType := req.DefaultQuestionType
 	if defaultType == "" {
 		defaultType = string(types.QuestionTypeShortAnswer)
@@ -697,19 +685,64 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 		defaultDifficulty = string(types.QuestionDifficultyMedium)
 	}
 
-	// Check context cancellation before extraction
-	select {
-	case <-ctx.Done():
-		log.Infof("[import-file preview] cancelled before extraction: file=%s", fileName)
-		return nil, apperrors.NewBadRequestError("请求已取消")
-	default:
+	var items []types.ImportQuestionItem
+	var parseErrors []types.ImportQuestionError
+	var parseWarnings []string
+
+	if extractedText == "" {
+		parseWarnings = []string{"未能从文件中抽取文本，请确认文件内容可复制，或等待 OCR 支持。"}
+		if !req.DebugExport {
+			// Normal non-debug: return an empty preview response instead of
+			// a hard error so the frontend can show the warning.
+			log.Warnf("[import-file preview] empty text extracted: file=%s", fileName)
+			return &types.ImportFilePreviewResponse{
+				Items:          nil,
+				Errors:         nil,
+				Warnings:       parseWarnings,
+				RawTextPreview: "",
+				Stats:          types.ImportFilePreviewStats{},
+			}, nil
+		}
+		// Debug export: continue to generate a debug bundle with empty pipeline
+		// intermediates so the caller can inspect what the docreader produced.
+		log.Warnf("[import-file preview] empty text extracted, generating debug export anyway: file=%s", fileName)
+	} else {
+		// Check context cancellation before extraction
+		select {
+		case <-ctx.Done():
+			log.Infof("[import-file preview] cancelled before extraction: file=%s", fileName)
+			return nil, apperrors.NewBadRequestError("请求已取消")
+		default:
+		}
+
+		items, parseErrors, parseWarnings = s.extractionService.Extract(
+			ctx, extractedText, defaultType, defaultDifficulty,
+		)
+		log.Infof("[import-file preview] extraction finished: items=%d errors=%d warnings=%d",
+			len(items), len(parseErrors), len(parseWarnings))
 	}
 
-	items, parseErrors, parseWarnings := s.extractionService.Extract(
-		ctx, extractedText, defaultType, defaultDifficulty,
-	)
-	log.Infof("[import-file preview] extraction finished: items=%d errors=%d warnings=%d",
-		len(items), len(parseErrors), len(parseWarnings))
+	// 6a. Optional debug export (best-effort, non-fatal)
+	var debugDir string
+	var debugManifest []string
+	if req.DebugExport {
+		log.Infof("[import-file preview] debug export started: file=%s", fileName)
+		var zipPath string
+		var exportErr error
+		debugDir, zipPath, debugManifest, exportErr = createDebugExport(
+			extractedText, defaultType, defaultDifficulty,
+			items, parseErrors, parseWarnings,
+			fileName, fileType, int64(len(fileData)),
+		)
+		if exportErr != nil {
+			log.Warnf("[import-file preview] debug export failed (continuing): %v", exportErr)
+			debugDir = ""
+			debugManifest = nil
+		} else {
+			log.Infof("[import-file preview] debug export ready: dir=%s zip=%s files=%d",
+				debugDir, zipPath, len(debugManifest))
+		}
+	}
 
 	// 7. Build response stats
 	withAnswer := 0
@@ -749,6 +782,8 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 			WithAnswer:        withAnswer,
 			WithoutAnswer:     withoutAnswer,
 		},
+		DebugExportPath: debugDir,
+		DebugManifest:   debugManifest,
 	}, nil
 }
 
