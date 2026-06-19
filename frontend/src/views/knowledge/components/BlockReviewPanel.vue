@@ -10,34 +10,16 @@
         <t-button size="small" variant="outline" :disabled="importUI.blocking" @click="emit('sort')">按题号排序</t-button>
         <t-button size="small" variant="outline" theme="warning" :disabled="!store.hasDeletedBlocks || importUI.blocking" @click="emit('restore-deleted')">恢复删除</t-button>
       </t-space>
-      <span class="block-count">{{ store.filteredBlocks.length }} / {{ store.blocks.length }} blocks</span>
+      <span class="block-count">{{ store.filteredBlocks.length }} / {{ store.blockOrder.length }} blocks</span>
     </div>
 
     <div class="review-body">
-      <div class="col-list">
-        <div
-          v-for="block in store.filteredBlocks"
-          :key="block.id"
-          class="block-item"
-          :class="{ selected: store.selectedBlockId === block.id, 'has-error': hasError(block) }"
-          @click="store.selectBlock(block.id)"
-        >
-          <div class="block-item-header">
-            <t-tag v-if="block.question_number != null" size="small" theme="primary" variant="light">#{{ block.question_number }}</t-tag>
-            <t-tag v-else size="small" theme="default">无题号</t-tag>
-            <span class="block-item-index">idx {{ block.index }}</span>
-            <t-space size="2px">
-              <span v-for="a in safeAnomalies(block)" :key="a.code">
-                <t-tooltip :content="a.message">
-                  <t-tag size="small" :theme="a.severity === 'error' ? 'danger' : 'warning'" variant="light">{{ a.code }}</t-tag>
-                </t-tooltip>
-              </span>
-            </t-space>
-          </div>
-          <div class="block-item-preview">{{ block.current_text.slice(0, 100) }}{{ block.current_text.length > 100 ? '…' : '' }}</div>
-        </div>
-        <t-empty v-if="store.filteredBlocks.length === 0" description="无 blocks" />
-      </div>
+      <VirtualBlockList
+        :items="store.filteredBlocks"
+        :selected-id="store.selectedBlockId"
+        :get-anomalies="(id: string) => store.totalAnomaliesForBlock(id)"
+        @select="store.selectBlock"
+      />
 
       <div class="col-editor" v-if="store.selectedBlock">
         <div class="detail-toolbar">
@@ -95,7 +77,7 @@
 import { computed, ref, watch } from 'vue'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
 import { useImportUIStore } from '@/stores/importUIStore'
-import type { ImportBlock } from '@/api/question_block'
+import VirtualBlockList from './VirtualBlockList.vue'
 
 const store = useImportWorkbenchStore()
 const importUI = useImportUIStore()
@@ -118,7 +100,7 @@ const splitKeyword = ref('')
 const newTag = ref('')
 
 const selectedBlockAnomalies = computed(() =>
-  Array.isArray(store.selectedBlock?.anomalies) ? store.selectedBlock.anomalies : []
+  store.selectedBlock ? store.totalAnomaliesForBlock(store.selectedBlock.id) : []
 )
 const selectedBlockTags = computed(() =>
   Array.isArray(store.selectedBlock?.tags) ? store.selectedBlock.tags : []
@@ -128,9 +110,6 @@ const selectedBlockDirty = computed(() =>
   store.selectedBlock &&
   store.selectedBlock.current_text !== store.selectedBlock.original_text
 )
-
-function safeAnomalies(block: ImportBlock) { return Array.isArray(block.anomalies) ? block.anomalies : [] }
-function hasError(block: ImportBlock) { return safeAnomalies(block).some(a => a?.severity === 'error') }
 
 watch(() => [store.selectedBlock?.id, store.selectedBlock?.current_text] as const, ([, ct]) => {
   editingText.value = ct ?? ''; showSplitControl.value = false; splitKeyword.value = ''; newTag.value = ''
@@ -160,7 +139,6 @@ function addTag() {
 .toolbar { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--td-component-stroke); }
 .block-count { font-size: 12px; color: var(--td-text-color-secondary); }
 .review-body { display: grid; grid-template-columns: 300px 1fr 260px; flex: 1; overflow: hidden; }
-.col-list { overflow-y: auto; border-right: 1px solid var(--td-component-stroke); }
 .col-editor { overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
 .col-editor-empty { align-items: center; justify-content: center; }
 .col-meta { overflow-y: auto; padding: 12px 16px; background: var(--td-bg-color-container); border-left: 1px solid var(--td-component-stroke); }
@@ -184,7 +162,6 @@ function addTag() {
 .anomaly-line.error { color: var(--td-error-color); }
 .anomaly-line.warning { color: var(--td-warning-color); }
 .anomaly-code { font-size: 10px; font-weight: 600; opacity: .7; }
-.detail-empty { flex: 1; display: flex; align-items: center; justify-content: center; }
 .split-control { display: flex; align-items: center; gap: 8px; background: var(--td-bg-color-secondarycontainer); padding: 8px; border-radius: 4px; }
 .split-hint { font-size: 12px; color: var(--td-text-color-secondary); }
 </style>

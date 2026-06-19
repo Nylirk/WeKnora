@@ -362,20 +362,14 @@ function applyDraftToWorkbench(draft: ImportDraft) {
   workbenchStore.reset()
   workbenchStore.kbId = props.knowledgeBaseId
   workbenchStore.setId = props.setId
-  workbenchStore.strategyPreset = draft.strategyPreset
-  workbenchStore.defaultDifficulty = draft.defaultDifficulty
-  workbenchStore.importMode = draft.importMode as 'single' | 'batch'
-  workbenchStore.importFormat = (draft.importFormat as 'json' | 'word' | 'pdf') || 'word'
-  workbenchStore.setBlocksFromResponse(draft.blocks)
-  workbenchStore.questions = draft.questions ?? []
-  workbenchStore.currentStep = draft.currentStep || 'block-review'
-  workbenchStore.draftExists = true
+  workbenchStore.loadFromDraft(draft)
 }
 
 async function restoreImportDraft() {
   await importUI.withImportLoading('正在恢复草稿…', async () => {
     const draft = pendingDraft.value
-    if (!draft || !Array.isArray(draft.blocks) || draft.blocks.length === 0) {
+    const hasBlocks = (Array.isArray(draft.blocks) && draft.blocks.length > 0) || (Array.isArray(draft.blockOrder) && draft.blockOrder.length > 0)
+    if (!draft || !hasBlocks) {
       MessagePlugin.warning('草稿中没有可恢复的 blocks，请重新导入。')
       await startFreshImport()
       return
@@ -422,10 +416,16 @@ async function handleFileParsed(payload: {
   workbenchStore.setBlocksFromResponse(payload.blocks)
 
   try {
+    const blockOrder = payload.blocks.map(b => b.id)
+    const blockMap: Record<string, ImportBlock> = {}
+    for (const b of payload.blocks) { blockMap[b.id] = b }
     await saveDraft({
       kbId: props.knowledgeBaseId,
       setId: props.setId,
-      blocks: payload.blocks,
+      blockOrder,
+      blockMap,
+      deletedBlockStack: [],
+      deletedBlockMap: {},
       strategyPreset: payload.strategyPreset,
       defaultDifficulty: workbenchStore.defaultDifficulty,
       importMode: payload.importMode,

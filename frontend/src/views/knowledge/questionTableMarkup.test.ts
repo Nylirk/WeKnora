@@ -237,7 +237,8 @@ test('restoring original block text synchronizes the textarea model', () => {
 })
 
 test('block review uses list, editor, and metadata columns', () => {
-  assert.equal(blockReviewSource.includes('class="col-list"'), true)
+  // col-list is now rendered by VirtualBlockList (child component)
+  assert.equal(blockReviewSource.includes('<VirtualBlockList'), true)
   assert.equal(blockReviewSource.includes('class="col-editor"'), true)
   assert.equal(blockReviewSource.includes('class="col-meta"'), true)
   assert.equal(blockReviewSource.includes('异常信息'), true)
@@ -320,8 +321,9 @@ test('BlockReviewPanel tags access is guarded', () => {
 })
 
 test('QuestionImportWorkbench anomalyCounts guarded against null anomalies', () => {
-  const hasGuard = workbenchSource.includes('Array.isArray(block.anomalies)')
-  assert.equal(hasGuard, true, 'anomalyCounts must guard block.anomalies with Array.isArray')
+  // anomalyCounts now delegates to store.totalAnomaliesForBlock which handles Array.isArray guards
+  const hasGuard = workbenchSource.includes('store.totalAnomaliesForBlock')
+  assert.equal(hasGuard, true, 'anomalyCounts must delegate to totalAnomaliesForBlock for safe anomaly access')
 })
 
 test('QuestionFileImportDialog guards result.blocks with Array.isArray', () => {

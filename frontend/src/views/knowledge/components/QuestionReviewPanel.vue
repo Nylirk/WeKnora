@@ -41,7 +41,7 @@
 
       <!-- P0: import button at bottom-right only -->
       <div v-if="store.questions.length > 0" class="import-footer">
-        <t-button theme="primary" :disabled="store.loading" @click="importConfirmVisible = true">
+        <t-button theme="primary" :disabled="store.isImporting" @click="importConfirmVisible = true">
           导入 {{ store.questions.length }} 题
         </t-button>
       </div>
@@ -149,10 +149,10 @@ function removeItem(index: number) { store.questions.splice(index, 1); store.que
 async function doImport() {
   if (!store.questions.length) { MessagePlugin.warning('没有可导入的题目'); return }
   importConfirmVisible.value = false
-  // Clear stale parse-stage warnings immediately
   store.clearImportWarnings()
-  await importUI.withImportLoading('正在导入题目…', async () => {
-    try {
+  store.isImporting = true
+  try {
+    await importUI.withImportLoading('正在导入题目…', async () => {
       const itemsWithStatus = store.questions.map(item => ({ ...item, status: importStatus.value }))
       const result: any = await importQuestions(store.kbId, store.setId, { items: itemsWithStatus })
       const created = result?.created ?? 0
@@ -168,8 +168,9 @@ async function doImport() {
         store.questionErrors = errors.map((error: any, index: number) => ({ line_number: Number(error?.line_number ?? index + 1), message: String(error?.message ?? error ?? '导入失败') }))
         emit('changed')
       }
-    } catch (e: any) { MessagePlugin.error(e?.message || '导入失败') }
-  })
+    })
+  } catch (e: any) { MessagePlugin.error(e?.message || '导入失败') }
+  finally { store.isImporting = false }
 }
 
 defineExpose({ doImport })

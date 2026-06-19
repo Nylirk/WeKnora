@@ -90,7 +90,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
 import { useImportUIStore } from '@/stores/importUIStore'
-import { deleteDraft, saveDraft } from '@/utils/importDraftDB'
+import { deleteDraft } from '@/utils/importDraftDB'
 import BlockReviewPanel from './components/BlockReviewPanel.vue'
 import QuestionReviewPanel from './components/QuestionReviewPanel.vue'
 
@@ -107,8 +107,8 @@ const importFormatLabel = computed(() => {
 })
 const anomalyCounts = computed(() => {
   let error = 0; let warning = 0
-  for (const block of store.blocks) {
-    const anomalies = Array.isArray(block.anomalies) ? block.anomalies : []
+  for (const id of store.blockOrder) {
+    const anomalies = store.totalAnomaliesForBlock(id)
     for (const anomaly of anomalies) {
       if (anomaly?.severity === 'error') error += 1
       if (anomaly?.severity === 'warning') warning += 1
@@ -122,8 +122,8 @@ function clearSaveTimer() { if (saveTimer) { clearTimeout(saveTimer); saveTimer 
 function saveDebounced() { clearSaveTimer(); saveTimer = setTimeout(() => { saveTimer = null; void saveProgress().catch(() => {}) }, 800) }
 async function saveProgress() {
   clearSaveTimer()
-  if (!store.kbId || !store.setId || store.blocks.length === 0) return
-  await saveDraft({ kbId: store.kbId, setId: store.setId, blocks: store.blocks, strategyPreset: store.strategyPreset, defaultDifficulty: store.defaultDifficulty, importMode: store.importMode, importFormat: store.importFormat, currentStep: store.currentStep, questions: store.questions, timestamp: Date.now() })
+  if (!store.kbId || !store.setId || store.blockOrder.length === 0) return
+  await store.flushDraftChanges()
 }
 onBeforeUnmount(() => { if (saveTimer) void saveProgress().catch(() => {}) })
 
@@ -152,7 +152,7 @@ async function handleSplitBlock(payload: { id: string; positions: number[] }) {
   saveDebounced()
 }
 async function handleMergePrevious(id: string) {
-  await importUI.withImportLoading('正在合并分块…', async () => { store.mergeWithPrevious(id); saveDebounced() })
+  await importUI.withImportLoading('正在合并分块…', async () => { store.mergeWithPrevious(id) })
   saveDebounced()
 }
 async function handleMergeNext(id: string) {
@@ -165,7 +165,7 @@ async function handleDeleteBlock(id: string) {
 }
 async function handleRestoreDeleted() {
   await importUI.withImportLoading('正在恢复分块…', async () => {
-    while (store.deletedBlocks.length > 0) store.restoreBlock(store.deletedBlocks[store.deletedBlocks.length - 1].id)
+    store.restoreAllDeleted()
   })
   saveDebounced()
 }
