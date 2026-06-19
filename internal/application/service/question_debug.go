@@ -167,17 +167,29 @@ func createZip(zipPath, baseDir string, filePaths []string) (err error) {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-
-	// Clean up partial zip file on any error.
-	defer func() {
-		if err != nil {
-			_ = os.Remove(zipPath)
-		}
-	}()
 
 	w := zip.NewWriter(f)
-	defer w.Close()
+
+	// Single defer to guarantee correct ordering:
+	//   1. Close zip writer (flush gzip footers / central directory).
+	//   2. Close underlying file (release the OS handle).
+	//   3. On original error, remove the partial zip file.
+	// On success, bubble up any deferred Close error so we don't silently
+	// return a truncated zip.
+	defer func() {
+		wErr := w.Close()
+		fErr := f.Close()
+		if err != nil {
+			// Original error takes precedence; best-effort removal.
+			_ = os.Remove(zipPath)
+			return
+		}
+		if wErr != nil {
+			err = fmt.Errorf("zip: writer close failed: %w", wErr)
+		} else if fErr != nil {
+			err = fmt.Errorf("zip: file close failed: %w", fErr)
+		}
+	}()
 
 	for _, fp := range filePaths {
 		// Skip the zip file itself to avoid reading it while writing
