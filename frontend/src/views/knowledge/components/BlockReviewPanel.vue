@@ -8,7 +8,7 @@
           <t-option value="warning" label="警告" />
         </t-select>
         <t-button size="small" variant="outline" :disabled="importUI.blocking" @click="emit('sort')">按题号排序</t-button>
-        <t-button size="small" variant="outline" theme="warning" :disabled="!store.hasDeletedBlocks || importUI.blocking" @click="emit('restore-deleted')">恢复删除</t-button>
+        <t-button size="small" variant="outline" theme="warning" :disabled="!store.hasDeletedBlocks || importUI.blocking" @click="restoreDialogVisible = true">恢复删除</t-button>
       </t-space>
       <span class="block-count">{{ store.filteredBlocks.length }} / {{ store.blockOrder.length }} blocks</span>
     </div>
@@ -17,7 +17,7 @@
       <VirtualBlockList
         :items="store.filteredBlocks"
         :selected-id="store.selectedBlockId"
-        :get-anomalies="(id: string) => store.totalAnomaliesForBlock(id)"
+        :get-anomalies="(id: string) => store.getMergedAnomalies(id)"
         @select="store.selectBlock"
       />
 
@@ -61,9 +61,9 @@
         <section class="meta-section">
           <h4>异常信息</h4>
           <div v-if="selectedBlockAnomalies.length" class="detail-anomalies">
-            <div v-for="a in selectedBlockAnomalies" :key="a.code" class="anomaly-line" :class="a.severity">
-              <span class="anomaly-code">{{ a.code }}</span>
-              <span>{{ a.message }}</span>
+            <div v-for="a in selectedBlockAnomalies" :key="a.code + ':' + a.message" class="anomaly-card" :class="a.severity">
+              <div class="anomaly-code">{{ a.code }}</div>
+              <div class="anomaly-message">{{ a.message }}</div>
             </div>
           </div>
           <span v-else class="meta-empty">无异常</span>
@@ -71,6 +71,37 @@
       </aside>
     </div>
   </div>
+
+  <!-- P4: restore deleted block dialog -->
+  <t-dialog
+    v-model:visible="restoreDialogVisible"
+    header="恢复删除的分块"
+    :z-index="4000"
+    attach="body"
+    :footer="false"
+    width="480px"
+  >
+    <div v-if="deletedBlockList.length === 0" class="restore-empty">
+      <t-empty description="没有已删除的分块" />
+    </div>
+    <div v-else class="deleted-block-list">
+      <div v-for="block in deletedBlockList" :key="block.id" class="deleted-block-row">
+        <div class="deleted-block-info">
+          <div class="deleted-block-title">
+            <t-tag v-if="block.question_number != null" size="small" theme="primary" variant="light">#{{ block.question_number }}</t-tag>
+            <t-tag v-else size="small" theme="default">无题号</t-tag>
+            <span class="deleted-block-idx">idx {{ block.index }}</span>
+            <t-tag v-for="a in (store.getMergedAnomalies(block.id).slice(0, 2))" :key="a.code" size="small" :theme="a.severity === 'error' ? 'danger' : 'warning'" variant="light">{{ a.code }}</t-tag>
+          </div>
+          <p class="deleted-block-preview">{{ (block.current_text || '').slice(0, 80) }}{{ (block.current_text || '').length > 80 ? '…' : '' }}</p>
+        </div>
+        <t-button size="small" variant="outline" theme="primary" :disabled="importUI.blocking" @click="doRestoreDeleted(block.id)">恢复</t-button>
+      </div>
+    </div>
+    <template #footer v-if="deletedBlockList.length > 0">
+      <t-button variant="outline" @click="restoreDialogVisible = false">关闭</t-button>
+    </template>
+  </t-dialog>
 </template>
 
 <script setup lang="ts">
@@ -89,7 +120,7 @@ const emit = defineEmits<{
   'merge-previous': [id: string]
   'merge-next': [id: string]
   'delete-block': [id: string]
-  'restore-deleted': []
+  'restore-deleted': [id: string]
   'add-tag': [payload: { id: string; tag: string }]
   'remove-tag': [payload: { id: string; tag: string }]
 }>()
@@ -98,9 +129,10 @@ const editingText = ref('')
 const showSplitControl = ref(false)
 const splitKeyword = ref('')
 const newTag = ref('')
+const restoreDialogVisible = ref(false)
 
 const selectedBlockAnomalies = computed(() =>
-  store.selectedBlock ? store.totalAnomaliesForBlock(store.selectedBlock.id) : []
+  store.selectedBlock ? store.getMergedAnomalies(store.selectedBlock.id) : []
 )
 const selectedBlockTags = computed(() =>
   Array.isArray(store.selectedBlock?.tags) ? store.selectedBlock.tags : []
@@ -132,6 +164,15 @@ function addTag() {
   emit('add-tag', { id: store.selectedBlock.id, tag: newTag.value.trim() })
   newTag.value = ''
 }
+
+// P4: restore deleted
+const deletedBlockList = computed(() =>
+  store.deletedBlockStack.map(id => store.deletedBlockMap[id]).filter(Boolean)
+)
+function doRestoreDeleted(id: string) {
+  restoreDialogVisible.value = false
+  emit('restore-deleted', id)
+}
 </script>
 
 <style scoped>
@@ -157,11 +198,54 @@ function addTag() {
 .tag-edit-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 4px 8px; border: 1px solid var(--td-component-stroke); border-radius: 4px; background: var(--td-bg-color-container); }
 .tag-edit-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .tag-add-row { display: flex; gap: 4px; }
-.detail-anomalies { display: flex; flex-direction: column; gap: 4px; }
-.anomaly-line { font-size: 12px; line-height: 1.4; padding: 4px 0; display: flex; align-items: flex-start; gap: 4px; }
-.anomaly-line.error { color: var(--td-error-color); }
-.anomaly-line.warning { color: var(--td-warning-color); }
-.anomaly-code { font-size: 10px; font-weight: 600; opacity: .7; }
+.detail-anomalies { display: flex; flex-direction: column; gap: 6px; }
+.anomaly-card {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--td-component-stroke);
+  background: var(--td-bg-color-container);
+}
+.anomaly-card.error {
+  border-color: var(--td-error-color-4);
+  background: var(--td-error-color-1);
+}
+.anomaly-card.warning {
+  border-color: var(--td-warning-color-4);
+  background: var(--td-warning-color-1);
+}
+.anomaly-card.info {
+  border-color: var(--td-brand-color-3);
+  background: var(--td-brand-color-1);
+}
+.anomaly-card .anomaly-code {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--td-text-color-secondary);
+  word-break: break-all;
+}
+.anomaly-card .anomaly-message {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--td-text-color-primary);
+}
 .split-control { display: flex; align-items: center; gap: 8px; background: var(--td-bg-color-secondarycontainer); padding: 8px; border-radius: 4px; }
 .split-hint { font-size: 12px; color: var(--td-text-color-secondary); }
+
+/* P4: restore deleted dialog */
+.restore-empty { padding: 24px 0; }
+.deleted-block-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
+.deleted-block-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--td-component-stroke);
+  border-radius: 8px; background: var(--td-bg-color-container);
+}
+.deleted-block-info { flex: 1; min-width: 0; }
+.deleted-block-title { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; flex-wrap: wrap; }
+.deleted-block-idx { font-size: 11px; color: var(--td-text-color-placeholder); }
+.deleted-block-preview {
+  margin: 0; font-size: 12px; color: var(--td-text-color-secondary);
+  line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 </style>

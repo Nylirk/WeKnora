@@ -215,11 +215,40 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     }
   })
 
-  function totalAnomaliesForBlock(blockId: string): ImportBlock['anomalies'] {
+  /** Non-structural anomalies only — excludes codes recomputed by validateStructuralAnomalies */
+  function nonStructuralAnomalies(anomalies: ImportBlock['anomalies']): ImportBlock['anomalies'] {
+    if (!Array.isArray(anomalies)) return []
+    return anomalies.filter(a => a && !STRUCTURAL_CODES.has(a.code))
+  }
+
+  /** Deduplicate anomalies by code+severity key */
+  function dedupeAnomalies(list: ImportBlock['anomalies']): ImportBlock['anomalies'] {
+    const seen = new Set<string>()
+    const out: ImportBlock['anomalies'] = []
+    for (const a of list) {
+      if (!a) continue
+      const key = `${a.code}:${a.severity || ''}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(a)
+    }
+    return out
+  }
+
+  /** Merge two anomaly lists preserving only non-structural entries */
+  function mergeAnomalyLists(a: ImportBlock['anomalies'], b: ImportBlock['anomalies']): ImportBlock['anomalies'] {
+    return dedupeAnomalies([
+      ...nonStructuralAnomalies(Array.isArray(a) ? a : []),
+      ...nonStructuralAnomalies(Array.isArray(b) ? b : []),
+    ])
+  }
+
+  /** Combined anomalies for UI display: non-structural from block + structural from map */
+  function getMergedAnomalies(blockId: string): ImportBlock['anomalies'] {
     const block = blockMap.value[blockId]
     const blockAnoms = block && Array.isArray(block.anomalies) ? block.anomalies : []
     const structAnoms = structuralAnomalies.value[blockId] || []
-    return [...blockAnoms, ...structAnoms]
+    return dedupeAnomalies([...nonStructuralAnomalies(blockAnoms), ...structAnoms])
   }
 
   // --- Helpers ---
@@ -364,6 +393,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     const idx = blockOrder.value.indexOf(id)
     if (idx < 0) return
 
+    const baseAnomalies = nonStructuralAnomalies(Array.isArray(block.anomalies) ? block.anomalies : [])
     const newIds: string[] = []
     const newEntries: Record<string, ImportBlock> = {}
     for (let i = 0; i < parts.length; i++) {
@@ -371,6 +401,13 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
       const qNum = i === 0 ? block.question_number : extractQuestionNumber(part)
       const newId = crypto.randomUUID()
       newIds.push(newId)
+      // First child inherits parent's non-structural anomalies; later children get SPLIT_REVIEW_REQUIRED
+      const childAnomalies = i === 0
+        ? dedupeAnomalies([...baseAnomalies])
+        : dedupeAnomalies([
+            ...baseAnomalies.filter(a => a.code !== 'MISSING_QUESTION_NUMBER'),
+            { code: 'SPLIT_REVIEW_REQUIRED', severity: 'warning', message: '该分块由手动拆分生成，请检查题干和选项是否完整' },
+          ])
       newEntries[newId] = {
         ...block,
         id: newId,
@@ -379,7 +416,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
         question_number: qNum,
         tags: i === 0 ? [...normalizeTags(block.tags)] : [],
         metadata: { ...(block.metadata && typeof block.metadata === 'object' ? block.metadata : {}) },
-        anomalies: [],
+        anomalies: childAnomalies,
       }
       markBlockDirty(newId)
     }
@@ -408,11 +445,15 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     if (!prev || !curr) return
 
     ensureBlockMapMutable()
+    const mergedAnoms = mergeAnomalyLists(
+      Array.isArray(prev.anomalies) ? prev.anomalies : [],
+      Array.isArray(curr.anomalies) ? curr.anomalies : [],
+    )
     const newPrev: ImportBlock = {
       ...prev,
       current_text: prev.current_text + '\n' + curr.current_text,
       original_text: prev.original_text + '\n' + curr.original_text,
-      anomalies: [],
+      anomalies: mergedAnoms,
     }
     const newMap = { ...blockMap.value, [prevId]: newPrev }
     delete newMap[id]
@@ -434,11 +475,15 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     if (!curr || !next) return
 
     ensureBlockMapMutable()
+    const mergedAnoms = mergeAnomalyLists(
+      Array.isArray(curr.anomalies) ? curr.anomalies : [],
+      Array.isArray(next.anomalies) ? next.anomalies : [],
+    )
     const newCurr: ImportBlock = {
       ...curr,
       current_text: curr.current_text + '\n' + next.current_text,
       original_text: curr.original_text + '\n' + next.original_text,
-      anomalies: [],
+      anomalies: mergedAnoms,
     }
     const newMap = { ...blockMap.value, [id]: newCurr }
     delete newMap[nextId]
@@ -684,7 +729,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     // computed
     orderedBlocks, selectedBlock, hasDeletedBlocks, filteredBlocks, summary,
     // helpers
-    totalAnomaliesForBlock, extractQuestionNumber,
+    getMergedAnomalies, extractQuestionNumber,
     // block operations
     selectBlock, updateBlockText, restoreOriginalText,
     deleteBlock, restoreBlock, restoreAllDeleted,

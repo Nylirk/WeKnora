@@ -321,9 +321,9 @@ test('BlockReviewPanel tags access is guarded', () => {
 })
 
 test('QuestionImportWorkbench anomalyCounts guarded against null anomalies', () => {
-  // anomalyCounts now delegates to store.totalAnomaliesForBlock which handles Array.isArray guards
-  const hasGuard = workbenchSource.includes('store.totalAnomaliesForBlock')
-  assert.equal(hasGuard, true, 'anomalyCounts must delegate to totalAnomaliesForBlock for safe anomaly access')
+  // anomalyCounts now delegates to store.getMergedAnomalies which handles Array.isArray guards
+  const hasGuard = workbenchSource.includes('store.getMergedAnomalies')
+  assert.equal(hasGuard, true, 'anomalyCounts must delegate to getMergedAnomalies for safe anomaly access')
 })
 
 test('QuestionFileImportDialog guards result.blocks with Array.isArray', () => {

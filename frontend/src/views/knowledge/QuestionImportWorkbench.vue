@@ -108,7 +108,7 @@ const importFormatLabel = computed(() => {
 const anomalyCounts = computed(() => {
   let error = 0; let warning = 0
   for (const id of store.blockOrder) {
-    const anomalies = store.totalAnomaliesForBlock(id)
+    const anomalies = store.getMergedAnomalies(id)
     for (const anomaly of anomalies) {
       if (anomaly?.severity === 'error') error += 1
       if (anomaly?.severity === 'warning') warning += 1
@@ -163,9 +163,9 @@ async function handleDeleteBlock(id: string) {
   await importUI.withImportLoading('正在删除分块…', async () => { store.deleteBlock(id) })
   saveDebounced()
 }
-async function handleRestoreDeleted() {
+async function handleRestoreDeleted(id: string) {
   await importUI.withImportLoading('正在恢复分块…', async () => {
-    store.restoreAllDeleted()
+    store.restoreBlock(id)
   })
   saveDebounced()
 }

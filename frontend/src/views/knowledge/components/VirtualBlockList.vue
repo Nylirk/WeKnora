@@ -12,7 +12,7 @@
         class="virtual-block-row"
         :class="{
           selected: selectedId === item.id,
-          'has-error': hasError(item),
+          'has-error': anomalyCounts(item).error > 0,
         }"
         @click="emit('select', item.id)"
       >
@@ -21,11 +21,15 @@
           <t-tag v-else size="small" theme="default">无题号</t-tag>
           <span class="virtual-block-index">idx {{ idxOf(item) }}</span>
           <t-space size="2px">
-            <span v-for="a in getAnomalies(item.id)" :key="a.code">
-              <t-tooltip :content="a.message">
-                <t-tag size="small" :theme="a.severity === 'error' ? 'danger' : 'warning'" variant="light">{{ a.code }}</t-tag>
-              </t-tooltip>
-            </span>
+            <t-tag v-if="anomalyCounts(item).error > 0" size="small" theme="danger" variant="light">
+              {{ anomalyCounts(item).error }} errors
+            </t-tag>
+            <t-tag v-if="anomalyCounts(item).warning > 0" size="small" theme="warning" variant="light">
+              {{ anomalyCounts(item).warning }} warnings
+            </t-tag>
+            <t-tag v-if="anomalyCounts(item).info > 0 && anomalyCounts(item).error === 0 && anomalyCounts(item).warning === 0" size="small" theme="default" variant="light">
+              {{ anomalyCounts(item).info }} info
+            </t-tag>
           </t-space>
         </div>
         <div class="virtual-block-preview">{{ preview(item) }}</div>
@@ -62,8 +66,15 @@ function idxOf(block: ImportBlock): number {
   return props.items.findIndex(b => b.id === block.id)
 }
 
-function hasError(block: ImportBlock): boolean {
-  return props.getAnomalies(block.id).some(a => a?.severity === 'error')
+function anomalyCounts(block: ImportBlock) {
+  const anomalies = props.getAnomalies(block.id)
+  let error = 0; let warning = 0; let info = 0
+  for (const a of anomalies) {
+    if (a?.severity === 'error') error++
+    else if (a?.severity === 'warning') warning++
+    else info++
+  }
+  return { error, warning, info }
 }
 </script>
 
