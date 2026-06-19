@@ -163,10 +163,10 @@
     <!-- P2: Global loading overlay (z-index 6000, above all import dialogs) -->
     <Teleport to="body">
       <Transition name="import-loading-fade">
-        <div v-if="workbenchStore.importLoading || workbenchStore.importLoadingLeaving" class="import-loading-overlay">
+        <div v-if="importUI.loading || importUI.loadingLeaving" class="import-loading-overlay" :class="{ leaving: importUI.loadingLeaving }">
           <div class="import-loading-content">
             <t-loading size="medium" />
-            <span class="import-loading-text">{{ workbenchStore.importLoadingText || '处理中…' }}</span>
+            <span class="import-loading-text">{{ importUI.loadingText || '处理中…' }}</span>
           </div>
         </div>
       </Transition>
@@ -184,6 +184,7 @@ import {
 } from '@/api/question'
 import type { BlockPreviewSummary, ImportBlock } from '@/api/question_block'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
+import { useImportUIStore } from '@/stores/importUIStore'
 import {
   cleanExpiredDrafts, deleteDraft, loadDraft, saveDraft, type ImportDraft,
 } from '@/utils/importDraftDB'
@@ -192,6 +193,7 @@ import { resolveQuestionRows, resolveQuestionTotal } from '../questionData'
 const props = defineProps<{ setId: string; knowledgeBaseId: string; setName?: string }>()
 const emit = defineEmits<{ generated: []; changed: [total: number] }>()
 const workbenchStore = useImportWorkbenchStore()
+const importUI = useImportUIStore()
 
 const questionTypes: QuestionType[] = ['single_choice', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer', 'essay', 'composite']
 const questionColumns = computed(() => [
@@ -373,7 +375,7 @@ function applyDraftToWorkbench(draft: ImportDraft) {
 }
 
 async function restoreImportDraft() {
-  await workbenchStore.withImportLoading('正在恢复草稿…', async () => {
+  await importUI.withImportLoading('正在恢复草稿…', async () => {
     const draft = pendingDraft.value
     if (!draft || !Array.isArray(draft.blocks) || draft.blocks.length === 0) {
       MessagePlugin.warning('草稿中没有可恢复的 blocks，请重新导入。')
@@ -391,7 +393,7 @@ async function restoreImportDraft() {
 }
 
 async function startFreshImport() {
-  await workbenchStore.withImportLoading('正在重新导入…', async () => {
+  await importUI.withImportLoading('正在重新导入…', async () => {
     closeImportModals()
     pendingDraft.value = null
     await deleteDraft(props.knowledgeBaseId, props.setId)
@@ -570,7 +572,9 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
   position: fixed; inset: 0; z-index: 6000;
   display: flex; align-items: center; justify-content: center;
   background: rgba(255,255,255,0.72); backdrop-filter: blur(2px);
+  opacity: 1; transition: opacity 0.5s ease;
 }
+.import-loading-overlay.leaving { opacity: 0; pointer-events: none; }
 .import-loading-content { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .import-loading-text { font-size: 14px; color: var(--td-text-color-secondary); }
 .import-loading-fade-enter-active { transition: opacity 0.2s; }

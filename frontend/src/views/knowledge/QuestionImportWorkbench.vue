@@ -87,6 +87,7 @@
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
+import { useImportUIStore } from '@/stores/importUIStore'
 import { deleteDraft, saveDraft } from '@/utils/importDraftDB'
 import BlockReviewPanel from './components/BlockReviewPanel.vue'
 import QuestionReviewPanel from './components/QuestionReviewPanel.vue'
@@ -94,6 +95,7 @@ import QuestionReviewPanel from './components/QuestionReviewPanel.vue'
 const props = defineProps<{ visible: boolean; kbId: string; setId: string }>()
 const emit = defineEmits<{ 'update:visible': [value: boolean]; imported: []; abandoned: [] }>()
 const store = useImportWorkbenchStore()
+const importUI = useImportUIStore()
 const questionReviewRef = ref<InstanceType<typeof QuestionReviewPanel> | null>(null)
 const abandonVisible = ref(false)
 
@@ -143,22 +145,20 @@ async function handleSort() {
 
 async function confirmAbandonSaveDraft() {
   try {
-    await store.withImportLoading('正在保存草稿…', async () => { await saveProgress() })
+    await importUI.withImportLoading('正在保存草稿…', async () => { await saveProgress() })
     MessagePlugin.success('草稿已保存，7 天内可恢复')
     abandonVisible.value = false
     store.reset()
     emit('update:visible', false)
     emit('abandoned')
   } catch (e: any) {
-    MessagePlugin.error(e?.message || '保存草稿失败')
+    MessagePlugin.error(e?.message || '保存草稿失败，请重试')
   }
 }
 
 async function confirmAbandonDiscard() {
   try {
-    await store.withImportLoading('正在清除草稿…', async () => {
-      await deleteDraft(props.kbId, props.setId)
-    })
+    await importUI.withImportLoading('正在清除草稿…', async () => { await deleteDraft(props.kbId, props.setId) })
     clearSaveTimer()
     MessagePlugin.success('已放弃本次导入')
     store.reset()
@@ -166,12 +166,12 @@ async function confirmAbandonDiscard() {
     emit('update:visible', false)
     emit('abandoned')
   } catch (e: any) {
-    MessagePlugin.error(e?.message || '清除草稿失败')
+    MessagePlugin.error(e?.message || '清除草稿失败，请重试')
   }
 }
 
 async function handleImport() {
-  await store.withImportLoading('正在导入题目…', async () => {
+  await importUI.withImportLoading('正在导入题目…', async () => {
     await questionReviewRef.value?.doImport()
   })
 }
