@@ -111,9 +111,9 @@ test('file import dialog uses compact pill-style format selection and top action
   assert.equal(fileImportSource.includes('<t-radio'), false)
   assert.equal(fileImportSource.includes('class="coming-soon"'), true)
   assert.equal(fileImportSource.includes('class="dialog-topbar"'), true)
-  assert.equal(fileImportSource.includes('class="dialog-actions"'), true)
-  assert.equal(fileImportSource.includes('width="600px"'), true)
-  assert.equal(fileImportSource.includes('min-height: 112px'), true)
+  assert.equal(fileImportSource.includes('class="dialog-footer"'), true)
+  assert.equal(fileImportSource.includes('width="560px"'), true)
+  assert.equal(fileImportSource.includes('min-height: 96px'), true)
   assert.equal(fileImportSource.includes('previewImportBlocks('), true)
   assert.equal(fileImportSource.includes('timeout: 120000'), true)
 })
@@ -146,7 +146,7 @@ test('empty state no longer has action slot', () => {
 test('question review changes trigger debounced draft saves', () => {
   assert.equal(workbenchSource.includes('@changed="saveDebounced"'), true)
   assert.equal(questionReviewSource.includes("changed: []; imported: []"), true)
-  assert.equal((questionReviewSource.match(/emit\('changed'\)/g) || []).length, 4)
+  assert.equal((questionReviewSource.match(/emit\('changed'\)/g) || []).length, 3)
 })
 
 test('workbench is a controlled 90vw modal and no longer uses a route', () => {
@@ -166,7 +166,7 @@ test('workbench is a controlled 90vw modal and no longer uses a route', () => {
 
 test('workbench header owns parse configuration and anomaly summary', () => {
   assert.equal(workbenchSource.includes('v-model="store.defaultDifficulty"'), true)
-  assert.equal(workbenchSource.includes('当前格式'), true)
+  assert.equal(workbenchSource.includes('格式'), true)
   assert.equal(workbenchSource.includes('store.strategyPreset'), true)
   assert.equal(workbenchSource.includes('store.summary.total_blocks'), true)
   assert.equal(workbenchSource.includes('anomalyCounts.error'), true)
@@ -237,9 +237,9 @@ test('restoring original block text synchronizes the textarea model', () => {
 })
 
 test('block review uses list, editor, and metadata columns', () => {
-  assert.equal(blockReviewSource.includes('class="block-list"'), true)
-  assert.equal(blockReviewSource.includes('class="block-editor"'), true)
-  assert.equal(blockReviewSource.includes('class="block-meta-panel"'), true)
+  assert.equal(blockReviewSource.includes('class="col-list"'), true)
+  assert.equal(blockReviewSource.includes('class="col-editor"'), true)
+  assert.equal(blockReviewSource.includes('class="col-meta"'), true)
   assert.equal(blockReviewSource.includes('异常信息'), true)
 })
 
@@ -333,7 +333,7 @@ test('normalizeImportBlock returns safe defaults for null fields', () => {
   assert.equal(storeSource.includes('export function normalizeImportBlock'), true)
   assert.equal(storeSource.includes('export function normalizeImportBlocks'), true)
   assert.equal(storeSource.includes('Array.isArray(block.anomalies) ? block.anomalies : []'), true)
-  assert.equal(storeSource.includes('Array.isArray(block.tags) ? block.tags : []'), true)
+  assert.equal(storeSource.includes('tags: normalizeTags(block.tags)'), true)
 })
 
 test('setBlocksFromResponse uses normalizeImportBlocks', () => {

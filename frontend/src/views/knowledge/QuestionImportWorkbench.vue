@@ -16,17 +16,17 @@
         <div class="workbench-heading">
           <h3>题库导入工作台</h3>
           <t-steps :current="store.currentStep === 'block-review' ? 0 : 1" size="small" class="header-steps">
-            <t-step-item title="Block Review" />
-            <t-step-item title="Question Review" />
+            <t-step-item title="分块审核" />
+            <t-step-item title="题目预览" />
           </t-steps>
         </div>
         <t-space size="small">
-          <t-button variant="outline" @click="handleAbandon">放弃导入</t-button>
-          <t-button v-if="store.currentStep === 'block-review'" theme="primary" @click="goToQuestionReview">
+          <t-button variant="outline" :loading="savingDraft || discardingDraft" @click="handleAbandon">放弃导入</t-button>
+          <t-button v-if="store.currentStep === 'block-review'" theme="primary" :loading="store.isParsing" @click="goToQuestionReview">
             下一步：题目解析
           </t-button>
-          <t-button v-else variant="outline" @click="returnToBlockReview">
-            返回 Block Review
+          <t-button v-else variant="outline" :disabled="store.isParsing" @click="returnToBlockReview">
+            返回分块审核
           </t-button>
         </t-space>
       </div>
@@ -41,7 +41,7 @@
           </t-select>
         </div>
         <span class="config-divider" />
-        <div class="config-meta"><span>当前格式</span><strong>{{ importFormatLabel }}</strong></div>
+        <div class="config-meta"><span>格式</span><strong>{{ importFormatLabel }}</strong></div>
         <div class="config-meta"><span>Preset</span><strong>{{ store.strategyPreset }}</strong></div>
         <span class="config-divider" />
         <t-tag variant="light">{{ store.summary.total_blocks }} blocks</t-tag>
@@ -52,12 +52,7 @@
 
       <div class="workbench-body">
         <BlockReviewPanel v-if="store.currentStep === 'block-review'" @changed="saveDebounced" />
-        <QuestionReviewPanel
-          v-else
-          ref="questionReviewRef"
-          @changed="saveDebounced"
-          @imported="handleImported"
-        />
+        <QuestionReviewPanel v-else @changed="saveDebounced" @imported="handleImported" />
       </div>
     </div>
   </t-dialog>
@@ -69,8 +64,8 @@
     :z-index="4500"
     :close-btn="false"
     :close-on-overlay-click="false"
-    :confirm-btn="{ content: '保存草稿', theme: 'primary' }"
-    :cancel-btn="{ content: '直接放弃' }"
+    :confirm-btn="{ content: '保存草稿', theme: 'primary', loading: savingDraft }"
+    :cancel-btn="{ content: '直接放弃', loading: discardingDraft }"
     @confirm="abandonSaveDraft"
     @cancel="abandonDiscard"
   >
@@ -79,28 +74,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
 import { deleteDraft, saveDraft } from '@/utils/importDraftDB'
 import BlockReviewPanel from './components/BlockReviewPanel.vue'
 import QuestionReviewPanel from './components/QuestionReviewPanel.vue'
 
-const props = defineProps<{
-  visible: boolean
-  kbId: string
-  setId: string
-}>()
+const props = defineProps<{ visible: boolean; kbId: string; setId: string }>()
 
-const emit = defineEmits<{
-  'update:visible': [value: boolean]
-  imported: []
-  abandoned: []
-}>()
+const emit = defineEmits<{ 'update:visible': [value: boolean]; imported: []; abandoned: [] }>()
 
 const store = useImportWorkbenchStore()
-const questionReviewRef = ref<InstanceType<typeof QuestionReviewPanel> | null>(null)
 const abandonVisible = ref(false)
+const savingDraft = ref(false)
+const discardingDraft = ref(false)
 
 const importFormatLabel = computed(() => {
   if (store.importFormat === 'pdf') return 'PDF'
@@ -109,8 +97,7 @@ const importFormatLabel = computed(() => {
 })
 
 const anomalyCounts = computed(() => {
-  let error = 0
-  let warning = 0
+  let error = 0; let warning = 0
   for (const block of store.blocks) {
     const anomalies = Array.isArray(block.anomalies) ? block.anomalies : []
     for (const anomaly of anomalies) {
@@ -122,47 +109,25 @@ const anomalyCounts = computed(() => {
 })
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
-
-function clearSaveTimer() {
-  if (!saveTimer) return
-  clearTimeout(saveTimer)
-  saveTimer = null
-}
-
+function clearSaveTimer() { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null } }
 function saveDebounced() {
   clearSaveTimer()
-  saveTimer = setTimeout(() => {
-    saveTimer = null
-    void saveProgress().catch(() => {})
-  }, 800)
+  saveTimer = setTimeout(() => { saveTimer = null; void saveProgress().catch(() => {}) }, 800)
 }
-
 async function saveProgress() {
   clearSaveTimer()
   if (!store.kbId || !store.setId || store.blocks.length === 0) return
-  await saveDraft({
-    kbId: store.kbId,
-    setId: store.setId,
-    blocks: store.blocks,
-    strategyPreset: store.strategyPreset,
-    defaultDifficulty: store.defaultDifficulty,
-    importMode: store.importMode,
-    importFormat: store.importFormat,
-    currentStep: store.currentStep,
-    questions: store.questions,
-    timestamp: Date.now(),
-  })
+  await saveDraft({ kbId: store.kbId, setId: store.setId, blocks: store.blocks, strategyPreset: store.strategyPreset, defaultDifficulty: store.defaultDifficulty, importMode: store.importMode, importFormat: store.importFormat, currentStep: store.currentStep, questions: store.questions, timestamp: Date.now() })
 }
+onBeforeUnmount(() => { if (saveTimer) void saveProgress().catch(() => {}) })
 
-onBeforeUnmount(() => {
-  if (saveTimer) void saveProgress().catch(() => {})
-})
-
+// Fix 1: parseQuestions via store action
 async function goToQuestionReview() {
-  store.goToStep('question-review')
-  await saveProgress()
-  await nextTick()
-  await questionReviewRef.value?.parseQuestions()
+  const success = await store.parseQuestionsAction()
+  if (success) {
+    store.goToStep('question-review')
+    await saveProgress()
+  }
 }
 
 function returnToBlockReview() {
@@ -170,26 +135,30 @@ function returnToBlockReview() {
   saveDebounced()
 }
 
-function handleAbandon() {
-  abandonVisible.value = true
-}
+function handleAbandon() { abandonVisible.value = true }
 
 async function abandonSaveDraft() {
-  await saveProgress()
-  MessagePlugin.success('草稿已保存（7 天有效）')
-  abandonVisible.value = false
-  store.reset()
-  emit('update:visible', false)
-  emit('abandoned')
+  savingDraft.value = true
+  try {
+    await saveProgress()
+    MessagePlugin.success('草稿已保存（7 天有效）')
+    abandonVisible.value = false
+    store.reset()
+    emit('update:visible', false)
+    emit('abandoned')
+  } finally { savingDraft.value = false }
 }
 
 async function abandonDiscard() {
-  await deleteDraft(props.kbId, props.setId)
-  clearSaveTimer()
-  store.reset()
-  abandonVisible.value = false
-  emit('update:visible', false)
-  emit('abandoned')
+  discardingDraft.value = true
+  try {
+    await deleteDraft(props.kbId, props.setId)
+    clearSaveTimer()
+    store.reset()
+    abandonVisible.value = false
+    emit('update:visible', false)
+    emit('abandoned')
+  } finally { discardingDraft.value = false }
 }
 
 function handleImported() {
@@ -202,9 +171,10 @@ function handleImported() {
 <style scoped>
 .workbench-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .workbench-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 20px; border-bottom: 1px solid var(--td-component-stroke); background: var(--td-bg-color-container); }
-.workbench-heading { min-width: 0; display: flex; align-items: center; gap: 28px; }
-.workbench-heading h3 { flex-shrink: 0; margin: 0; font-size: 17px; font-weight: 600; }
-.header-steps { width: 300px; }
+.workbench-heading { display: flex; align-items: center; gap: 28px; flex: 1; min-width: 0; }
+.workbench-heading h3 { flex-shrink: 0; margin: 0; font-size: 17px; font-weight: 600; white-space: nowrap; }
+.header-steps { width: 240px; flex-shrink: 0; }
+.header-steps :deep(.t-step-item__title) { white-space: nowrap; }
 .workbench-configbar { min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 7px 20px; border-bottom: 1px solid var(--td-component-stroke); background: var(--td-bg-color-page); }
 .config-control { display: flex; align-items: center; gap: 7px; }
 .config-label, .config-meta span { font-size: 12px; color: var(--td-text-color-secondary); }

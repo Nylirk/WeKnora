@@ -1,11 +1,27 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { MessagePlugin } from 'tdesign-vue-next'
 import type { ImportBlock } from '@/api/question_block'
 import type { ImportQuestionItem } from '@/api/question'
+import { parseImportedBlocks } from '@/api/question_block'
 
 export type WorkbenchStep = 'block-review' | 'question-review'
 
-// Normalize a single ImportBlock from backend, ensuring safe defaults.
+export function normalizeTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) return []
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const t of tags) {
+    if (typeof t !== 'string') continue
+    const trimmed = t.trim()
+    if (!trimmed) continue
+    if (seen.has(trimmed)) continue
+    seen.add(trimmed)
+    result.push(trimmed)
+  }
+  return result
+}
+
 export function normalizeImportBlock(block: ImportBlock, index: number): ImportBlock {
   return {
     ...block,
@@ -18,7 +34,7 @@ export function normalizeImportBlock(block: ImportBlock, index: number): ImportB
         ? block.original_text
         : '',
     question_number: typeof block.question_number === 'number' ? block.question_number : null,
-    tags: Array.isArray(block.tags) ? block.tags : [],
+    tags: normalizeTags(block.tags),
     metadata: block.metadata && typeof block.metadata === 'object' && !Array.isArray(block.metadata) ? block.metadata : {},
     anomalies: Array.isArray(block.anomalies) ? block.anomalies : [],
   }
@@ -144,7 +160,6 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
   function splitBlock(id: string, splitPositions: number[]) {
     const block = blocks.value.find(b => b.id === id)
     if (!block || splitPositions.length === 0) return
-
     const text = block.current_text
     const parts: string[] = []
     let prev = 0
@@ -154,25 +169,19 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     }
     if (prev < text.length) parts.push(text.slice(prev).trim())
     if (parts.length <= 1) return
-
     const idx = blocks.value.findIndex(b => b.id === id)
     if (idx < 0) return
-
     const newBlocks: ImportBlock[] = parts.map((part, i) => {
       const qNum = i === 0 ? block.question_number : extractQuestionNumber(part)
       return {
-        ...block,
-        id: crypto.randomUUID(),
-        index: idx + i,
-        current_text: part,
-        original_text: part,
+        ...block, id: crypto.randomUUID(), index: idx + i,
+        current_text: part, original_text: part,
         question_number: qNum,
-        tags: i === 0 ? [...(Array.isArray(block.tags) ? block.tags : [])] : [],
+        tags: i === 0 ? [...normalizeTags(block.tags)] : [],
         metadata: { ...(block.metadata && typeof block.metadata === 'object' ? block.metadata : {}) },
         anomalies: [],
       }
     })
-
     blocks.value.splice(idx, 1, ...newBlocks)
     blocks.value.forEach((b, i) => { b.index = i })
     validateBlocks()
@@ -181,8 +190,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
   function mergeWithPrevious(id: string) {
     const idx = blocks.value.findIndex(b => b.id === id)
     if (idx <= 0) return
-    const prev = blocks.value[idx - 1]
-    const curr = blocks.value[idx]
+    const prev = blocks.value[idx - 1]; const curr = blocks.value[idx]
     prev.current_text = prev.current_text + '\n' + curr.current_text
     prev.original_text = prev.original_text + '\n' + curr.original_text
     prev.anomalies = []
@@ -194,8 +202,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
   function mergeWithNext(id: string) {
     const idx = blocks.value.findIndex(b => b.id === id)
     if (idx < 0 || idx >= blocks.value.length - 1) return
-    const curr = blocks.value[idx]
-    const next = blocks.value[idx + 1]
+    const curr = blocks.value[idx]; const next = blocks.value[idx + 1]
     curr.current_text = curr.current_text + '\n' + next.current_text
     curr.original_text = curr.original_text + '\n' + next.original_text
     curr.anomalies = []
@@ -221,16 +228,10 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
       )
       const n = block.question_number
       if (n != null) {
-        if (seen.has(n)) {
-          block.anomalies.push({ code: 'DUPLICATE_QUESTION_NUMBER', severity: 'error', message: `题号 ${n} 重复` })
-        }
+        if (seen.has(n)) block.anomalies.push({ code: 'DUPLICATE_QUESTION_NUMBER', severity: 'error', message: `题号 ${n} 重复` })
         seen.set(n, block.id)
-        if (prevNum != null && n < prevNum) {
-          block.anomalies.push({ code: 'NON_MONOTONIC_QUESTION_NUMBER', severity: 'warning', message: `题号 ${n} < ${prevNum}` })
-        }
-        if (prevNum != null && n > prevNum + 1) {
-          block.anomalies.push({ code: 'QUESTION_NUMBER_GAP', severity: 'warning', message: `题号 ${prevNum} → ${n}` })
-        }
+        if (prevNum != null && n < prevNum) block.anomalies.push({ code: 'NON_MONOTONIC_QUESTION_NUMBER', severity: 'warning', message: `题号 ${n} < ${prevNum}` })
+        if (prevNum != null && n > prevNum + 1) block.anomalies.push({ code: 'QUESTION_NUMBER_GAP', severity: 'warning', message: `题号 ${prevNum} → ${n}` })
         prevNum = n
       }
     }
@@ -242,6 +243,58 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     deletedBlocks.value = []
     selectedBlockId.value = normalized.length > 0 ? normalized[0].id : null
     validateBlocks()
+  }
+
+  // --- Tag editing (fix 5) ---
+  function addTagToBlock(blockId: string, tag: string) {
+    const trimmed = tag.trim()
+    if (!trimmed) return
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return
+    const tags = normalizeTags(block.tags)
+    if (tags.includes(trimmed)) {
+      MessagePlugin.warning('标签已存在')
+      return
+    }
+    tags.push(trimmed)
+    block.tags = tags
+  }
+
+  function removeTagFromBlock(blockId: string, tag: string) {
+    const block = blocks.value.find(b => b.id === blockId)
+    if (!block) return
+    const tags = normalizeTags(block.tags).filter(t => t !== tag)
+    block.tags = tags
+  }
+
+  // --- Parse questions action (fix 1) ---
+  async function parseQuestionsAction() {
+    if (blocks.value.length === 0) {
+      MessagePlugin.warning('请先完成 block review')
+      return false
+    }
+    isParsing.value = true
+    try {
+      const result = await parseImportedBlocks(kbId.value, setId.value, {
+        blocks: blocks.value,
+        default_difficulty: defaultDifficulty.value,
+        strategy_preset: strategyPreset.value,
+      })
+      questions.value = result.items ?? []
+      questionErrors.value = result.errors ?? []
+      questionWarnings.value = result.warnings ?? []
+      questionStats.value = result.stats ?? { detected_questions: questions.value.length, with_answer: 0, without_answer: 0 }
+      if (questions.value.length === 0) {
+        MessagePlugin.warning('未解析到题目，请检查 block 内容')
+        return false
+      }
+      return true
+    } catch (e: any) {
+      MessagePlugin.error(e?.message || '解析失败')
+      return false
+    } finally {
+      isParsing.value = false
+    }
   }
 
   function goToStep(step: WorkbenchStep) { currentStep.value = step }
@@ -269,6 +322,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     selectBlock, updateBlockText, restoreOriginalText, extractQuestionNumber,
     deleteBlock, restoreBlock, splitBlock, mergeWithPrevious, mergeWithNext,
     sortBlocksByQuestionNumber, validateBlocks,
-    setBlocksFromResponse, goToStep, reset,
+    setBlocksFromResponse, addTagToBlock, removeTagFromBlock,
+    parseQuestionsAction, goToStep, reset,
   }
 })
