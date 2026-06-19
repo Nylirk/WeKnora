@@ -150,8 +150,8 @@
       :close-btn="false"
       :close-on-overlay-click="false"
       :close-on-esc-keydown="false"
-      :confirm-btn="{ content: '恢复草稿', theme: 'primary', loading: restoringDraft }"
-      :cancel-btn="{ content: '重新导入', loading: startingFreshImport }"
+      :confirm-btn="{ content: '恢复草稿', theme: 'primary' }"
+      :cancel-btn="{ content: '重新导入' }"
       @confirm="restoreImportDraft"
       @cancel="startFreshImport"
     >
@@ -159,6 +159,18 @@
         该题集存在 7 天内保存的导入草稿（{{ pendingDraftTime }}），是否继续处理？
       </p>
     </t-dialog>
+
+    <!-- P2: Global loading overlay (z-index 6000, above all import dialogs) -->
+    <Teleport to="body">
+      <Transition name="import-loading-fade">
+        <div v-if="workbenchStore.importLoading || workbenchStore.importLoadingLeaving" class="import-loading-overlay">
+          <div class="import-loading-content">
+            <t-loading size="medium" />
+            <span class="import-loading-text">{{ workbenchStore.importLoadingText || '处理中…' }}</span>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -201,8 +213,6 @@ const fileImportSession = ref(0)
 const workbenchVisible = ref(false)
 const restoreDraftVisible = ref(false)
 const pendingDraft = ref<ImportDraft | null>(null)
-const restoringDraft = ref(false)
-const startingFreshImport = ref(false)
 const pendingDraftTime = computed(() => pendingDraft.value
   ? new Date(pendingDraft.value.timestamp).toLocaleString()
   : '')
@@ -363,9 +373,7 @@ function applyDraftToWorkbench(draft: ImportDraft) {
 }
 
 async function restoreImportDraft() {
-  if (restoringDraft.value) return
-  restoringDraft.value = true
-  try {
+  await workbenchStore.withImportLoading('正在恢复草稿…', async () => {
     const draft = pendingDraft.value
     if (!draft || !Array.isArray(draft.blocks) || draft.blocks.length === 0) {
       MessagePlugin.warning('草稿中没有可恢复的 blocks，请重新导入。')
@@ -379,24 +387,18 @@ async function restoreImportDraft() {
     pendingDraft.value = null
     await nextTick()
     workbenchVisible.value = true
-  } finally {
-    restoringDraft.value = false
-  }
+  })
 }
 
 async function startFreshImport() {
-  if (startingFreshImport.value) return
-  startingFreshImport.value = true
-  try {
+  await workbenchStore.withImportLoading('正在重新导入…', async () => {
     closeImportModals()
     pendingDraft.value = null
     await deleteDraft(props.knowledgeBaseId, props.setId)
     restoreDraftVisible.value = false
     await nextTick()
     await openFileImportDialog()
-  } finally {
-    startingFreshImport.value = false
-  }
+  })
 }
 
 async function handleFileParsed(payload: {
@@ -561,4 +563,17 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .import-type-help { color: var(--td-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .import-type-item:disabled .import-type-description,
 .import-type-item:disabled .import-type-help { color: var(--td-text-color-disabled); }
+</style>
+
+<style>
+.import-loading-overlay {
+  position: fixed; inset: 0; z-index: 6000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.72); backdrop-filter: blur(2px);
+}
+.import-loading-content { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.import-loading-text { font-size: 14px; color: var(--td-text-color-secondary); }
+.import-loading-fade-enter-active { transition: opacity 0.2s; }
+.import-loading-fade-leave-active { transition: opacity 0.5s; }
+.import-loading-fade-enter-from, .import-loading-fade-leave-to { opacity: 0; }
 </style>

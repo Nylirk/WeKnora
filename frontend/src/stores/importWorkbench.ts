@@ -60,9 +60,15 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
   const questionErrors = ref<{ line_number: number; message: string }[]>([])
   const questionWarnings = ref<string[]>([])
   const questionStats = ref({ detected_questions: 0, with_answer: 0, without_answer: 0 })
+  // Internal workbench overlay
   const loading = ref(false)
   const loadingText = ref('')
   const loadingLeaving = ref(false)
+
+  // Global import overlay (highest z-index, covers all dialogs)
+  const importLoading = ref(false)
+  const importLoadingText = ref('')
+  const importLoadingLeaving = ref(false)
   const isParsing = ref(false)
   const isImporting = ref(false)
   const draftExists = ref(false)
@@ -72,14 +78,31 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     loading.value = true
     loadingText.value = text
     loadingLeaving.value = false
-    try {
-      await task()
-    } finally {
-      loadingLeaving.value = true
-      loading.value = false
+    try { await task() }
+    finally {
+      loadingLeaving.value = true; loading.value = false
       await new Promise(r => setTimeout(r, 500))
       loadingLeaving.value = false
     }
+  }
+
+  async function withImportLoading(text: string, task: () => Promise<void>): Promise<void> {
+    if (importLoading.value) return
+    importLoading.value = true
+    importLoadingText.value = text
+    importLoadingLeaving.value = false
+    try { await task() }
+    finally {
+      importLoadingLeaving.value = true; importLoading.value = false
+      await new Promise(r => setTimeout(r, 500))
+      importLoadingLeaving.value = false
+    }
+  }
+
+  /** Clear import-stage warnings/errors (call on import success) */
+  function clearImportWarnings() {
+    questionErrors.value = []
+    questionWarnings.value = []
   }
 
   const summary = computed(() => {
@@ -346,6 +369,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     blocks, summary, currentStep, selectedBlockId, anomalyFilter,
     deletedBlocks, questions, questionErrors, questionWarnings, questionStats,
     loading, loadingText, loadingLeaving, withWorkbenchLoading,
+    importLoading, importLoadingText, importLoadingLeaving, withImportLoading, clearImportWarnings,
     isParsing, isImporting, draftExists,
     filteredBlocks, selectedBlock, hasDeletedBlocks,
     selectBlock, updateBlockText, restoreOriginalText, extractQuestionNumber,

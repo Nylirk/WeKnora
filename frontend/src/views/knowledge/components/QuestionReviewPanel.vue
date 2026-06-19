@@ -39,19 +39,34 @@
         </div>
       </div>
 
-      <!-- P3: import section at bottom-right -->
+      <!-- P0: import button at bottom-right only -->
       <div v-if="store.questions.length > 0" class="import-footer">
-        <div class="import-footer-left">
-          <span class="import-footer-label">确认导入</span>
-          <t-radio-group v-model="importStatus" variant="default-filled" size="small">
-            <t-radio-button value="draft">草稿</t-radio-button>
-            <t-radio-button value="reviewed">已审核</t-radio-button>
-          </t-radio-group>
-        </div>
-        <t-button theme="primary" :disabled="store.loading" @click="emit('import')">
+        <t-button theme="primary" :disabled="store.loading" @click="importConfirmVisible = true">
           导入 {{ store.questions.length }} 题
         </t-button>
       </div>
+
+      <!-- P0: import confirmation dialog -->
+      <t-dialog
+        v-model:visible="importConfirmVisible"
+        header="确认导入题目"
+        attach="body"
+        :z-index="4000"
+        :confirm-btn="{ content: '确认导入', theme: 'primary' }"
+        :cancel-btn="{ content: '取消' }"
+        @confirm="emit('import')"
+      >
+        <div class="import-confirm-body">
+          <div class="import-confirm-row">
+            <span>导入状态</span>
+            <t-radio-group v-model="importStatus" variant="default-filled" size="small">
+              <t-radio-button value="draft">草稿</t-radio-button>
+              <t-radio-button value="reviewed">已审核</t-radio-button>
+            </t-radio-group>
+          </div>
+          <p class="import-confirm-info">本次将导入 {{ store.questions.length }} 题</p>
+        </div>
+      </t-dialog>
     </div>
 
     <!-- P5: compact edit dialog -->
@@ -97,6 +112,7 @@ import { deleteDraft } from '@/utils/importDraftDB'
 
 const store = useImportWorkbenchStore()
 const importStatus = ref<'draft' | 'reviewed'>('draft')
+const importConfirmVisible = ref(false)
 const editVisible = ref(false)
 const editingIndex = ref(-1)
 const editingItem = ref<ImportQuestionItem | null>(null)
@@ -120,12 +136,14 @@ function removeItem(index: number) { store.questions.splice(index, 1); store.que
 
 async function doImport() {
   if (!store.questions.length) { MessagePlugin.warning('没有可导入的题目'); return }
+  importConfirmVisible.value = false
   try {
     const itemsWithStatus = store.questions.map(item => ({ ...item, status: importStatus.value }))
     const result: any = await importQuestions(store.kbId, store.setId, { items: itemsWithStatus })
     const created = result?.created ?? 0
     const errors = Array.isArray(result?.errors) ? result.errors : []
     if (errors.length === 0) {
+      store.clearImportWarnings()
       MessagePlugin.success(`成功导入 ${created} 题`)
       await deleteDraft(store.kbId, store.setId)
       store.reset()
@@ -163,12 +181,13 @@ defineExpose({ doImport })
 .question-answer .answer-label, .question-analysis .analysis-label { font-weight: 500; }
 .question-analysis { font-size: 13px; color: var(--td-text-color-secondary); }
 .import-footer {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: flex-end;
   padding: 12px 0; border-top: 1px solid var(--td-component-stroke);
   flex-shrink: 0;
 }
-.import-footer-left { display: flex; align-items: center; gap: 10px; }
-.import-footer-label { font-weight: 500; font-size: 13px; }
+.import-confirm-body { display: flex; flex-direction: column; gap: 16px; }
+.import-confirm-row { display: flex; align-items: center; gap: 12px; }
+.import-confirm-info { margin: 0; font-size: 13px; color: var(--td-text-color-secondary); }
 </style>
 
 <style>

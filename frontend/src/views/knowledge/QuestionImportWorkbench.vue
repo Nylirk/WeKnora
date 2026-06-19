@@ -76,8 +76,8 @@
     :close-on-overlay-click="false"
     :confirm-btn="{ content: '保存草稿', theme: 'primary' }"
     :cancel-btn="{ content: '直接放弃' }"
-    @confirm="abandonSaveDraft"
-    @cancel="abandonDiscard"
+    @confirm="confirmAbandonSaveDraft"
+    @cancel="confirmAbandonDiscard"
   >
     <p>是否保存当前草稿？草稿将保留 7 天。</p>
   </t-dialog>
@@ -141,30 +141,37 @@ async function handleSort() {
   await store.withWorkbenchLoading('正在按题号排序…', async () => { store.sortBlocksByQuestionNumber() })
 }
 
-async function abandonSaveDraft() {
-  await store.withWorkbenchLoading('正在保存草稿…', async () => {
-    await saveProgress()
-    MessagePlugin.success('草稿已保存（7 天有效）')
+async function confirmAbandonSaveDraft() {
+  try {
+    await store.withImportLoading('正在保存草稿…', async () => { await saveProgress() })
+    MessagePlugin.success('草稿已保存，7 天内可恢复')
     abandonVisible.value = false
     store.reset()
     emit('update:visible', false)
     emit('abandoned')
-  })
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || '保存草稿失败')
+  }
 }
 
-async function abandonDiscard() {
-  await store.withWorkbenchLoading('正在清除草稿…', async () => {
-    await deleteDraft(props.kbId, props.setId)
+async function confirmAbandonDiscard() {
+  try {
+    await store.withImportLoading('正在清除草稿…', async () => {
+      await deleteDraft(props.kbId, props.setId)
+    })
     clearSaveTimer()
+    MessagePlugin.success('已放弃本次导入')
     store.reset()
     abandonVisible.value = false
     emit('update:visible', false)
     emit('abandoned')
-  })
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || '清除草稿失败')
+  }
 }
 
 async function handleImport() {
-  await store.withWorkbenchLoading('正在导入题目…', async () => {
+  await store.withImportLoading('正在导入题目…', async () => {
     await questionReviewRef.value?.doImport()
   })
 }
