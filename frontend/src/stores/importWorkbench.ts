@@ -7,6 +7,14 @@ import { parseImportedBlocks } from '@/api/question_block'
 
 export type WorkbenchStep = 'block-review' | 'question-review'
 
+/** Structural anomalies that are recomputed by validateBlocks based on block ordering */
+const STRUCTURAL_CODES = new Set([
+  'DUPLICATE_QUESTION_NUMBER',
+  'NON_MONOTONIC_QUESTION_NUMBER',
+  'QUESTION_NUMBER_GAP',
+  'MISSING_QUESTION_NUMBER',
+])
+
 export function normalizeTags(tags: unknown): string[] {
   if (!Array.isArray(tags)) return []
   const seen = new Set<string>()
@@ -135,9 +143,9 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     const block = blocks.value.find(b => b.id === id)
     if (!block) return
     block.current_text = block.original_text
-    block.anomalies = (Array.isArray(block.anomalies) ? block.anomalies : []).filter(a =>
-      a && ['OPTION_ONLY_BLOCK', 'PAGE_NOISE_DETECTED', 'SECTION_HEADING_IN_STEM', 'QUESTION_TYPE_HEADING_IN_STEM'].includes(a.code)
-    )
+    block.question_number = extractQuestionNumber(block.current_text)
+    // Do NOT manually filter anomalies — let scheduleValidateBlocks recompute everything
+    scheduleValidateBlocks()
   }
 
   function deleteBlock(id: string) {
@@ -239,8 +247,9 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     const seen = new Map<number, string>()
     let prevNum: number | null = null
     for (const block of blocks.value) {
+      // Clear old structural anomalies so they get recomputed from current ordering
       block.anomalies = (Array.isArray(block.anomalies) ? block.anomalies : []).filter(a =>
-        a && ['OPTION_ONLY_BLOCK', 'PAGE_NOISE_DETECTED', 'SECTION_HEADING_IN_STEM', 'QUESTION_TYPE_HEADING_IN_STEM'].includes(a.code)
+        a && !STRUCTURAL_CODES.has(a.code)
       )
       const n = block.question_number
       if (n != null) {

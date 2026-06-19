@@ -21,11 +21,11 @@
           </t-steps>
         </div>
         <t-space size="small">
-          <t-button variant="outline" :disabled="importUI.loading" @click="handleAbandon">放弃导入</t-button>
-          <t-button v-if="store.currentStep === 'block-review'" theme="primary" :disabled="importUI.loading" @click="goToQuestionReview">
+          <t-button variant="outline" :disabled="importUI.blocking" @click="handleAbandon">放弃导入</t-button>
+          <t-button v-if="store.currentStep === 'block-review'" theme="primary" :disabled="importUI.blocking" @click="goToQuestionReview">
             下一步：题目解析
           </t-button>
-          <t-button v-else variant="outline" :disabled="importUI.loading" @click="returnToBlockReview">
+          <t-button v-else variant="outline" :disabled="importUI.blocking" @click="returnToBlockReview">
             返回分块审核
           </t-button>
         </t-space>

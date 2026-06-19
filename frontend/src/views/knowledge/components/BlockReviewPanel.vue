@@ -7,8 +7,8 @@
           <t-option value="error" label="错误" />
           <t-option value="warning" label="警告" />
         </t-select>
-        <t-button size="small" variant="outline" :disabled="importUI.loading" @click="emit('sort')">按题号排序</t-button>
-        <t-button size="small" variant="outline" theme="warning" :disabled="!store.hasDeletedBlocks || importUI.loading" @click="emit('restore-deleted')">恢复删除</t-button>
+        <t-button size="small" variant="outline" :disabled="importUI.blocking" @click="emit('sort')">按题号排序</t-button>
+        <t-button size="small" variant="outline" theme="warning" :disabled="!store.hasDeletedBlocks || importUI.blocking" @click="emit('restore-deleted')">恢复删除</t-button>
       </t-space>
       <span class="block-count">{{ store.filteredBlocks.length }} / {{ store.blocks.length }} blocks</span>
     </div>
@@ -42,18 +42,20 @@
       <div class="col-editor" v-if="store.selectedBlock">
         <div class="detail-toolbar">
           <t-space size="small">
-            <t-button size="small" variant="outline" :disabled="importUI.loading" @click="emit('restore-original', store.selectedBlock!.id)">恢复原始文本</t-button>
-            <t-button size="small" variant="outline" :disabled="importUI.loading" @click="doSplit">拆分</t-button>
-            <t-button size="small" variant="outline" :disabled="importUI.loading" @click="emit('merge-previous', store.selectedBlock!.id)">合并上一个</t-button>
-            <t-button size="small" variant="outline" :disabled="importUI.loading" @click="emit('merge-next', store.selectedBlock!.id)">合并下一个</t-button>
-            <t-button size="small" variant="outline" theme="danger" :disabled="importUI.loading" @click="emit('delete-block', store.selectedBlock!.id)">删除</t-button>
+            <t-tooltip :content="selectedBlockDirty ? '' : '当前文本未修改，无需恢复'">
+              <t-button size="small" variant="outline" :disabled="importUI.blocking || !selectedBlockDirty" @click="emit('restore-original', store.selectedBlock!.id)">恢复原始文本</t-button>
+            </t-tooltip>
+            <t-button size="small" variant="outline" :disabled="importUI.blocking" @click="doSplit">拆分</t-button>
+            <t-button size="small" variant="outline" :disabled="importUI.blocking" @click="emit('merge-previous', store.selectedBlock!.id)">合并上一个</t-button>
+            <t-button size="small" variant="outline" :disabled="importUI.blocking" @click="emit('merge-next', store.selectedBlock!.id)">合并下一个</t-button>
+            <t-button size="small" variant="outline" theme="danger" :disabled="importUI.blocking" @click="emit('delete-block', store.selectedBlock!.id)">删除</t-button>
           </t-space>
         </div>
         <t-textarea v-model="editingText" :autosize="{ minRows: 6, maxRows: 20 }" @change="onTextChange" />
         <div class="split-control" v-if="showSplitControl">
           <span class="split-hint">输入拆分关键词（如 "249"）：</span>
           <t-input v-model="splitKeyword" size="small" style="width: 120px" placeholder="如: 249" @enter="doSplitByKeyword" />
-          <t-button size="small" :disabled="importUI.loading" @click="doSplitByKeyword">执行拆分</t-button>
+          <t-button size="small" :disabled="importUI.blocking" @click="doSplitByKeyword">执行拆分</t-button>
         </div>
       </div>
       <t-empty v-else description="选择一个 block" class="col-editor col-editor-empty" />
@@ -64,14 +66,14 @@
           <div class="tag-edit-list">
             <div v-for="(tag, i) in selectedBlockTags" :key="i" class="tag-edit-row">
               <t-tag size="small" variant="outline" class="tag-edit-text">{{ tag }}</t-tag>
-              <t-button size="small" variant="text" theme="danger" :disabled="importUI.loading" @click="emit('remove-tag', { id: store.selectedBlock!.id, tag })">
+              <t-button size="small" variant="text" theme="danger" :disabled="importUI.blocking" @click="emit('remove-tag', { id: store.selectedBlock!.id, tag })">
                 <t-icon name="close" size="12px" />
               </t-button>
             </div>
           </div>
           <div class="tag-add-row">
             <t-input v-model="newTag" size="small" placeholder="添加标签" @enter="addTag" style="flex:1" />
-            <t-button size="small" variant="outline" :disabled="importUI.loading" @click="addTag">添加</t-button>
+            <t-button size="small" variant="outline" :disabled="importUI.blocking" @click="addTag">添加</t-button>
           </div>
         </section>
         <section class="meta-section">
@@ -120,6 +122,11 @@ const selectedBlockAnomalies = computed(() =>
 )
 const selectedBlockTags = computed(() =>
   Array.isArray(store.selectedBlock?.tags) ? store.selectedBlock.tags : []
+)
+
+const selectedBlockDirty = computed(() =>
+  store.selectedBlock &&
+  store.selectedBlock.current_text !== store.selectedBlock.original_text
 )
 
 function safeAnomalies(block: ImportBlock) { return Array.isArray(block.anomalies) ? block.anomalies : [] }

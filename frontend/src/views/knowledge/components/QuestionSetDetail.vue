@@ -162,14 +162,12 @@
 
     <!-- P2: Global loading overlay (z-index 6000, above all import dialogs) -->
     <Teleport to="body">
-      <Transition name="import-loading-fade">
-        <div v-if="importUI.loading || importUI.loadingLeaving" class="import-loading-overlay" :class="{ leaving: importUI.loadingLeaving }">
-          <div class="import-loading-content">
-            <t-loading size="medium" />
-            <span class="import-loading-text">{{ importUI.loadingText || '处理中…' }}</span>
-          </div>
+      <div v-if="importUI.visible" class="import-loading-overlay" :class="{ leaving: importUI.leaving }">
+        <div class="import-loading-content">
+          <t-loading size="medium" />
+          <span class="import-loading-text">{{ importUI.loadingText || '处理中…' }}</span>
         </div>
-      </Transition>
+      </div>
     </Teleport>
   </div>
 </template>
@@ -572,12 +570,10 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
   position: fixed; inset: 0; z-index: 6000;
   display: flex; align-items: center; justify-content: center;
   background: rgba(255,255,255,0.72); backdrop-filter: blur(2px);
-  opacity: 1; transition: opacity 0.5s ease;
+  opacity: 1; pointer-events: auto;
+  transition: opacity 0.5s ease;
 }
 .import-loading-overlay.leaving { opacity: 0; pointer-events: none; }
 .import-loading-content { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .import-loading-text { font-size: 14px; color: var(--td-text-color-secondary); }
-.import-loading-fade-enter-active { transition: opacity 0.2s; }
-.import-loading-fade-leave-active { transition: opacity 0.5s; }
-.import-loading-fade-enter-from, .import-loading-fade-leave-to { opacity: 0; }
 </style>
