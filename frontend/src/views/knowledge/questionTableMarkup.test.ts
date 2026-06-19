@@ -19,6 +19,12 @@ const blockReviewSource = readFileSync(new URL('./components/BlockReviewPanel.vu
 const questionReviewSource = readFileSync(new URL('./components/QuestionReviewPanel.vue', import.meta.url), 'utf8')
 const routerSource = readFileSync(new URL('../../router/index.ts', import.meta.url), 'utf8')
 
+function sourceSection(content: string, start: string, end: string): string {
+  const startIndex = content.indexOf(start)
+  const endIndex = content.indexOf(end, startIndex + start.length)
+  return startIndex >= 0 && endIndex > startIndex ? content.slice(startIndex, endIndex) : ''
+}
+
 test('uses supported TDesign columns and named cell slots', () => {
   assert.equal(source.includes('<t-table-column'), false)
   assert.equal(source.includes(':columns="questionColumns"'), true)
@@ -184,6 +190,44 @@ test('draft restore is handled from the question set without route navigation', 
   assert.equal(source.includes('@parsed="handleFileParsed"'), true)
   assert.equal(source.includes('await saveDraft({'), true)
   assert.equal(source.includes('router.push'), false)
+})
+
+test('import modal transitions close the previous layer before opening the next one', () => {
+  const openSingleImport = sourceSection(source, 'async function openSingleImport', 'async function openFileImportDialog')
+  const restoreImportDraft = sourceSection(source, 'function restoreImportDraft', 'async function startFreshImport')
+  const startFreshImport = sourceSection(source, 'async function startFreshImport', 'async function handleFileParsed')
+  const handleFileParsed = sourceSection(source, 'async function handleFileParsed', 'async function handleWorkbenchImported')
+
+  assert.equal(source.includes('function closeImportModals()'), true)
+  assert.equal(openSingleImport.includes('closeImportModals()'), true)
+  assert.equal(restoreImportDraft.includes('fileImportVisible.value = false'), true)
+  assert.equal(restoreImportDraft.includes('restoreDraftVisible.value = false'), true)
+  assert.equal(restoreImportDraft.includes('headerImportMenuVisible.value = false'), true)
+  assert.equal(restoreImportDraft.includes('await nextTick()'), true)
+  assert.equal(restoreImportDraft.includes('workbenchVisible.value = true'), true)
+  assert.equal(startFreshImport.includes('closeImportModals()'), true)
+  assert.equal(startFreshImport.includes('await nextTick()'), true)
+  assert.equal(handleFileParsed.includes('fileImportVisible.value = false'), true)
+  assert.equal(handleFileParsed.includes('restoreDraftVisible.value = false'), true)
+  assert.equal(handleFileParsed.includes('await nextTick()'), true)
+  assert.equal(handleFileParsed.includes('workbenchVisible.value = true'), true)
+})
+
+test('parsed event ownership stays in the parent and workbench close updates do not trigger abandon', () => {
+  const startParsing = sourceSection(fileImportSource, 'async function handleStartParsing', '</script>')
+  const parsedEventIndex = startParsing.indexOf("emit('parsed'")
+  assert.equal(parsedEventIndex >= 0, true)
+  assert.equal(startParsing.slice(parsedEventIndex).includes('closeAndReset()'), false)
+  assert.equal(workbenchSource.includes('@update:visible="handleVisibleUpdate"'), false)
+  assert.equal(workbenchSource.includes('function handleVisibleUpdate'), false)
+})
+
+test('modal layers have an explicit upload, restore, workbench, abandon order', () => {
+  assert.equal(fileImportSource.includes(':z-index="2500"'), true)
+  assert.equal(source.includes('attach="body"'), true)
+  assert.equal(source.includes(':z-index="3200"'), true)
+  assert.equal(workbenchSource.includes(':z-index="3500"'), true)
+  assert.equal(workbenchSource.includes(':z-index="4500"'), true)
 })
 
 test('restoring original block text synchronizes the textarea model', () => {

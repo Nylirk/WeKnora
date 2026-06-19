@@ -6,10 +6,10 @@
     :close-btn="false"
     width="90vw"
     top="5vh"
+    :z-index="3500"
     dialog-class-name="question-import-workbench-dialog"
     :close-on-overlay-click="false"
     :close-on-esc-keydown="false"
-    @update:visible="handleVisibleUpdate"
   >
     <div class="workbench-shell">
       <div class="workbench-header">
@@ -66,7 +66,7 @@
     v-model:visible="abandonVisible"
     header="放弃导入"
     attach="body"
-    :z-index="4000"
+    :z-index="4500"
     :close-btn="false"
     :close-on-overlay-click="false"
     :confirm-btn="{ content: '保存草稿', theme: 'primary' }"
@@ -167,10 +167,6 @@ async function goToQuestionReview() {
 function returnToBlockReview() {
   store.goToStep('block-review')
   saveDebounced()
-}
-
-function handleVisibleUpdate(value: boolean) {
-  if (!value && props.visible) handleAbandon()
 }
 
 function handleAbandon() {

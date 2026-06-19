@@ -6,6 +6,7 @@
     :close-btn="false"
     width="600px"
     top="14vh"
+    :z-index="2500"
     dialog-class-name="question-file-import-dialog"
     :close-on-overlay-click="false"
     :close-on-esc-keydown="!parsing"
@@ -204,7 +205,6 @@ async function handleStartParsing() {
       importFormat: importFormat.value,
       importMode: props.importMode,
     })
-    closeAndReset()
   } catch (error: any) {
     if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') return
     previewError.value = error?.message || '解析失败，请重试'

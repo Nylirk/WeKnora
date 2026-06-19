@@ -145,8 +145,11 @@
     <t-dialog
       v-model:visible="restoreDraftVisible"
       header="发现未完成的导入草稿"
+      attach="body"
+      :z-index="3200"
       :close-btn="false"
       :close-on-overlay-click="false"
+      :close-on-esc-keydown="false"
       :confirm-btn="{ content: '恢复草稿', theme: 'primary' }"
       :cancel-btn="{ content: '重新导入' }"
       @confirm="restoreImportDraft"
@@ -309,8 +312,15 @@ async function closeAllImportMenus() {
   await nextTick()
 }
 
+function closeImportModals() {
+  fileImportVisible.value = false
+  restoreDraftVisible.value = false
+}
+
 async function openSingleImport() {
   await closeAllImportMenus()
+  closeImportModals()
+  await nextTick()
 
   try {
     await cleanExpiredDrafts()
@@ -328,13 +338,10 @@ async function openSingleImport() {
 }
 
 async function openFileImportDialog() {
-  restoreDraftVisible.value = false
-  pendingDraft.value = null
-
-  // Destroy previous dialog instance so a fresh session starts
-  fileImportVisible.value = false
+  closeImportModals()
   await nextTick()
 
+  pendingDraft.value = null
   fileImportSession.value += 1
   fileImportVisible.value = true
 }
@@ -353,18 +360,28 @@ function applyDraftToWorkbench(draft: ImportDraft) {
   workbenchStore.draftExists = true
 }
 
-function restoreImportDraft() {
-  if (!pendingDraft.value) return
-  applyDraftToWorkbench(pendingDraft.value)
+async function restoreImportDraft() {
+  const draft = pendingDraft.value
+  if (!draft || !Array.isArray(draft.blocks) || draft.blocks.length === 0) {
+    MessagePlugin.warning('草稿中没有可恢复的 blocks，请重新导入。')
+    await startFreshImport()
+    return
+  }
+
+  fileImportVisible.value = false
   restoreDraftVisible.value = false
+  headerImportMenuVisible.value = false
+  applyDraftToWorkbench(draft)
   pendingDraft.value = null
+  await nextTick()
   workbenchVisible.value = true
 }
 
 async function startFreshImport() {
-  restoreDraftVisible.value = false
+  closeImportModals()
   pendingDraft.value = null
   await deleteDraft(props.knowledgeBaseId, props.setId)
+  await nextTick()
   await openFileImportDialog()
 }
 
@@ -375,6 +392,10 @@ async function handleFileParsed(payload: {
   importFormat: 'json' | 'word' | 'pdf'
   importMode: 'single' | 'batch'
 }) {
+  fileImportVisible.value = false
+  restoreDraftVisible.value = false
+  headerImportMenuVisible.value = false
+  pendingDraft.value = null
   workbenchStore.reset()
   workbenchStore.kbId = props.knowledgeBaseId
   workbenchStore.setId = props.setId
@@ -384,19 +405,24 @@ async function handleFileParsed(payload: {
   workbenchStore.importFormat = payload.importFormat
   workbenchStore.setBlocksFromResponse(payload.blocks)
 
-  await saveDraft({
-    kbId: props.knowledgeBaseId,
-    setId: props.setId,
-    blocks: payload.blocks,
-    strategyPreset: payload.strategyPreset,
-    defaultDifficulty: workbenchStore.defaultDifficulty,
-    importMode: payload.importMode,
-    importFormat: payload.importFormat,
-    currentStep: 'block-review',
-    questions: [],
-    timestamp: Date.now(),
-  })
+  try {
+    await saveDraft({
+      kbId: props.knowledgeBaseId,
+      setId: props.setId,
+      blocks: payload.blocks,
+      strategyPreset: payload.strategyPreset,
+      defaultDifficulty: workbenchStore.defaultDifficulty,
+      importMode: payload.importMode,
+      importFormat: payload.importFormat,
+      currentStep: 'block-review',
+      questions: [],
+      timestamp: Date.now(),
+    })
+  } catch (error: any) {
+    MessagePlugin.warning(error?.message || '草稿保存失败，本次仍可继续处理。')
+  }
 
+  await nextTick()
   workbenchVisible.value = true
 }
 
