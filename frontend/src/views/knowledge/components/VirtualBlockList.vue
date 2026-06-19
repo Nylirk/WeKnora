@@ -27,9 +27,6 @@
             <t-tag v-if="anomalyCounts(item).warning > 0" size="small" theme="warning" variant="light">
               {{ anomalyCounts(item).warning }} warnings
             </t-tag>
-            <t-tag v-if="anomalyCounts(item).info > 0 && anomalyCounts(item).error === 0 && anomalyCounts(item).warning === 0" size="small" theme="default" variant="light">
-              {{ anomalyCounts(item).info }} info
-            </t-tag>
           </t-space>
         </div>
         <div class="virtual-block-preview">{{ preview(item) }}</div>
@@ -43,6 +40,7 @@
 import { RecycleScroller } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import type { ImportBlock, ImportBlockAnomaly } from '@/api/question_block'
+import { normalizeAnomalySeverity } from '@/stores/importWorkbench'
 
 const props = withDefaults(defineProps<{
   items: ImportBlock[]
@@ -68,13 +66,13 @@ function idxOf(block: ImportBlock): number {
 
 function anomalyCounts(block: ImportBlock) {
   const anomalies = props.getAnomalies(block.id)
-  let error = 0; let warning = 0; let info = 0
+  let error = 0; let warning = 0
   for (const a of anomalies) {
-    if (a?.severity === 'error') error++
-    else if (a?.severity === 'warning') warning++
-    else info++
+    const sev = normalizeAnomalySeverity(a)
+    if (sev === 'error') error++
+    else warning++
   }
-  return { error, warning, info }
+  return { error, warning }
 }
 </script>
 

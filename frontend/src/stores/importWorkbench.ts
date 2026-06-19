@@ -15,6 +15,20 @@ export const STRUCTURAL_CODES = new Set([
   'MISSING_QUESTION_NUMBER',
 ])
 
+/** Normalize anomaly severity to error | warning only — no green/success/info */
+export type NormalizedSeverity = 'error' | 'warning'
+
+export function normalizeAnomalySeverity(anomaly: { code?: string; severity?: string } | null | undefined): NormalizedSeverity {
+  const code = anomaly?.code || ''
+  if (code === 'MISSING_QUESTION_NUMBER' || code === 'DUPLICATE_QUESTION_NUMBER') {
+    return 'error'
+  }
+  if (anomaly?.severity === 'error') {
+    return 'error'
+  }
+  return 'warning'
+}
+
 export function normalizeTags(tags: unknown): string[] {
   if (!Array.isArray(tags)) return []
   const seen = new Set<string>()
@@ -729,7 +743,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     // computed
     orderedBlocks, selectedBlock, hasDeletedBlocks, filteredBlocks, summary,
     // helpers
-    getMergedAnomalies, extractQuestionNumber,
+    getMergedAnomalies, normalizeAnomalySeverity, extractQuestionNumber,
     // block operations
     selectBlock, updateBlockText, restoreOriginalText,
     deleteBlock, restoreBlock, restoreAllDeleted,

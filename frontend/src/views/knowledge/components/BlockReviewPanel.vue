@@ -45,23 +45,50 @@
       <aside class="col-meta" v-if="store.selectedBlock">
         <section class="meta-section">
           <h4>标签</h4>
-          <div class="tag-edit-list">
-            <div v-for="(tag, i) in selectedBlockTags" :key="i" class="tag-edit-row">
-              <t-tag size="small" variant="outline" class="tag-edit-text">{{ tag }}</t-tag>
-              <t-button size="small" variant="text" theme="danger" :disabled="importUI.blocking" @click="emit('remove-tag', { id: store.selectedBlock!.id, tag })">
-                <t-icon name="close" size="12px" />
-              </t-button>
-            </div>
-          </div>
-          <div class="tag-add-row">
-            <t-input v-model="newTag" size="small" placeholder="添加标签" @enter="addTag" style="flex:1" />
-            <t-button size="small" variant="outline" :disabled="importUI.blocking" @click="addTag">添加</t-button>
+          <div class="tag-cloud">
+            <button
+              v-for="tag in selectedBlockTags"
+              :key="tag"
+              type="button"
+              class="tag-pill"
+              @mouseenter="hoveredTag = tag"
+              @mouseleave="hoveredTag = ''"
+            >
+              <span>{{ tag }}</span>
+              <span
+                v-show="hoveredTag === tag"
+                class="tag-remove"
+                @click.stop="emit('remove-tag', { id: store.selectedBlock!.id, tag })"
+              >×</span>
+            </button>
+
+            <template v-if="addingTag">
+              <input
+                ref="tagInputRef"
+                v-model="newTag"
+                class="tag-add-input"
+                placeholder="添加标签"
+                @keydown.enter.prevent="confirmAddTag"
+                @keydown.esc.prevent="cancelAddTag"
+                @blur="cancelAddTag"
+              />
+            </template>
+
+            <button
+              v-else
+              type="button"
+              class="tag-pill tag-add-pill"
+              :disabled="importUI.blocking"
+              @click="startAddTag"
+            >
+              + 添加标签
+            </button>
           </div>
         </section>
         <section class="meta-section">
           <h4>异常信息</h4>
           <div v-if="selectedBlockAnomalies.length" class="detail-anomalies">
-            <div v-for="a in selectedBlockAnomalies" :key="a.code + ':' + a.message" class="anomaly-card" :class="a.severity">
+            <div v-for="a in selectedBlockAnomalies" :key="a.code + ':' + a.message" class="anomaly-card" :class="normalizeAnomalySeverity(a)">
               <div class="anomaly-code">{{ a.code }}</div>
               <div class="anomaly-message">{{ a.message }}</div>
             </div>
@@ -105,8 +132,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useImportWorkbenchStore } from '@/stores/importWorkbench'
+import { computed, ref, watch, nextTick } from 'vue'
+import { useImportWorkbenchStore, normalizeAnomalySeverity } from '@/stores/importWorkbench'
 import { useImportUIStore } from '@/stores/importUIStore'
 import VirtualBlockList from './VirtualBlockList.vue'
 
@@ -128,7 +155,13 @@ const emit = defineEmits<{
 const editingText = ref('')
 const showSplitControl = ref(false)
 const splitKeyword = ref('')
+
+// P3-P5: tag pill cloud
 const newTag = ref('')
+const addingTag = ref(false)
+const hoveredTag = ref('')
+const tagInputRef = ref<HTMLInputElement | null>(null)
+
 const restoreDialogVisible = ref(false)
 
 const selectedBlockAnomalies = computed(() =>
@@ -159,9 +192,21 @@ function doSplitByKeyword() {
   if (positions.length > 0) { emit('split-block', { id: store.selectedBlock.id, positions }) }
   showSplitControl.value = false; splitKeyword.value = ''
 }
-function addTag() {
-  if (!store.selectedBlock || !newTag.value.trim()) return
-  emit('add-tag', { id: store.selectedBlock.id, tag: newTag.value.trim() })
+// P3-P5: tag pill cloud
+function startAddTag() {
+  addingTag.value = true
+  newTag.value = ''
+  nextTick(() => tagInputRef.value?.focus())
+}
+function confirmAddTag() {
+  const tag = newTag.value.trim()
+  if (!tag) { cancelAddTag(); return }
+  emit('add-tag', { id: store.selectedBlock!.id, tag })
+  addingTag.value = false
+  newTag.value = ''
+}
+function cancelAddTag() {
+  addingTag.value = false
   newTag.value = ''
 }
 
@@ -194,28 +239,79 @@ function doRestoreDeleted(id: string) {
 .meta-section:last-child { border-bottom: none; }
 .meta-section h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
 .meta-empty { font-size: 12px; color: var(--td-text-color-placeholder); }
-.tag-edit-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
-.tag-edit-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 4px 8px; border: 1px solid var(--td-component-stroke); border-radius: 4px; background: var(--td-bg-color-container); }
-.tag-edit-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.tag-add-row { display: flex; gap: 4px; }
+
+/* P3-P5: tag pill cloud */
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  align-items: center;
+}
+.tag-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 30px;
+  cursor: default;
+  white-space: nowrap;
+}
+.tag-pill:hover { background: #1d4ed8; }
+.tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 16px;
+  cursor: pointer;
+  color: #fff;
+  opacity: 0.9;
+}
+.tag-remove:hover { background: rgba(255, 255, 255, 0.22); }
+.tag-add-pill {
+  background: var(--td-bg-color-container);
+  color: var(--td-brand-color);
+  border: 1px dashed var(--td-brand-color);
+  cursor: pointer;
+}
+.tag-add-pill:hover { background: var(--td-brand-color-light); }
+.tag-add-input {
+  height: 30px;
+  min-width: 120px;
+  max-width: 180px;
+  padding: 0 10px;
+  border: 1px solid var(--td-brand-color);
+  border-radius: 999px;
+  outline: none;
+  font-size: 13px;
+}
+
+/* P1: anomaly cards — error/warning only, no green */
 .detail-anomalies { display: flex; flex-direction: column; gap: 6px; }
 .anomaly-card {
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--td-component-stroke);
-  background: var(--td-bg-color-container);
+  padding: 9px 10px;
+  border-radius: 9px;
+  border: 1px solid;
 }
 .anomaly-card.error {
-  border-color: var(--td-error-color-4);
+  border-color: var(--td-error-color-5);
   background: var(--td-error-color-1);
 }
 .anomaly-card.warning {
-  border-color: var(--td-warning-color-4);
+  border-color: var(--td-warning-color-5);
   background: var(--td-warning-color-1);
-}
-.anomaly-card.info {
-  border-color: var(--td-brand-color-3);
-  background: var(--td-brand-color-1);
 }
 .anomaly-card .anomaly-code {
   font-size: 11px;
@@ -225,7 +321,7 @@ function doRestoreDeleted(id: string) {
   word-break: break-all;
 }
 .anomaly-card .anomaly-message {
-  margin-top: 2px;
+  margin-top: 3px;
   font-size: 12px;
   line-height: 18px;
   color: var(--td-text-color-primary);
