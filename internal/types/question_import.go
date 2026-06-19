@@ -1,5 +1,7 @@
 package types
 
+import "fmt"
+
 // ImportBlock represents a single block parsed from the uploaded file
 // during the block-preview stage of question import.
 type ImportBlock struct {
@@ -15,12 +17,20 @@ type ImportBlock struct {
 
 // ImportBlockAnomaly describes a detected issue with a block.
 type ImportBlockAnomaly struct {
-	Type    string `json:"type"`
-	Message string `json:"message"`
-	Line    int    `json:"line,omitempty"`
+	Code     string `json:"code"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+	Line     int    `json:"line,omitempty"`
 }
 
-// Anomaly type constants.
+// Anomaly severity constants.
+const (
+	SeverityError   = "error"
+	SeverityWarning = "warning"
+	SeverityInfo    = "info"
+)
+
+// Anomaly code constants.
 const (
 	AnomalyMultipleQuestionMarkers   = "MULTIPLE_QUESTION_MARKERS"
 	AnomalyNonMonotonicQuestionNum   = "NON_MONOTONIC_QUESTION_NUMBER"
@@ -79,6 +89,29 @@ func PDFBlockParseStrategy() BlockParseStrategy {
 		ExtractQuestionTypeTags:            true,
 		SortBlocksByQuestionNumber:         true,
 		DetectInterleavedTwoColumnSequence: true,
+	}
+}
+
+// ValidateStrategyPreset validates the strategy_preset parameter.
+// Accepts "" (defaults to general), "general", or "pdf".
+func ValidateStrategyPreset(preset string) error {
+	switch preset {
+	case "", "general", "pdf":
+		return nil
+	default:
+		return fmt.Errorf("无效的 strategy_preset: %q，仅支持 general 或 pdf", preset)
+	}
+}
+
+// ValidateImportMode validates the import_mode parameter.
+func ValidateImportMode(mode string) (string, error) {
+	switch mode {
+	case "", "batch":
+		return "batch", nil
+	case "single":
+		return "single", nil
+	default:
+		return "", fmt.Errorf("无效的 import_mode: %q，仅支持 single 或 batch", mode)
 	}
 }
 

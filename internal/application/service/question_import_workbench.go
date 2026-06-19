@@ -15,7 +15,6 @@ import (
 
 // PreviewImportBlocks extracts text from a document file, partitions it into
 // blocks using the block analysis pipeline, and returns the blocks for review.
-// It does NOT persist anything to the database.
 func (s *QuestionService) PreviewImportBlocks(
 	ctx context.Context,
 	kbID, setID string,
@@ -27,7 +26,7 @@ func (s *QuestionService) PreviewImportBlocks(
 	log.Infof("[block-preview] started: kb=%s set=%s file=%s size=%d preset=%s mode=%s",
 		kbID, setID, fileName, len(fileData), req.StrategyPreset, req.ImportMode)
 
-	// 1. Validate KB is question_bank (also validates set belongs to kb)
+	// 1. Validate KB is question_bank
 	if _, err := s.getQuestionSetForKB(ctx, kbID, setID); err != nil {
 		return nil, err
 	}
@@ -37,21 +36,48 @@ func (s *QuestionService) PreviewImportBlocks(
 		return nil, apperrors.NewBadRequestError("仅支持 DOC、DOCX、PDF 文件。")
 	}
 
-	// 3. Validate file size
+	// 3. Validate strategy_preset
+	if err := types.ValidateStrategyPreset(req.StrategyPreset); err != nil {
+		return nil, apperrors.NewBadRequestError(err.Error())
+	}
+
+	// 4. Validate import_mode
+	importMode, err := types.ValidateImportMode(req.ImportMode)
+	if err != nil {
+		return nil, apperrors.NewBadRequestError(err.Error())
+	}
+	req.ImportMode = importMode
+
+	// 5. pdf preset guard: only for .pdf files
+	if req.StrategyPreset == "pdf" {
+		fileType := strings.TrimPrefix(
+			strings.ToLower(fileName[strings.LastIndex(fileName, "."):]),
+			".",
+		)
+		if fileType != "pdf" {
+			return nil, apperrors.NewBadRequestError("PDF 分块策略仅适用于 PDF 文件。")
+		}
+	}
+
+	// 6. Validate file size (guard against negative/invalid maxSize)
+	const defaultMaxFileImportBytes = 20 * 1024 * 1024
 	maxSize := secutils.GetMaxFileSize()
+	if maxSize <= 0 || maxSize > defaultMaxFileImportBytes {
+		maxSize = defaultMaxFileImportBytes
+	}
 	if int64(len(fileData)) > maxSize {
 		return nil, apperrors.NewBadRequestError(
 			fmt.Sprintf("文件大小超过限制 (%d MB)", maxSize/(1024*1024)),
 		)
 	}
 
-	// 4. Determine file type for docreader
+	// 7. Determine file type for docreader
 	fileType := strings.TrimPrefix(
 		strings.ToLower(fileName[strings.LastIndex(fileName, "."):]),
 		".",
 	)
 
-	// 5. Extract text using docreader with a timeout
+	// 8. Extract text using docreader
 	if s.docReader == nil || !s.docReader.IsConnected() {
 		return nil, apperrors.NewBadRequestError("文档解析服务不可用，请稍后重试。")
 	}
@@ -85,7 +111,7 @@ func (s *QuestionService) PreviewImportBlocks(
 
 	extractedText := strings.TrimSpace(readResp.MarkdownContent)
 
-	// 6. Choose strategy
+	// 9. Choose strategy
 	var strategy types.BlockParseStrategy
 	switch req.StrategyPreset {
 	case "pdf":
@@ -94,7 +120,7 @@ func (s *QuestionService) PreviewImportBlocks(
 		strategy = types.GeneralBlockParseStrategy()
 	}
 
-	// 7. Analyze blocks
+	// 10. Analyze blocks
 	blocks, summary := s.blockAnalysisService.AnalyzeBlocks(extractedText, strategy)
 
 	log.Infof("[block-preview] analysis complete: blocks=%d anomalies=%d qnums=%d",
@@ -106,9 +132,8 @@ func (s *QuestionService) PreviewImportBlocks(
 	}, nil
 }
 
-// ParseImportedBlocks takes user-edited blocks, re-parses them through the
-// question extraction service, and returns a preview of the resulting questions.
-// It does NOT persist anything to the database.
+// ParseImportedBlocks takes user-edited blocks and re-parses them through
+// the question extraction service.
 func (s *QuestionService) ParseImportedBlocks(
 	ctx context.Context,
 	kbID, setID string,
@@ -117,18 +142,14 @@ func (s *QuestionService) ParseImportedBlocks(
 	log := logger.GetLogger(ctx)
 	log.Infof("[parse-blocks] started: kb=%s set=%s blocks=%d", kbID, setID, len(req.Blocks))
 
-	// 1. Validate KB is question_bank (also validates set belongs to kb)
+	// 1. Validate KB is question_bank
 	if _, err := s.getQuestionSetForKB(ctx, kbID, setID); err != nil {
 		return nil, err
 	}
 
-	// 2. Choose strategy
-	var strategy types.BlockParseStrategy
-	switch req.StrategyPreset {
-	case "pdf":
-		strategy = types.PDFBlockParseStrategy()
-	default:
-		strategy = types.GeneralBlockParseStrategy()
+	// 2. Validate strategy_preset
+	if err := types.ValidateStrategyPreset(req.StrategyPreset); err != nil {
+		return nil, apperrors.NewBadRequestError(err.Error())
 	}
 
 	// 3. Default difficulty
@@ -155,9 +176,7 @@ func (s *QuestionService) ParseImportedBlocks(
 		for i := range items {
 			item := &items[i]
 
-			// Merge block tags with existing item tags (dedup)
 			if len(block.Tags) > 0 {
-				// Parse existing tags from JSON
 				var existingTags []string
 				if len(item.Tags) > 0 {
 					_ = json.Unmarshal(item.Tags, &existingTags)
@@ -174,14 +193,12 @@ func (s *QuestionService) ParseImportedBlocks(
 					}
 				}
 
-				// Re-marshal to JSON
 				if len(existingTags) > 0 {
 					marshaled, _ := json.Marshal(existingTags)
 					item.Tags = types.JSON(marshaled)
 				}
 			}
 
-			// Write block metadata to source_payload for compatibility
 			if len(block.Metadata) > 0 {
 				metaJSON, _ := json.Marshal(map[string]interface{}{
 					"block_id":        block.ID,
@@ -194,7 +211,6 @@ func (s *QuestionService) ParseImportedBlocks(
 			}
 		}
 
-		// Adjust line numbers based on block position
 		blockLineBase := block.Index * 1000
 		for i := range items {
 			items[i].LineNumber += blockLineBase
@@ -218,8 +234,6 @@ func (s *QuestionService) ParseImportedBlocks(
 			withoutAnswer++
 		}
 	}
-
-	_ = strategy // used implicitly through block analysis
 
 	log.Infof("[parse-blocks] complete: items=%d errors=%d warnings=%d",
 		len(allItems), len(allErrors), len(allWarnings))

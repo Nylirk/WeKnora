@@ -29,7 +29,7 @@ func (h *QuestionHandler) PreviewImportBlocks(c *gin.Context) {
 
 	const defaultMaxFileImportBytes = 20 * 1024 * 1024
 	maxSize := secutils.GetMaxFileSize()
-	if maxSize > defaultMaxFileImportBytes || maxSize < 0 {
+	if maxSize <= 0 || maxSize > defaultMaxFileImportBytes {
 		maxSize = defaultMaxFileImportBytes
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSize)

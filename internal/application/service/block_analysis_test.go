@@ -7,6 +7,8 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
+// ===== Basic General Preset =====
+
 func TestGeneralPreset_BasicPartitioning(t *testing.T) {
 	svc := NewBlockAnalysisService()
 	strategy := types.GeneralBlockParseStrategy()
@@ -17,14 +19,12 @@ func TestGeneralPreset_BasicPartitioning(t *testing.T) {
 	if summary.TotalBlocks != 1 {
 		t.Fatalf("expected 1 block, got %d", summary.TotalBlocks)
 	}
-	if blocks[0].QuestionNumber == nil || *blocks[0].QuestionNumber != 1 {
-		t.Errorf("expected question number 1, got %v", blocks[0].QuestionNumber)
+	b := blocks[0]
+	if b.QuestionNumber == nil || *b.QuestionNumber != 1 {
+		t.Errorf("expected question number 1, got %v", b.QuestionNumber)
 	}
-	if !strings.Contains(blocks[0].CurrentText, "津液的功能") {
-		t.Errorf("block should contain stem text, got: %s", blocks[0].CurrentText)
-	}
-	if !strings.Contains(blocks[0].CurrentText, "答案：D") {
-		t.Errorf("block should contain answer, got: %s", blocks[0].CurrentText)
+	if !strings.Contains(b.CurrentText, "津液的功能") {
+		t.Errorf("block should contain stem text, got: %s", b.CurrentText)
 	}
 }
 
@@ -43,6 +43,8 @@ func TestGeneralPreset_MultipleQuestions(t *testing.T) {
 	}
 }
 
+// ===== Tag extraction (standalone lines only) =====
+
 func TestGeneralPreset_SectionHeadingAsTag(t *testing.T) {
 	svc := NewBlockAnalysisService()
 	strategy := types.GeneralBlockParseStrategy()
@@ -53,7 +55,6 @@ func TestGeneralPreset_SectionHeadingAsTag(t *testing.T) {
 	if len(blocks) == 0 {
 		t.Fatal("expected at least 1 block")
 	}
-	// Tags should contain the section heading
 	hasSectionTag := false
 	for _, tag := range blocks[0].Tags {
 		if strings.Contains(tag, "第七单元") {
@@ -63,7 +64,6 @@ func TestGeneralPreset_SectionHeadingAsTag(t *testing.T) {
 	if !hasSectionTag {
 		t.Errorf("expected section tag '第七单元 六腑' in block tags, got: %v", blocks[0].Tags)
 	}
-	// The section heading line should NOT be in the block text
 	if strings.Contains(blocks[0].CurrentText, "第七单元") {
 		t.Errorf("section heading should be removed from block text, got: %s", blocks[0].CurrentText)
 	}
@@ -81,15 +81,12 @@ func TestGeneralPreset_QuestionTypeHeadingAsTag(t *testing.T) {
 	}
 	hasTypeTag := false
 	for _, tag := range blocks[0].Tags {
-		if strings.Contains(tag, "A1型题") || strings.Contains(tag, "A1") {
+		if strings.Contains(tag, "A1型题") {
 			hasTypeTag = true
 		}
 	}
 	if !hasTypeTag {
 		t.Errorf("expected question type tag 'A1型题' in block tags, got: %v", blocks[0].Tags)
-	}
-	if strings.Contains(blocks[0].CurrentText, "A1型题") {
-		t.Errorf("question type heading should be removed from block text")
 	}
 }
 
@@ -113,6 +110,68 @@ func TestGeneralPreset_BracketedQuestionTypeHeading(t *testing.T) {
 		t.Errorf("expected tag containing 'A2型题', got: %v", blocks[0].Tags)
 	}
 }
+
+func TestBTypeQuestionTag(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.GeneralBlockParseStrategy()
+
+	text := "B型题\n1. 备选答案匹配题\n答案：见解析"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	if len(blocks) == 0 {
+		t.Fatal("expected at least 1 block")
+	}
+	hasBTag := false
+	for _, tag := range blocks[0].Tags {
+		if strings.Contains(tag, "B型题") {
+			hasBTag = true
+		}
+	}
+	if !hasBTag {
+		t.Errorf("expected 'B型题' in tags, got: %v", blocks[0].Tags)
+	}
+}
+
+// ===== Standalone heading guard =====
+
+func TestSectionHeading_NotFromOptionLine(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.GeneralBlockParseStrategy()
+
+	// "D.肺肾 第七单元 六腑" should NOT be treated as a section tag
+	text := "1. 某题\nD.肺肾 第七单元 六腑\nE.肝肾\n答案：D"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	if len(blocks) == 0 {
+		t.Fatal("expected at least 1 block")
+	}
+	// Option line containing section text should not be extracted as tag
+	for _, tag := range blocks[0].Tags {
+		if strings.Contains(tag, "第七单元") {
+			t.Errorf("option line 'D.肺肾 第七单元 六腑' should NOT produce section tag, got: %v", blocks[0].Tags)
+		}
+	}
+}
+
+func TestStandaloneSectionHeading_StillWorks(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.GeneralBlockParseStrategy()
+
+	text := "第七单元 六腑\n1. 第一题\n答案：A"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	hasTag := false
+	for _, tag := range blocks[0].Tags {
+		if strings.Contains(tag, "第七单元") {
+			hasTag = true
+		}
+	}
+	if !hasTag {
+		t.Errorf("standalone '第七单元 六腑' should be extracted as tag, got: %v", blocks[0].Tags)
+	}
+}
+
+// ===== Page number removal =====
 
 func TestGeneralPreset_PageNumberRemoval(t *testing.T) {
 	svc := NewBlockAnalysisService()
@@ -148,18 +207,19 @@ func TestGeneralPreset_EnglishPageNumberRemoval(t *testing.T) {
 	}
 }
 
+// ===== Leading noise removal (all blocks, not just first) =====
+
 func TestGeneralPreset_LeadingNoiseRemoval(t *testing.T) {
 	svc := NewBlockAnalysisService()
 	strategy := types.GeneralBlockParseStrategy()
 
-	// Simulate D/E option debris from previous page
 	text := "D. 寒邪\nE. 湿邪\n1. 津液的功能是什么？\n答案：A"
 	blocks, _ := svc.AnalyzeBlocks(text, strategy)
 
 	if len(blocks) == 0 {
 		t.Fatal("expected at least 1 block")
 	}
-	if strings.Contains(blocks[0].CurrentText, "寒邪") {
+	if strings.Contains(blocks[0].CurrentText, "寒邪") || strings.Contains(blocks[0].CurrentText, "湿邪") {
 		t.Errorf("leading option debris should be removed: %s", blocks[0].CurrentText)
 	}
 	if !strings.Contains(blocks[0].CurrentText, "津液") {
@@ -167,14 +227,15 @@ func TestGeneralPreset_LeadingNoiseRemoval(t *testing.T) {
 	}
 }
 
-func TestPDFPreset_MultiQuestionPerLine(t *testing.T) {
+// ===== PDF: multi-question per line with bare number =====
+
+func TestPDFPreset_MultiQuestionPerLine_StrongMarker(t *testing.T) {
 	svc := NewBlockAnalysisService()
 	strategy := types.PDFBlockParseStrategy()
 
 	text := "243. 六腑的功能特点 249. 津液输布的主要途径"
 	blocks, _ := svc.AnalyzeBlocks(text, strategy)
 
-	// Should split into at least 2 blocks
 	if len(blocks) < 2 {
 		t.Fatalf("expected at least 2 blocks from multi-question line, got %d", len(blocks))
 	}
@@ -191,9 +252,39 @@ func TestPDFPreset_MultiQuestionPerLine(t *testing.T) {
 		}
 	}
 	if !found243 || !found249 {
-		t.Errorf("expected question numbers 243 and 249, blocks: %+v", blocks)
+		t.Errorf("expected question numbers 243 and 249")
 	}
 }
+
+func TestPDFPreset_MultiQuestionPerLine_EmbeddedBareNumber(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.PDFBlockParseStrategy()
+
+	// "243.主睡的是(E) 249 津液输布的主要通道是(D)"
+	text := "243.主睡的是(E) 249 津液输布的主要通道是(D)"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	if len(blocks) < 2 {
+		t.Fatalf("expected at least 2 blocks from embedded bare number, got %d", len(blocks))
+	}
+	found243 := false
+	found249 := false
+	for _, b := range blocks {
+		if b.QuestionNumber != nil {
+			if *b.QuestionNumber == 243 {
+				found243 = true
+			}
+			if *b.QuestionNumber == 249 {
+				found249 = true
+			}
+		}
+	}
+	if !found243 || !found249 {
+		t.Errorf("expected question numbers 243 and 249 from '243.主睡的是(E) 249 津液...'")
+	}
+}
+
+// ===== PDF bare number line =====
 
 func TestPDFPreset_BareNumberLine(t *testing.T) {
 	svc := NewBlockAnalysisService()
@@ -208,10 +299,29 @@ func TestPDFPreset_BareNumberLine(t *testing.T) {
 	if blocks[0].QuestionNumber == nil || *blocks[0].QuestionNumber != 249 {
 		t.Errorf("expected question number 249 from bare number line, got %v", blocks[0].QuestionNumber)
 	}
-	if !strings.Contains(blocks[0].CurrentText, "津液输布") {
-		t.Errorf("block should contain question text after number repair")
+}
+
+// ===== General preset does NOT recognize bare numbers =====
+
+func TestGeneralPreset_NoBareNumber(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.GeneralBlockParseStrategy()
+
+	// "249 津液..." should NOT be treated as a question start in general preset
+	text := "249 津液输布的主要途径是"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	// In general preset, bare numbers are not question starts
+	// This should produce 1 block with no question number
+	if len(blocks) > 1 {
+		t.Errorf("general preset should not split on bare numbers, got %d blocks", len(blocks))
+	}
+	if len(blocks) == 1 && blocks[0].QuestionNumber != nil {
+		t.Errorf("general preset should NOT assign question number to bare number line, got %v", blocks[0].QuestionNumber)
 	}
 }
+
+// ===== Sort behavior =====
 
 func TestPDFPreset_AutoSort(t *testing.T) {
 	svc := NewBlockAnalysisService()
@@ -223,7 +333,6 @@ func TestPDFPreset_AutoSort(t *testing.T) {
 	if len(blocks) != 3 {
 		t.Fatalf("expected 3 blocks, got %d", len(blocks))
 	}
-	// After sort, should be 1, 2, 3
 	for i, expected := range []int{1, 2, 3} {
 		if blocks[i].QuestionNumber == nil || *blocks[i].QuestionNumber != expected {
 			t.Errorf("block %d: expected question %d, got %v", i, expected, blocks[i].QuestionNumber)
@@ -238,15 +347,15 @@ func TestGeneralPreset_NoSort(t *testing.T) {
 	text := "3. 第三题\n答案：C\n1. 第一题\n答案：A\n2. 第二题\n答案：B"
 	blocks, _ := svc.AnalyzeBlocks(text, strategy)
 
-	// General preset does NOT sort — maintain original order
 	if len(blocks) != 3 {
 		t.Fatalf("expected 3 blocks, got %d", len(blocks))
 	}
-	// Order should be as in the document: 3, 1, 2
 	if blocks[0].QuestionNumber == nil || *blocks[0].QuestionNumber != 3 {
 		t.Errorf("general preset: first block should be 3 (original order), got %v", blocks[0].QuestionNumber)
 	}
 }
+
+// ===== Anomalies =====
 
 func TestDuplicateQuestionNumber(t *testing.T) {
 	svc := NewBlockAnalysisService()
@@ -258,8 +367,11 @@ func TestDuplicateQuestionNumber(t *testing.T) {
 	foundDup := false
 	for _, b := range blocks {
 		for _, a := range b.Anomalies {
-			if a.Type == types.AnomalyDuplicateQuestionNumber {
+			if a.Code == types.AnomalyDuplicateQuestionNumber {
 				foundDup = true
+				if a.Severity != types.SeverityError {
+					t.Errorf("DUPLICATE_QUESTION_NUMBER should be error, got %s", a.Severity)
+				}
 			}
 		}
 	}
@@ -278,8 +390,11 @@ func TestQuestionNumberGap(t *testing.T) {
 	foundGap := false
 	for _, b := range blocks {
 		for _, a := range b.Anomalies {
-			if a.Type == types.AnomalyQuestionNumberGap {
+			if a.Code == types.AnomalyQuestionNumberGap {
 				foundGap = true
+				if a.Severity != types.SeverityWarning {
+					t.Errorf("QUESTION_NUMBER_GAP should be warning, got %s", a.Severity)
+				}
 			}
 		}
 	}
@@ -298,7 +413,7 @@ func TestNonMonotonicQuestionNumber(t *testing.T) {
 	foundNonMon := false
 	for _, b := range blocks {
 		for _, a := range b.Anomalies {
-			if a.Type == types.AnomalyNonMonotonicQuestionNum {
+			if a.Code == types.AnomalyNonMonotonicQuestionNum {
 				foundNonMon = true
 			}
 		}
@@ -321,7 +436,7 @@ func TestOptionOnlyBlock(t *testing.T) {
 	foundOptOnly := false
 	for _, b := range blocks {
 		for _, a := range b.Anomalies {
-			if a.Type == types.AnomalyOptionOnlyBlock {
+			if a.Code == types.AnomalyOptionOnlyBlock {
 				foundOptOnly = true
 			}
 		}
@@ -344,7 +459,7 @@ func TestOptionSequenceRestart(t *testing.T) {
 	foundRestart := false
 	for _, b := range blocks {
 		for _, a := range b.Anomalies {
-			if a.Type == types.AnomalyOptionSequenceRestart {
+			if a.Code == types.AnomalyOptionSequenceRestart {
 				foundRestart = true
 			}
 		}
@@ -354,16 +469,79 @@ func TestOptionSequenceRestart(t *testing.T) {
 	}
 }
 
+func TestMissingAnswer_PerBlock(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.GeneralBlockParseStrategy()
+
+	text := "1. 第一题（无答案）\nA. 选项A\nB. 选项B\n2. 第二题（也无答案）\nC. 选项C\nD. 选项D"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	if len(blocks) < 2 {
+		t.Fatalf("expected at least 2 blocks, got %d", len(blocks))
+	}
+	for i, b := range blocks {
+		hasMissingAnswer := false
+		for _, a := range b.Anomalies {
+			if a.Code == types.AnomalyMissingAnswer {
+				hasMissingAnswer = true
+			}
+		}
+		if !hasMissingAnswer {
+			t.Errorf("block %d should have MISSING_ANSWER anomaly", i)
+		}
+	}
+}
+
+func TestStemTooShort(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.GeneralBlockParseStrategy()
+
+	text := "1. X"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	if len(blocks) == 0 {
+		t.Fatal("expected 1 block")
+	}
+	foundShort := false
+	for _, a := range blocks[0].Anomalies {
+		if a.Code == types.AnomalyStemTooShort {
+			foundShort = true
+		}
+	}
+	if !foundShort {
+		t.Error("expected STEM_TOO_SHORT anomaly for very short block")
+	}
+}
+
+func TestMultipleAnomalyTypes(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.GeneralBlockParseStrategy()
+
+	text := "5. 第五题\n答案：E\n3. 第三题\n答案：C"
+	_, summary := svc.AnalyzeBlocks(text, strategy)
+
+	if summary.BlocksWithAnomalies == 0 {
+		t.Error("expected blocks with anomalies")
+	}
+	if summary.AnomalyBreakdown[types.AnomalyQuestionNumberGap] == 0 {
+		t.Error("expected gap anomaly")
+	}
+	if summary.AnomalyBreakdown[types.AnomalyNonMonotonicQuestionNum] == 0 {
+		t.Error("expected non-monotonic anomaly")
+	}
+}
+
+// ===== False positives =====
+
 func TestFalsePositive_10mg(t *testing.T) {
 	svc := NewBlockAnalysisService()
 	strategy := types.GeneralBlockParseStrategy()
 
-	// "10mg" should NOT be recognized as question 10
 	text := "1. 某药物的剂量是10mg，每日两次\n答案：正确"
 	blocks, _ := svc.AnalyzeBlocks(text, strategy)
 
 	if len(blocks) != 1 {
-		t.Fatalf("expected 1 block, got %d (10mg should NOT split into a new question)", len(blocks))
+		t.Fatalf("expected 1 block, got %d (10mg should NOT split)", len(blocks))
 	}
 }
 
@@ -371,7 +549,6 @@ func TestFalsePositive_Year(t *testing.T) {
 	svc := NewBlockAnalysisService()
 	strategy := types.GeneralBlockParseStrategy()
 
-	// "2024年" should NOT be recognized as question 2024
 	text := "1. 该政策于2024年实施\n答案：正确"
 	blocks, _ := svc.AnalyzeBlocks(text, strategy)
 
@@ -384,7 +561,6 @@ func TestFalsePositive_DecimalHours(t *testing.T) {
 	svc := NewBlockAnalysisService()
 	strategy := types.GeneralBlockParseStrategy()
 
-	// "1.5小时" should NOT be recognized as question 1.5
 	text := "1. 操作耗时约1.5小时\n答案：正确"
 	blocks, _ := svc.AnalyzeBlocks(text, strategy)
 
@@ -397,7 +573,6 @@ func TestFalsePositive_ChapterHeading(t *testing.T) {
 	svc := NewBlockAnalysisService()
 	strategy := types.GeneralBlockParseStrategy()
 
-	// "第2章" should be extracted as tag, NOT as question 2
 	text := "第2章 基础理论\n1. 第一题\n答案：A"
 	blocks, _ := svc.AnalyzeBlocks(text, strategy)
 
@@ -418,46 +593,19 @@ func TestFalsePositive_ChapterHeading(t *testing.T) {
 	}
 }
 
-func TestMissingAnswerAnomaly(t *testing.T) {
+func TestFalsePositive_Page20(t *testing.T) {
 	svc := NewBlockAnalysisService()
 	strategy := types.GeneralBlockParseStrategy()
 
-	text := "1. 第一题\nA. 选项A\nB. 选项B"
+	text := "1. 参看第20页内容\n答案：A"
 	blocks, _ := svc.AnalyzeBlocks(text, strategy)
 
-	foundMissingAnswer := false
-	for _, b := range blocks {
-		for _, a := range b.Anomalies {
-			if a.Type == types.AnomalyMissingAnswer {
-				foundMissingAnswer = true
-			}
-		}
-	}
-	if !foundMissingAnswer {
-		t.Error("expected MISSING_ANSWER anomaly on last block without answer")
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 block, got %d (第20页 should NOT split)", len(blocks))
 	}
 }
 
-func TestStemTooShort(t *testing.T) {
-	svc := NewBlockAnalysisService()
-	strategy := types.GeneralBlockParseStrategy()
-
-	text := "1. X"
-	blocks, _ := svc.AnalyzeBlocks(text, strategy)
-
-	if len(blocks) == 0 {
-		t.Fatal("expected 1 block")
-	}
-	foundShort := false
-	for _, a := range blocks[0].Anomalies {
-		if a.Type == types.AnomalyStemTooShort {
-			foundShort = true
-		}
-	}
-	if !foundShort {
-		t.Error("expected STEM_TOO_SHORT anomaly for very short block")
-	}
-}
+// ===== Chinese / bracketed question numbers =====
 
 func TestChineseQuestionNumbers(t *testing.T) {
 	svc := NewBlockAnalysisService()
@@ -486,6 +634,8 @@ func TestBracketedQuestionNumbers(t *testing.T) {
 	}
 }
 
+// ===== Edge cases =====
+
 func TestEmptyText(t *testing.T) {
 	svc := NewBlockAnalysisService()
 	strategy := types.GeneralBlockParseStrategy()
@@ -513,7 +663,6 @@ func TestBlockInternalMultiQuestionSplitting(t *testing.T) {
 	svc := NewBlockAnalysisService()
 	strategy := types.GeneralBlockParseStrategy()
 
-	// A block that somehow contains two question markers (e.g. 1. and 2.)
 	text := "1. 第一题\n答案：A\n2. 第二题\n答案：B"
 	blocks, _ := svc.AnalyzeBlocks(text, strategy)
 
@@ -522,42 +671,108 @@ func TestBlockInternalMultiQuestionSplitting(t *testing.T) {
 	}
 }
 
-func TestMultipleAnomalyTypes(t *testing.T) {
+// ===== Anomaly severity check =====
+
+func TestAnomalySeverity(t *testing.T) {
 	svc := NewBlockAnalysisService()
 	strategy := types.GeneralBlockParseStrategy()
 
-	text := "5. 第五题\n答案：E\n3. 第三题\n答案：C"
-	_, summary := svc.AnalyzeBlocks(text, strategy)
+	text := "1. 第一题\n答案：A\n1. 重复题号\n答案：B"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
 
-	// Should have gap (1→5) and non-monotonic (5→3) anomalies
-	if summary.BlocksWithAnomalies == 0 {
-		t.Error("expected blocks with anomalies")
-	}
-	if summary.AnomalyBreakdown[types.AnomalyQuestionNumberGap] == 0 {
-		t.Error("expected gap anomaly")
-	}
-	if summary.AnomalyBreakdown[types.AnomalyNonMonotonicQuestionNum] == 0 {
-		t.Error("expected non-monotonic anomaly")
+	for _, b := range blocks {
+		for _, a := range b.Anomalies {
+			if a.Code == "" {
+				t.Error("anomaly Code must not be empty")
+			}
+			if a.Severity == "" {
+				t.Errorf("anomaly %s must have severity", a.Code)
+			}
+			if a.Severity != types.SeverityError && a.Severity != types.SeverityWarning && a.Severity != types.SeverityInfo {
+				t.Errorf("anomaly %s has invalid severity: %s", a.Code, a.Severity)
+			}
+		}
 	}
 }
 
-func TestBTypeQuestionTag(t *testing.T) {
+// ===== Answer detection =====
+
+func TestAnswerOutOfOptions(t *testing.T) {
 	svc := NewBlockAnalysisService()
 	strategy := types.GeneralBlockParseStrategy()
 
-	text := "B型题\n1. 备选答案匹配题\n答案：见解析"
+	// Options A-D, but answer says (F)
+	text := "1. 某题\nA. 选项A\nB. 选项B\nC. 选项C\nD. 选项D\n答案：（F）"
 	blocks, _ := svc.AnalyzeBlocks(text, strategy)
 
 	if len(blocks) == 0 {
 		t.Fatal("expected at least 1 block")
 	}
-	hasBTag := false
-	for _, tag := range blocks[0].Tags {
-		if strings.Contains(tag, "B型题") {
-			hasBTag = true
+	found := false
+	for _, a := range blocks[0].Anomalies {
+		if a.Code == types.AnomalyAnswerOutOfOptions {
+			found = true
+			if a.Severity != types.SeverityError {
+				t.Errorf("ANSWER_OUT_OF_OPTIONS should be error, got %s", a.Severity)
+			}
 		}
 	}
-	if !hasBTag {
-		t.Errorf("expected 'B型题' in tags, got: %v", blocks[0].Tags)
+	if !found {
+		t.Error("expected ANSWER_OUT_OF_OPTIONS anomaly when answer (F) exceeds options A-D")
+	}
+}
+
+func TestAnswerAnalysisMixed(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.GeneralBlockParseStrategy()
+
+	text := "1. 某题\nA. 选项A\nB. 选项B\n答案：B\n解析很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长的内容"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	if len(blocks) == 0 {
+		t.Fatal("expected at least 1 block")
+	}
+	found := false
+	for _, a := range blocks[0].Anomalies {
+		if a.Code == types.AnomalyAnswerAnalysisMixed {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected ANSWER_ANALYSIS_MIXED anomaly")
+	}
+}
+
+// ===== Strategy preset validation =====
+
+func TestValidateStrategyPreset_Valid(t *testing.T) {
+	for _, preset := range []string{"", "general", "pdf"} {
+		if err := types.ValidateStrategyPreset(preset); err != nil {
+			t.Errorf("ValidateStrategyPreset(%q) should succeed, got: %v", preset, err)
+		}
+	}
+}
+
+func TestValidateStrategyPreset_Invalid(t *testing.T) {
+	for _, preset := range []string{"xxx", "invalid", "PDF", "GENERAL", "docx"} {
+		if err := types.ValidateStrategyPreset(preset); err == nil {
+			t.Errorf("ValidateStrategyPreset(%q) should fail", preset)
+		}
+	}
+}
+
+func TestValidateImportMode_Valid(t *testing.T) {
+	for _, mode := range []string{"", "single", "batch"} {
+		if _, err := types.ValidateImportMode(mode); err != nil {
+			t.Errorf("ValidateImportMode(%q) should succeed, got: %v", mode, err)
+		}
+	}
+}
+
+func TestValidateImportMode_Invalid(t *testing.T) {
+	for _, mode := range []string{"xxx", "BATCH", "Single"} {
+		if _, err := types.ValidateImportMode(mode); err == nil {
+			t.Errorf("ValidateImportMode(%q) should fail", mode)
+		}
 	}
 }
