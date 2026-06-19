@@ -1477,7 +1477,7 @@ onBeforeUnmount(() => {
 
 const saving = ref(false);
 const allModels = ref<ModelConfig[]>([]);
-const kbOptions = ref<{ label: string; value: string; type?: 'document' | 'faq'; count?: number; shared?: boolean; orgName?: string; ragEnabled?: boolean; wikiEnabled?: boolean; capabilities?: KBCapabilities }[]>([]);
+const kbOptions = ref<{ label: string; value: string; type?: 'document' | 'faq' | 'question_bank'; count?: number; shared?: boolean; orgName?: string; ragEnabled?: boolean; wikiEnabled?: boolean; capabilities?: KBCapabilities }[]>([]);
 
 // 智能体类型预设（仅 smart-reasoning 模式下展示）
 const agentTypePresets = ref<AgentTypePreset[]>([]);
@@ -1576,6 +1576,8 @@ const allTools = computed(() => [
   // 数据分析
   { value: 'data_analysis', label: t('agentEditor.tools.dataAnalysis'), description: t('agentEditor.tools.dataAnalysisDesc'), group: 'data' },
   { value: 'data_schema', label: t('agentEditor.tools.dataSchema'), description: t('agentEditor.tools.dataSchemaDesc'), group: 'data' },
+  // 题库搜索
+  { value: 'question_bank_search', label: t('agentEditor.tools.questionBankSearch'), description: t('agentEditor.tools.questionBankSearchDesc'), group: 'rag' },
 ]);
 
 // 工具分组元信息
@@ -1636,7 +1638,7 @@ const hasFaqKnowledgeBase = computed(() => {
 // 把"作用域内 KB 能力"聚合成一个 ScopeCapabilities 对象，交给
 // `evaluateToolRequirement` 统一判定；UI 上的所有可用性提示都应出自此处。
 const scopeCapabilities = computed<ScopeCapabilities>(() => {
-  const scope: ScopeCapabilities = { vector: false, keyword: false, wiki: false, graph: false, faq: false };
+  const scope: ScopeCapabilities = { vector: false, keyword: false, wiki: false, graph: false, faq: false, question_bank: false };
   for (const kb of kbsInScope.value) {
     const caps = kb.capabilities;
     if (caps) {
@@ -1645,11 +1647,13 @@ const scopeCapabilities = computed<ScopeCapabilities>(() => {
       if (caps.wiki) scope.wiki = true;
       if (caps.graph) scope.graph = true;
       if (caps.faq) scope.faq = true;
+      if (caps.question_bank) scope.question_bank = true;
     } else {
       // 向后兼容：capabilities 尚未加载时，退回到 ragEnabled/wikiEnabled 推断
       if (kb.ragEnabled) { scope.vector = true; scope.keyword = true; }
       if (kb.wikiEnabled) scope.wiki = true;
       if (kb.type === 'faq') scope.faq = true;
+      if (kb.type === 'question_bank') scope.question_bank = true;
     }
   }
   return scope;
@@ -1662,6 +1666,7 @@ const missKindToReason = (kind: RequirementMissKind): string | undefined => {
   switch (kind) {
     case 'needsKb': return t('agentEditor.tools.requiresKb');
     case 'needsWiki': return t('agentEditor.tools.requiresWikiKb');
+    case 'needsQuestionBank': return t('agentEditor.tools.needsQuestionBank');
     case 'needsRag':
     case 'needsGraph':
     case 'needsFaq': return t('agentEditor.tools.requiresRagKb');

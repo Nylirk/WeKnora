@@ -5030,9 +5030,12 @@ export default {
       dataAnalysisDesc: 'Understand data files and perform data analysis',
       dataSchema: 'View Data Schema',
       dataSchemaDesc: 'Get metadata of tabular files',
+      questionBankSearch: 'Question Bank Search',
+      questionBankSearchDesc: 'Search questions in question bank KBs by keyword across stems, answers, analysis, knowledge points, and tags',
       requiresKb: '(requires knowledge base configuration)',
       requiresRagKb: '(requires a KB with vector/keyword indexing enabled)',
       requiresWikiKb: '(requires a Wiki-enabled knowledge base)',
+      needsQuestionBank: '(requires a question bank KB)',
       // Wiki read tools
       wikiSearch: 'Search Wiki',
       wikiSearchDesc: 'Keyword / semantic search over Wiki pages',

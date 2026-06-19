@@ -32,6 +32,8 @@ const (
 	ToolWikiFlagIssue     = "wiki_flag_issue"
 	ToolWikiReadIssue     = "wiki_read_issue"
 	ToolWikiUpdateIssue   = "wiki_update_issue"
+	// Question bank tools
+	ToolQuestionBankSearch = "question_bank_search"
 )
 
 // AvailableTool defines a simple tool metadata used by settings APIs.
@@ -67,6 +69,7 @@ func AvailableToolDefinitions() []AvailableTool {
 		{Name: ToolWikiDeletePage, Label: "删除Wiki", Description: "删除Wiki页面并自动清理关联死链"},
 		{Name: ToolWikiReadIssue, Label: "查看Wiki问题", Description: "查看特定的Wiki页面问题详情"},
 		{Name: ToolWikiUpdateIssue, Label: "更新Wiki问题状态", Description: "更新特定的Wiki页面问题状态"},
+		{Name: ToolQuestionBankSearch, Label: "题库搜索", Description: "搜索题库知识库中的题目，支持按关键词检索题干、答案、解析、知识点和标签"},
 	}
 }
 

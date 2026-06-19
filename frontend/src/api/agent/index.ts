@@ -221,6 +221,7 @@ export interface KBCapabilities {
   wiki: boolean;
   graph: boolean;
   faq: boolean;
+  question_bank: boolean;
 }
 
 // 预设的"自动填充"配置载荷：仅包含被预设覆盖的字段；其他字段不动

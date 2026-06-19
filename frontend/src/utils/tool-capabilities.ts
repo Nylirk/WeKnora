@@ -26,7 +26,7 @@
  * "always available" so new tools don't silently start disabled.
  */
 
-export type KBCapability = 'vector' | 'keyword' | 'wiki' | 'graph' | 'faq';
+export type KBCapability = 'vector' | 'keyword' | 'wiki' | 'graph' | 'faq' | 'question_bank';
 
 export interface ToolRequirement {
   anyOf?: KBCapability[];
@@ -72,6 +72,9 @@ export const TOOL_CAPABILITY_REQUIREMENTS: Record<string, ToolRequirement> = {
   // ---- Data analysis (reads table summary/column chunks produced by RAG ingest) ----
   data_analysis: { anyOf: ['vector', 'keyword'], consumesFiles: true },
   data_schema:   { anyOf: ['vector', 'keyword'], consumesFiles: true },
+
+  // ---- Question bank (searches structured questions in question_bank KBs) ----
+  question_bank_search: { anyOf: ['question_bank'] },
 };
 
 /**
@@ -84,13 +87,14 @@ export interface ScopeCapabilities {
   wiki: boolean;
   graph: boolean;
   faq: boolean;
+  question_bank: boolean;
 }
 
 /**
  * Machine-readable reason a tool is unsatisfiable. Map to a user-facing
  * string via i18n on the caller side (see `AgentEditorModal.vue`).
  */
-export type RequirementMissKind = 'none' | 'needsKb' | 'needsRag' | 'needsWiki' | 'needsGraph' | 'needsFaq';
+export type RequirementMissKind = 'none' | 'needsKb' | 'needsRag' | 'needsWiki' | 'needsGraph' | 'needsFaq' | 'needsQuestionBank';
 
 /**
  * Evaluate whether a tool's requirements are satisfied by the scope.
@@ -131,11 +135,12 @@ export function evaluateToolRequirement(
 
 function primaryMissKind(c: KBCapability): RequirementMissKind {
   switch (c) {
-    case 'wiki':    return 'needsWiki';
-    case 'graph':   return 'needsGraph';
-    case 'faq':     return 'needsFaq';
+    case 'wiki':          return 'needsWiki';
+    case 'graph':         return 'needsGraph';
+    case 'faq':           return 'needsFaq';
+    case 'question_bank': return 'needsQuestionBank';
     case 'vector':
-    case 'keyword': return 'needsRag';
+    case 'keyword':       return 'needsRag';
   }
 }
 

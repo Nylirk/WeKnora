@@ -25,7 +25,8 @@ const (
 	CapKeyword KBCapability = "keyword"
 	CapWiki    KBCapability = "wiki"
 	CapGraph   KBCapability = "graph"
-	CapFAQ     KBCapability = "faq"
+	CapFAQ          KBCapability = "faq"
+	CapQuestionBank KBCapability = "question_bank"
 )
 
 // ToolRequirement declares what a tool needs from the KB scope.
@@ -78,6 +79,9 @@ var ToolCapabilityRequirements = map[string]ToolRequirement{
 	// ---- Data analysis (reads table summary/column chunks from RAG ingest) ----
 	"data_analysis": {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
 	"data_schema":   {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
+
+	// ---- Question bank (searches structured questions in question_bank KBs) ----
+	"question_bank_search": {AnyOf: []KBCapability{CapQuestionBank}},
 }
 
 func hasCap(caps types.KBCapabilities, c KBCapability) bool {
@@ -92,6 +96,8 @@ func hasCap(caps types.KBCapabilities, c KBCapability) bool {
 		return caps.Graph
 	case CapFAQ:
 		return caps.FAQ
+	case CapQuestionBank:
+		return caps.QuestionBank
 	}
 	return false
 }

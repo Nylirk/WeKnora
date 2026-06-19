@@ -5119,9 +5119,12 @@ export default {
       dataAnalysisDesc: '데이터 파일을 이해하고 데이터 분석 수행',
       dataSchema: '데이터 스키마 보기',
       dataSchemaDesc: '테이블 파일의 메타 정보 조회',
+      questionBankSearch: '문제 은행 검색',
+      questionBankSearchDesc: '질문 은행 KB에서 키워드로 문제, 답변, 해설, 지식 포인트 및 태그를 검색합니다',
       requiresKb: '(지식베이스 설정 필요)',
       requiresRagKb: '(벡터/키워드 인덱싱이 활성화된 지식베이스가 필요합니다)',
       requiresWikiKb: '(Wiki 기능이 활성화된 지식베이스가 필요합니다)',
+      needsQuestionBank: '(질문 은행 유형 지식베이스가 필요합니다)',
       // Wiki 읽기
       wikiSearch: 'Wiki 검색',
       wikiSearchDesc: 'Wiki 지식베이스에서 키워드/의미 기반 검색',

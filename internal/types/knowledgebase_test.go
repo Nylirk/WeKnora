@@ -315,3 +315,40 @@ func TestEffectiveStorageProvider_CrossBackendDetection(t *testing.T) {
 			dstSame.EffectiveStorageProvider(tenantDefault), sp)
 	}
 }
+
+func TestKBCapabilities_QuestionBank(t *testing.T) {
+	// question_bank KB → capabilities.question_bank is true
+	qb := &KnowledgeBase{Type: KnowledgeBaseTypeQuestionBank}
+	caps := qb.Capabilities()
+	if !caps.QuestionBank {
+		t.Errorf("question_bank KB: question_bank capability should be true, got %+v", caps)
+	}
+
+	// document KB → capabilities.question_bank is false
+	doc := &KnowledgeBase{Type: KnowledgeBaseTypeDocument}
+	caps = doc.Capabilities()
+	if caps.QuestionBank {
+		t.Errorf("document KB: question_bank capability should be false, got %+v", caps)
+	}
+
+	// FAQ KB → capabilities.question_bank is false
+	faq := &KnowledgeBase{Type: KnowledgeBaseTypeFAQ}
+	caps = faq.Capabilities()
+	if caps.QuestionBank {
+		t.Errorf("FAQ KB: question_bank capability should be false, got %+v", caps)
+	}
+
+	// wiki KB → capabilities.question_bank is false
+	wiki := &KnowledgeBase{Type: KnowledgeBaseTypeWiki}
+	caps = wiki.Capabilities()
+	if caps.QuestionBank {
+		t.Errorf("wiki KB: question_bank capability should be false, got %+v", caps)
+	}
+
+	// nil KB → zero value (no panic, question_bank false)
+	var nilKB *KnowledgeBase
+	caps = nilKB.Capabilities()
+	if caps.QuestionBank {
+		t.Errorf("nil KB: question_bank capability should be false, got %+v", caps)
+	}
+}
