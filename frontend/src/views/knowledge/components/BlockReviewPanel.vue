@@ -7,7 +7,7 @@
           <t-option value="error" label="错误" />
           <t-option value="warning" label="警告" />
         </t-select>
-        <t-button size="small" variant="outline" :loading="sortingBlocks" :disabled="sortingBlocks" @click="handleSort">按题号排序</t-button>
+        <t-button size="small" variant="outline" :disabled="store.loading" @click="handleSort">按题号排序</t-button>
         <t-button size="small" variant="outline" theme="warning" :disabled="!store.hasDeletedBlocks" @click="restoreAllDeleted">恢复删除</t-button>
       </t-space>
       <span class="block-count">{{ store.filteredBlocks.length }} / {{ store.blocks.length }} blocks</span>
@@ -98,13 +98,12 @@ import { useImportWorkbenchStore } from '@/stores/importWorkbench'
 import type { ImportBlock } from '@/api/question_block'
 
 const store = useImportWorkbenchStore()
-const emit = defineEmits<{ changed: [] }>()
+const emit = defineEmits<{ changed: []; sort: [] }>()
 
 const editingText = ref('')
 const showSplitControl = ref(false)
 const splitKeyword = ref('')
 const newTag = ref('')
-const sortingBlocks = ref(false)
 
 const selectedBlockAnomalies = computed(() =>
   Array.isArray(store.selectedBlock?.anomalies) ? store.selectedBlock.anomalies : []
@@ -136,17 +135,7 @@ function restoreSelectedBlock() {
 function onTextChange(value: string) {
   if (store.selectedBlock) { store.updateBlockText(store.selectedBlock.id, value); emit('changed') }
 }
-function handleSort() {
-  if (sortingBlocks.value) return
-  sortingBlocks.value = true
-  try {
-    store.sortBlocksByQuestionNumber()
-    emit('changed')
-  } finally {
-    // Small delay so UI shows the loading spinner briefly
-    setTimeout(() => { sortingBlocks.value = false }, 200)
-  }
-}
+function handleSort() { emit('sort') }
 function doSplit() { showSplitControl.value = !showSplitControl.value; splitKeyword.value = '' }
 function doSplitByKeyword() {
   const kw = splitKeyword.value.trim()

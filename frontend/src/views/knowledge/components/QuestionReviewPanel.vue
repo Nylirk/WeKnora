@@ -1,64 +1,79 @@
 <template>
   <div class="question-review-panel">
-    <div class="stats-bar" v-if="store.questionStats.detected_questions > 0">
-      <t-space size="small">
-        <t-tag variant="light">识别 {{ store.questionStats.detected_questions }} 题</t-tag>
-        <t-tag theme="success" variant="light">有答案 {{ store.questionStats.with_answer }}</t-tag>
-        <t-tag theme="warning" variant="light">缺答案 {{ store.questionStats.without_answer }}</t-tag>
-      </t-space>
-    </div>
+    <div class="question-review-surface">
+      <div class="stats-bar" v-if="store.questionStats.detected_questions > 0">
+        <t-space size="small">
+          <t-tag variant="light">识别 {{ store.questionStats.detected_questions }} 题</t-tag>
+          <t-tag theme="success" variant="light">有答案 {{ store.questionStats.with_answer }}</t-tag>
+          <t-tag theme="warning" variant="light">缺答案 {{ store.questionStats.without_answer }}</t-tag>
+        </t-space>
+      </div>
 
-    <div v-if="store.questionWarnings.length" class="warnings-box">
-      <t-alert theme="warning" :close-btn="false"><div v-for="(w, i) in store.questionWarnings" :key="i">{{ w }}</div></t-alert>
-    </div>
-    <div v-if="store.questionErrors.length" class="errors-box">
-      <t-alert theme="error" :close-btn="false"><div v-for="(e, i) in store.questionErrors" :key="i">#{{ e.line_number }}: {{ e.message }}</div></t-alert>
-    </div>
+      <div v-if="store.questionWarnings.length" class="warnings-box">
+        <t-alert theme="warning" :close-btn="false"><div v-for="(w, i) in store.questionWarnings" :key="i">{{ w }}</div></t-alert>
+      </div>
+      <div v-if="store.questionErrors.length" class="errors-box">
+        <t-alert theme="error" :close-btn="false"><div v-for="(e, i) in store.questionErrors" :key="i">#{{ e.line_number }}: {{ e.message }}</div></t-alert>
+      </div>
 
-    <div v-if="store.questions.length === 0" class="empty-state">
-      <t-empty description="暂无题目" />
-    </div>
+      <div v-if="store.questions.length === 0" class="empty-state">
+        <t-empty description="暂无题目" />
+      </div>
 
-    <div v-else class="question-list">
-      <div v-for="(item, index) in store.questions" :key="index" class="question-item">
-        <div class="question-item-header">
-          <t-tag size="small">{{ questionTypeLabel(item.question_type) }}</t-tag>
-          <t-tag size="small" variant="light">{{ difficultyLabel(item.difficulty) }}</t-tag>
-          <span v-if="item.tags && item.tags.length" class="question-tags">
-            <t-tag v-for="(t, ti) in item.tags" :key="ti" size="small" variant="outline">{{ typeof t === 'string' ? t : '' }}</t-tag>
-          </span>
-          <t-space size="small" style="margin-left: auto">
-            <t-button size="small" variant="text" @click="editItem(index)">编辑</t-button>
-            <t-button size="small" variant="text" theme="danger" @click="removeItem(index)">移除</t-button>
-          </t-space>
+      <div v-else class="question-list">
+        <div v-for="(item, index) in store.questions" :key="index" class="question-item">
+          <div class="question-item-header">
+            <t-tag size="small">{{ questionTypeLabel(item.question_type) }}</t-tag>
+            <t-tag size="small" variant="light">{{ difficultyLabel(item.difficulty) }}</t-tag>
+            <span v-if="item.tags && item.tags.length" class="question-tags">
+              <t-tag v-for="(t, ti) in item.tags" :key="ti" size="small" variant="outline">{{ typeof t === 'string' ? t : '' }}</t-tag>
+            </span>
+            <t-space size="small" style="margin-left: auto">
+              <t-button size="small" variant="text" @click="editItem(index)">编辑</t-button>
+              <t-button size="small" variant="text" theme="danger" @click="removeItem(index)">移除</t-button>
+            </t-space>
+          </div>
+          <div class="question-stem">{{ item.stem_text }}</div>
+          <div v-if="item.answer_text" class="question-answer"><span class="answer-label">答案：</span>{{ item.answer_text }}</div>
+          <div v-if="item.analysis_text" class="question-analysis"><span class="analysis-label">解析：</span>{{ item.analysis_text }}</div>
         </div>
-        <div class="question-stem">{{ item.stem_text }}</div>
-        <div v-if="item.answer_text" class="question-answer"><span class="answer-label">答案：</span>{{ item.answer_text }}</div>
-        <div v-if="item.analysis_text" class="question-analysis"><span class="analysis-label">解析：</span>{{ item.analysis_text }}</div>
+      </div>
+
+      <!-- P3: import section at bottom-right -->
+      <div v-if="store.questions.length > 0" class="import-footer">
+        <div class="import-footer-left">
+          <span class="import-footer-label">确认导入</span>
+          <t-radio-group v-model="importStatus" variant="default-filled" size="small">
+            <t-radio-button value="draft">草稿</t-radio-button>
+            <t-radio-button value="reviewed">已审核</t-radio-button>
+          </t-radio-group>
+        </div>
+        <t-button theme="primary" :disabled="store.loading" @click="emit('import')">
+          导入 {{ store.questions.length }} 题
+        </t-button>
       </div>
     </div>
 
-    <div v-if="store.questions.length > 0" class="import-section">
-      <div class="import-section-title">确认导入</div>
-      <t-radio-group v-model="importStatus" variant="default-filled">
-        <t-radio-button value="draft">草稿</t-radio-button>
-        <t-radio-button value="reviewed">已审核</t-radio-button>
-      </t-radio-group>
-      <t-button theme="primary" :loading="store.isImporting" @click="handleImport" style="margin-left: 12px">
-        导入 {{ store.questions.length }} 题
-      </t-button>
-    </div>
-
-    <t-dialog v-model:visible="editVisible" header="编辑题目" width="600px" :confirm-btn="null" attach="body" :z-index="3000">
+    <!-- P5: compact edit dialog -->
+    <t-dialog
+      v-model:visible="editVisible"
+      header="编辑题目"
+      width="680px"
+      top="6vh"
+      :confirm-btn="null"
+      attach="body"
+      :z-index="3000"
+      dialog-class-name="question-edit-compact-dialog"
+    >
       <t-form v-if="editingItem" label-align="top">
         <t-form-item label="题型">
           <t-select v-model="editingItem.question_type" style="width: 100%">
             <t-option v-for="qt in questionTypes" :key="qt.value" :value="qt.value" :label="qt.label" />
           </t-select>
         </t-form-item>
-        <t-form-item label="题干"><t-textarea v-model="editingItem.stem_text" :autosize="{ minRows: 2, maxRows: 6 }" /></t-form-item>
-        <t-form-item label="答案"><t-textarea v-model="editingItem.answer_text" :autosize="{ minRows: 1, maxRows: 4 }" /></t-form-item>
-        <t-form-item label="解析"><t-textarea v-model="editingItem.analysis_text" :autosize="{ minRows: 1, maxRows: 4 }" /></t-form-item>
+        <t-form-item label="题干"><t-textarea v-model="editingItem.stem_text" :autosize="{ minRows: 2, maxRows: 5 }" /></t-form-item>
+        <t-form-item label="答案"><t-textarea v-model="editingItem.answer_text" :autosize="{ minRows: 1, maxRows: 3 }" /></t-form-item>
+        <t-form-item label="解析"><t-textarea v-model="editingItem.analysis_text" :autosize="{ minRows: 1, maxRows: 3 }" /></t-form-item>
         <t-form-item label="难度">
           <t-select v-model="editingItem.difficulty" style="width: 120px">
             <t-option value="easy" label="简单" /><t-option value="medium" label="中等" /><t-option value="hard" label="困难" />
@@ -85,7 +100,7 @@ const importStatus = ref<'draft' | 'reviewed'>('draft')
 const editVisible = ref(false)
 const editingIndex = ref(-1)
 const editingItem = ref<ImportQuestionItem | null>(null)
-const emit = defineEmits<{ changed: []; imported: [] }>()
+const emit = defineEmits<{ changed: []; imported: []; import: [] }>()
 
 const questionTypes = [
   { value: 'single_choice', label: '单选' }, { value: 'multiple_choice', label: '多选' },
@@ -103,9 +118,8 @@ function editItem(index: number) { const item = store.questions[index]; if (!ite
 function saveEditedItem() { if (editingIndex.value < 0 || !editingItem.value) return; store.questions[editingIndex.value] = { ...editingItem.value }; editVisible.value = false; editingItem.value = null; editingIndex.value = -1; emit('changed') }
 function removeItem(index: number) { store.questions.splice(index, 1); store.questionStats.detected_questions = store.questions.length; emit('changed') }
 
-async function handleImport() {
+async function doImport() {
   if (!store.questions.length) { MessagePlugin.warning('没有可导入的题目'); return }
-  store.isImporting = true
   try {
     const itemsWithStatus = store.questions.map(item => ({ ...item, status: importStatus.value }))
     const result: any = await importQuestions(store.kbId, store.setId, { items: itemsWithStatus })
@@ -122,23 +136,44 @@ async function handleImport() {
       emit('changed')
     }
   } catch (e: any) { MessagePlugin.error(e?.message || '导入失败') }
-  finally { store.isImporting = false }
 }
+
+defineExpose({ doImport })
 </script>
 
 <style scoped>
-.question-review-panel { padding: 12px 0; }
-.stats-bar { margin-bottom: 12px; }
+.question-review-panel { height: 100%; display: flex; flex-direction: column; padding-top: 12px; }
+.question-review-surface {
+  flex: 1; display: flex; flex-direction: column; min-height: 0;
+  background: var(--td-bg-color-container);
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -4px 14px rgba(0,0,0,0.04);
+  padding: 16px 20px 0;
+  overflow: hidden;
+}
+.stats-bar { margin-bottom: 10px; }
 .warnings-box, .errors-box { margin-bottom: 8px; }
-.empty-state { display: flex; justify-content: center; padding: 60px; }
-.question-list { max-height: calc(100vh - 320px); overflow-y: auto; }
-.question-item { border: 1px solid var(--td-component-stroke); border-radius: 6px; padding: 12px; margin-bottom: 8px; }
+.empty-state { flex: 1; display: flex; align-items: center; justify-content: center; }
+.question-list { flex: 1; overflow-y: auto; min-height: 0; padding-bottom: 8px; }
+.question-item { border: 1px solid var(--td-component-stroke); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
 .question-item-header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
 .question-tags { display: flex; gap: 2px; }
 .question-stem { font-size: 14px; font-weight: 500; margin-bottom: 4px; line-height: 1.5; }
 .question-answer { font-size: 13px; color: var(--td-success-color); margin-bottom: 2px; }
 .question-answer .answer-label, .question-analysis .analysis-label { font-weight: 500; }
 .question-analysis { font-size: 13px; color: var(--td-text-color-secondary); }
-.import-section { margin-top: 16px; padding: 12px; background: var(--td-bg-color-secondarycontainer); border-radius: 6px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.import-section-title { font-weight: 500; }
+.import-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 0; border-top: 1px solid var(--td-component-stroke);
+  flex-shrink: 0;
+}
+.import-footer-left { display: flex; align-items: center; gap: 10px; }
+.import-footer-label { font-weight: 500; font-size: 13px; }
+</style>
+
+<style>
+.question-edit-compact-dialog { max-height: 88vh; }
+.question-edit-compact-dialog .t-dialog__body { max-height: calc(88vh - 120px); overflow: auto; padding: 16px 24px; }
+.question-edit-compact-dialog .t-dialog__header { padding: 16px 24px 8px; }
+.question-edit-compact-dialog .t-dialog__footer { padding: 12px 24px 16px; }
 </style>
