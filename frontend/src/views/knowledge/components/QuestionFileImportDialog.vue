@@ -1,7 +1,7 @@
 <template>
   <t-dialog
     v-model:visible="dialogVisible"
-    :header="dialogTitle"
+    header="导入题目"
     width="720px"
     :confirm-btn="null"
     :cancel-btn="null"
@@ -43,9 +43,6 @@
               JSON / JSONL 导入暂不支持工作台模式，请使用原导入流程。
             </t-alert>
           </div>
-          <div class="action-bar">
-            <t-button variant="outline" @click="closeAndReset">取消</t-button>
-          </div>
         </template>
 
         <!-- Word / PDF -->
@@ -83,13 +80,20 @@
             <t-alert theme="error" :close-btn="false">{{ previewError }}</t-alert>
           </div>
 
-          <div class="action-bar">
-            <t-button variant="outline" @click="closeAndReset">取消</t-button>
-            <t-button theme="primary" :loading="parsing" :disabled="!selectedFile || parsing" @click="handleStartParsing">
-              开始解析
-            </t-button>
-          </div>
         </template>
+
+        <div class="action-bar">
+          <t-button variant="outline" @click="closeAndReset">取消</t-button>
+          <t-button
+            v-if="importFormat !== 'json'"
+            theme="primary"
+            :loading="parsing"
+            :disabled="!selectedFile || parsing"
+            @click="handleStartParsing"
+          >
+            开始解析
+          </t-button>
+        </div>
       </div>
     </div>
   </t-dialog>
@@ -110,8 +114,8 @@ const props = withDefaults(defineProps<{
   visible: boolean
   knowledgeBaseId: string
   setId: string
-  importType: 'word' | 'pdf'
-}>(), {})
+  importMode?: 'single' | 'batch'
+}>(), { importMode: 'single' })
 
 const emit = defineEmits<{ 'update:visible': [value: boolean] }>()
 
@@ -124,12 +128,6 @@ const accept = computed(() => {
   if (importFormat.value === 'word') return '.doc,.docx'
   if (importFormat.value === 'pdf') return '.pdf'
   return ''
-})
-
-const dialogTitle = computed(() => {
-  if (importFormat.value === 'json') return 'JSON / JSONL 导入题目'
-  if (importFormat.value === 'word') return 'Word / DOCX 导入题目'
-  return 'PDF 导入题目'
 })
 
 const availablePresets = computed(() => {
@@ -155,10 +153,15 @@ const parseConfig = ref({
 
 watch(() => props.visible, (visible) => {
   if (visible) {
-    // Default format from parent's importType
-    importFormat.value = props.importType === 'pdf' ? 'pdf' : 'word'
-    parseConfig.value.strategy_preset = props.importType === 'pdf' ? 'pdf' : 'general'
+    importFormat.value = 'word'
   }
+})
+
+watch(importFormat, (format) => {
+  selectedFile.value = null
+  previewError.value = ''
+  parseConfig.value.strategy_preset = format === 'pdf' ? 'pdf' : 'general'
+  if (fileInputRef.value) fileInputRef.value.value = ''
 })
 
 function formatFileSize(bytes: number): string {
@@ -201,7 +204,7 @@ async function handleStartParsing() {
       {
         default_difficulty: parseConfig.value.default_difficulty,
         strategy_preset: parseConfig.value.strategy_preset,
-        import_mode: 'batch',
+        import_mode: props.importMode,
       },
       { timeout: 120000 },
     )
@@ -216,6 +219,7 @@ async function handleStartParsing() {
     workbenchStore.setId = props.setId
     workbenchStore.strategyPreset = parseConfig.value.strategy_preset
     workbenchStore.defaultDifficulty = parseConfig.value.default_difficulty
+    workbenchStore.importMode = props.importMode
     workbenchStore.importFormat = importFormat.value
     workbenchStore.setBlocksFromResponse(result.blocks)
 
@@ -225,7 +229,7 @@ async function handleStartParsing() {
       blocks: result.blocks,
       strategyPreset: parseConfig.value.strategy_preset,
       defaultDifficulty: parseConfig.value.default_difficulty,
-      importMode: 'batch',
+      importMode: props.importMode,
       importFormat: importFormat.value,
       currentStep: 'block-review',
       questions: [],

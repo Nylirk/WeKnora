@@ -34,7 +34,7 @@
 
     <div class="workbench-body">
       <BlockReviewPanel v-if="store.currentStep === 'block-review'" @changed="saveDebounced" />
-      <QuestionReviewPanel v-else ref="questionReviewRef" />
+      <QuestionReviewPanel v-else ref="questionReviewRef" @changed="saveDebounced" />
     </div>
   </div>
 
@@ -158,10 +158,12 @@ async function abandonSaveDraft() {
 }
 
 async function abandonDiscard() {
-  await deleteDraft(store.kbId, store.setId)
+  const targetKbId = store.kbId
+  const targetSetId = store.setId
+  await deleteDraft(targetKbId, targetSetId)
   store.reset()
   abandonVisible.value = false
-  router.push({ name: 'knowledgeBaseDetail', params: { kbId: store.kbId } })
+  router.push({ name: 'knowledgeBaseDetail', params: { kbId: targetKbId } })
 }
 </script>
 

@@ -96,7 +96,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
 import { importQuestions, type ImportQuestionItem, type QuestionType } from '@/api/question'
 import { parseImportedBlocks } from '@/api/question_block'
-import { deleteDraft, saveDraft } from '@/utils/importDraftDB'
+import { deleteDraft } from '@/utils/importDraftDB'
 
 const router = useRouter()
 const store = useImportWorkbenchStore()
@@ -104,6 +104,7 @@ const importStatus = ref<'draft' | 'reviewed'>('draft')
 const editVisible = ref(false)
 const editingIndex = ref(-1)
 const editingItem = ref<ImportQuestionItem | null>(null)
+const emit = defineEmits<{ changed: [] }>()
 
 const questionTypes = [
   { value: 'single_choice', label: '单选' },
@@ -142,11 +143,13 @@ function saveEditedItem() {
   editVisible.value = false
   editingItem.value = null
   editingIndex.value = -1
+  emit('changed')
 }
 
 function removeItem(index: number) {
   store.questions.splice(index, 1)
   store.questionStats.detected_questions = store.questions.length
+  emit('changed')
 }
 
 async function handleImport() {
@@ -168,25 +171,15 @@ async function handleImport() {
     if (errors.length === 0) {
       // Fix 7: all success — clear draft and navigate back
       MessagePlugin.success(`成功导入 ${created} 题`)
-      await deleteDraft(store.kbId, store.setId)
+      const targetKbId = store.kbId
+      const targetSetId = store.setId
+      await deleteDraft(targetKbId, targetSetId)
       store.reset()
-      router.push({ name: 'knowledgeBaseDetail', params: { kbId: store.kbId } })
+      router.push({ name: 'knowledgeBaseDetail', params: { kbId: targetKbId } })
     } else {
       // Fix 8: partial failure — keep draft and questions
       MessagePlugin.warning(`导入 ${created}/${store.questions.length} 题，${errors.length} 条错误。请修复后重试。`)
-      // Save current state so user can edit and retry
-      await saveDraft({
-        kbId: store.kbId,
-        setId: store.setId,
-        blocks: store.blocks,
-        strategyPreset: store.strategyPreset,
-        defaultDifficulty: store.defaultDifficulty,
-        importMode: store.importMode,
-        importFormat: store.importFormat,
-        currentStep: store.currentStep,
-        questions: store.questions,
-        timestamp: Date.now(),
-      })
+      emit('changed')
     }
   } catch (e: any) {
     MessagePlugin.error(e?.message || '导入失败')
@@ -212,6 +205,7 @@ defineExpose({
       store.questionErrors = result.errors ?? []
       store.questionWarnings = result.warnings ?? []
       store.questionStats = result.stats ?? { detected_questions: store.questions.length, with_answer: 0, without_answer: 0 }
+      emit('changed')
     } catch (e: any) {
       MessagePlugin.error(e?.message || '解析失败')
     } finally {

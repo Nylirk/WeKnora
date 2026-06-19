@@ -16,17 +16,13 @@
           <t-button>{{ $t('questionBank.import') }}</t-button>
           <template #content>
             <div class="import-type-menu">
-              <button type="button" class="import-type-item" @click="openJsonImport">
-                <span class="import-type-title">{{ $t('questionBank.jsonImport') }}</span>
-                <span class="import-type-description">{{ $t('questionBank.jsonImportDescription') }}</span>
+              <button type="button" class="import-type-item" @click="openSingleImport">
+                <span class="import-type-title">单个导入</span>
+                <span class="import-type-description">导入一个文件并进入题目审核工作台</span>
               </button>
-              <button type="button" class="import-type-item" @click="openFileImport('word')">
-                <span class="import-type-title">{{ $t('questionBank.wordImport') }}</span>
-                <span class="import-type-description">{{ $t('questionBank.wordImportDescription') }}</span>
-              </button>
-              <button type="button" class="import-type-item" @click="openFileImport('pdf')">
-                <span class="import-type-title">{{ $t('questionBank.pdfImport') }}</span>
-                <span class="import-type-description">{{ $t('questionBank.pdfImportDescription') }}</span>
+              <button type="button" class="import-type-item" disabled>
+                <span class="import-type-title">批量导入</span>
+                <span class="import-type-description">即将支持</span>
               </button>
             </div>
           </template>
@@ -110,21 +106,12 @@
       :knowledge-base-id="knowledgeBaseId"
       @saved="refreshAfterMutation"
     />
-    <QuestionImportDialog
-      v-model:visible="importVisible"
-      :set-id="setId"
-      :knowledge-base-id="knowledgeBaseId"
-      :current-questions="questions"
-      @imported="refreshAfterMutation"
-    />
     <QuestionFileImportDialog
-      :key="`${fileImportType}-${fileImportSession}`"
+      :key="fileImportSession"
       v-model:visible="fileImportVisible"
       :set-id="setId"
       :knowledge-base-id="knowledgeBaseId"
-      :import-type="fileImportType"
-      :current-questions="questions"
-      @imported="refreshAfterMutation"
+      import-mode="single"
     />
     <QuestionGenerateDialog
       v-model:visible="generateVisible"
@@ -178,9 +165,7 @@ const questions = ref<Question[]>([])
 const loading = ref(false)
 const filter = ref<QuestionListFilter>({})
 const editVisible = ref(false)
-const importVisible = ref(false)
 const fileImportVisible = ref(false)
-const fileImportType = ref<'word' | 'pdf'>('word')
 const fileImportSession = ref(0)
 const headerImportMenuVisible = ref(false)
 const generateVisible = ref(false)
@@ -290,26 +275,20 @@ async function closeAllImportMenus() {
   await nextTick()
 }
 
-async function openJsonImport() {
-  await closeAllImportMenus()
-  importVisible.value = true
-}
-
-async function openFileImport(type: 'word' | 'pdf') {
+async function openSingleImport() {
   await closeAllImportMenus()
 
   // Destroy previous dialog instance so a fresh session starts
   fileImportVisible.value = false
   await nextTick()
 
-  fileImportType.value = type
   fileImportSession.value += 1
   fileImportVisible.value = true
 }
 
 // Guard: if any import dialog opens, close the popup menu
-watch([fileImportVisible, importVisible], ([fileVisible, jsonVisible]) => {
-  if (fileVisible || jsonVisible) {
+watch(fileImportVisible, (fileVisible) => {
+  if (fileVisible) {
     headerImportMenuVisible.value = false
   }
 })
@@ -393,7 +372,6 @@ onMounted(async () => {
 })
 
 import QuestionEditDialog from './QuestionEditDialog.vue'
-import QuestionImportDialog from './QuestionImportDialog.vue'
 import QuestionFileImportDialog from './QuestionFileImportDialog.vue'
 import QuestionGenerateDialog from './QuestionGenerateDialog.vue'
 </script>

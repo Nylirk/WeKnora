@@ -44,7 +44,7 @@
       <div class="block-detail" v-if="store.selectedBlock">
         <div class="detail-toolbar">
           <t-space size="small">
-            <t-button size="small" variant="outline" @click="store.restoreOriginalText(store.selectedBlock!.id); emit('changed')">
+            <t-button size="small" variant="outline" @click="restoreSelectedBlock">
               恢复原始文本
             </t-button>
             <t-button size="small" variant="outline" @click="doSplit">拆分</t-button>
@@ -91,11 +91,18 @@ const editingText = ref('')
 const showSplitControl = ref(false)
 const splitKeyword = ref('')
 
-watch(() => store.selectedBlock, (block) => {
-  editingText.value = block?.current_text ?? ''
+watch(() => [store.selectedBlock?.id, store.selectedBlock?.current_text] as const, ([, currentText]) => {
+  editingText.value = currentText ?? ''
   showSplitControl.value = false
   splitKeyword.value = ''
 }, { immediate: true })
+
+function restoreSelectedBlock() {
+  if (!store.selectedBlock) return
+  store.restoreOriginalText(store.selectedBlock.id)
+  editingText.value = store.selectedBlock.current_text
+  emit('changed')
+}
 
 function onTextChange(value: string) {
   if (store.selectedBlock) {
