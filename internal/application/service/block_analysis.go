@@ -40,9 +40,10 @@ var bareQuestionPattern = regexp.MustCompile(
 
 // embeddedStrongMarkerPattern matches an embedded question number with
 // explicit marker (number + .  /  ) / 、) mid-line.
-// Left boundary: line-start, 1+ whitespace, fullwidth space, or tab.
+// Left boundary: line-start or whitespace.
+// Right boundary: whitespace, end-of-string, or CJK (e.g. "249.津液...").
 var embeddedStrongMarkerPattern = regexp.MustCompile(
-	`(?:^|[\t\s])(\d+)[\.\)、](?:\s+|$)`,
+	`(?:^|\s)(\d+)[\.\)、](?:\s+|$|[\p{Han}\p{Hiragana}\p{Katakana}])`,
 )
 
 // embeddedBareQuestionPattern matches an embedded bare question number
@@ -655,6 +656,26 @@ func (s *BlockAnalysisService) rawBlocksToImportBlocks(
 		}
 		if !hasContent {
 			continue
+		}
+
+		// If at least one heading was extracted AND all remaining lines
+		// are option lines, this is option debris with a heading annotation.
+		// Skip creating ImportBlock — accumulated tags carry forward.
+		if hasAnyHeading {
+			allRemainingAreOptions := true
+			for _, line := range cleanedLines {
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" {
+					continue
+				}
+				if !blockOptionLabelPattern.MatchString(trimmed) {
+					allRemainingAreOptions = false
+					break
+				}
+			}
+			if allRemainingAreOptions {
+				continue
+			}
 		}
 
 		blk := s.linesToImportBlock(rawBlock, len(result), strategy)

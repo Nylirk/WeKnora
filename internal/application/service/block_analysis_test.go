@@ -776,3 +776,115 @@ func TestValidateImportMode_Invalid(t *testing.T) {
 		}
 	}
 }
+// ===== Cross-block cleanup: option debris + standalone heading =====
+
+func TestOptionDebrisAndHeading_CrossBlockCleanup(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.PDFBlockParseStrategy()
+
+	text := "D.肺肾 第七单元 六腑\nE.肺脾\n【A1型题】\n243.主睡的是(E) 249 津液输布的主要通道是(D)"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	for _, b := range blocks {
+		if strings.Contains(b.CurrentText, "D.肺肾") || strings.Contains(b.CurrentText, "E.肺脾") {
+			t.Errorf("option debris should be removed, got: %s", b.CurrentText)
+		}
+	}
+
+	found243 := false
+	found249 := false
+	hasA1Tag := false
+	for _, b := range blocks {
+		if b.QuestionNumber != nil {
+			if *b.QuestionNumber == 243 {
+				found243 = true
+			}
+			if *b.QuestionNumber == 249 {
+				found249 = true
+			}
+		}
+		for _, tag := range b.Tags {
+			if strings.Contains(tag, "A1型题") {
+				hasA1Tag = true
+			}
+		}
+	}
+	if !found243 {
+		t.Error("expected question 243")
+	}
+	if !found249 {
+		t.Error("expected question 249")
+	}
+	if !hasA1Tag {
+		t.Error("expected A1型题 tag to be carried to real question blocks")
+	}
+}
+
+func TestEmbeddedStrongMarker_NoTrailingSpace_CJK(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.PDFBlockParseStrategy()
+
+	text := "243.主睡的是(E) 249.津液输布的主要通道是(D)"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	if len(blocks) < 2 {
+		t.Fatalf("expected at least 2 blocks from '249.津液...' (no space after marker), got %d", len(blocks))
+	}
+	found249 := false
+	for _, b := range blocks {
+		if b.QuestionNumber != nil && *b.QuestionNumber == 249 {
+			found249 = true
+		}
+	}
+	if !found249 {
+		t.Error("expected question 249 from '249.津液...' without trailing space")
+	}
+}
+
+func TestEmbeddedStrongMarker_NoTrailingSpace_Paren(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.PDFBlockParseStrategy()
+
+	text := "1.第一题 2）第二题内容"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	if len(blocks) < 2 {
+		t.Fatalf("expected at least 2 blocks from '2）第二题...' (no space after )), got %d", len(blocks))
+	}
+}
+
+func TestEmbeddedStrongMarker_NoTrailingSpace_Comma(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.PDFBlockParseStrategy()
+
+	text := "1.第一题 2、第二题内容"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	if len(blocks) < 2 {
+		t.Fatalf("expected at least 2 blocks from '2、第二题...' (no space after 、), got %d", len(blocks))
+	}
+}
+
+func TestEmbeddedStrongMarker_FalsePositive_Decimal(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.PDFBlockParseStrategy()
+
+	text := "1. 操作耗时约1.5小时\n答案：正确"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 block (1.5小时 should NOT split), got %d", len(blocks))
+	}
+}
+
+func TestEmbeddedStrongMarker_FalsePositive_Year(t *testing.T) {
+	svc := NewBlockAnalysisService()
+	strategy := types.PDFBlockParseStrategy()
+
+	text := "1. 该政策于2024年实施\n答案：正确"
+	blocks, _ := svc.AnalyzeBlocks(text, strategy)
+
+	if len(blocks) != 1 {
+		t.Fatalf("expected 1 block (2024年 should NOT be a question start), got %d", len(blocks))
+	}
+}
