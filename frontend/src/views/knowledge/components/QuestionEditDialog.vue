@@ -1,5 +1,5 @@
 <template>
-  <t-dialog v-model:visible="dialogVisible" :header="isEdit ? $t('questionBank.editQuestion', '编辑题目') : $t('questionBank.addQuestion', '添加题目')" :width="700" @confirm="save" @close="dialogVisible = false">
+  <t-dialog v-model:visible="dialogVisible" :header="isEdit ? $t('questionBank.editQuestion', '编辑题目') : $t('questionBank.addQuestion', '添加题目')" width="680px" top="6vh" dialog-class-name="question-edit-compact-dialog" @confirm="save" @close="dialogVisible = false">
     <t-form label-align="top">
       <t-form-item :label="$t('questionBank.type', '题目类型')">
         <t-select v-model="form.question_type" :disabled="isEdit">

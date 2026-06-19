@@ -16,17 +16,13 @@
           <t-button>{{ $t('questionBank.import') }}</t-button>
           <template #content>
             <div class="import-type-menu">
-              <button type="button" class="import-type-item" @click="openJsonImport">
-                <span class="import-type-title">{{ $t('questionBank.jsonImport') }}</span>
-                <span class="import-type-description">{{ $t('questionBank.jsonImportDescription') }}</span>
+              <button type="button" class="import-type-item" @click="openSingleImport">
+                <span class="import-type-title">单个导入</span>
+                <span class="import-type-description">导入一个文件并进入题目审核工作台</span>
               </button>
-              <button type="button" class="import-type-item" @click="openFileImport('word')">
-                <span class="import-type-title">{{ $t('questionBank.wordImport') }}</span>
-                <span class="import-type-description">{{ $t('questionBank.wordImportDescription') }}</span>
-              </button>
-              <button type="button" class="import-type-item" @click="openFileImport('pdf')">
-                <span class="import-type-title">{{ $t('questionBank.pdfImport') }}</span>
-                <span class="import-type-description">{{ $t('questionBank.pdfImportDescription') }}</span>
+              <button type="button" class="import-type-item" disabled>
+                <span class="import-type-title">批量导入</span>
+                <span class="import-type-description">即将支持</span>
               </button>
             </div>
           </template>
@@ -110,21 +106,20 @@
       :knowledge-base-id="knowledgeBaseId"
       @saved="refreshAfterMutation"
     />
-    <QuestionImportDialog
-      v-model:visible="importVisible"
-      :set-id="setId"
-      :knowledge-base-id="knowledgeBaseId"
-      :current-questions="questions"
-      @imported="refreshAfterMutation"
-    />
     <QuestionFileImportDialog
-      :key="`${fileImportType}-${fileImportSession}`"
+      :key="fileImportSession"
       v-model:visible="fileImportVisible"
       :set-id="setId"
       :knowledge-base-id="knowledgeBaseId"
-      :import-type="fileImportType"
-      :current-questions="questions"
-      @imported="refreshAfterMutation"
+      import-mode="single"
+      @parsed="handleFileParsed"
+    />
+    <QuestionImportWorkbench
+      v-model:visible="workbenchVisible"
+      :kb-id="knowledgeBaseId"
+      :set-id="setId"
+      @imported="handleWorkbenchImported"
+      @abandoned="handleWorkbenchAbandoned"
     />
     <QuestionGenerateDialog
       v-model:visible="generateVisible"
@@ -147,6 +142,33 @@
         </t-form-item>
       </t-form>
     </t-dialog>
+    <t-dialog
+      v-model:visible="restoreDraftVisible"
+      header="发现未完成的导入草稿"
+      attach="body"
+      :z-index="3200"
+      :close-btn="false"
+      :close-on-overlay-click="false"
+      :close-on-esc-keydown="false"
+      :confirm-btn="{ content: '恢复草稿', theme: 'primary' }"
+      :cancel-btn="{ content: '重新导入' }"
+      @confirm="restoreImportDraft"
+      @cancel="startFreshImport"
+    >
+      <p class="restore-draft-copy">
+        该题集存在 7 天内保存的导入草稿（{{ pendingDraftTime }}），是否继续处理？
+      </p>
+    </t-dialog>
+
+    <!-- P2: Global loading overlay (z-index 6000, above all import dialogs) -->
+    <Teleport to="body">
+      <div v-if="importUI.visible" class="import-loading-overlay" :class="{ leaving: importUI.leaving }">
+        <div class="import-loading-content">
+          <t-loading size="medium" />
+          <span class="import-loading-text">{{ importUI.loadingText || '处理中…' }}</span>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -158,10 +180,18 @@ import {
   exportToEvaluationDataset, updateQuestionStatus,
   type Question, type QuestionListFilter, type QuestionType,
 } from '@/api/question'
+import type { BlockPreviewSummary, ImportBlock } from '@/api/question_block'
+import { useImportWorkbenchStore } from '@/stores/importWorkbench'
+import { useImportUIStore } from '@/stores/importUIStore'
+import {
+  cleanExpiredDrafts, deleteDraft, loadDraft, saveDraft, type ImportDraft,
+} from '@/utils/importDraftDB'
 import { resolveQuestionRows, resolveQuestionTotal } from '../questionData'
 
 const props = defineProps<{ setId: string; knowledgeBaseId: string; setName?: string }>()
 const emit = defineEmits<{ generated: []; changed: [total: number] }>()
+const workbenchStore = useImportWorkbenchStore()
+const importUI = useImportUIStore()
 
 const questionTypes: QuestionType[] = ['single_choice', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer', 'essay', 'composite']
 const questionColumns = computed(() => [
@@ -178,10 +208,14 @@ const questions = ref<Question[]>([])
 const loading = ref(false)
 const filter = ref<QuestionListFilter>({})
 const editVisible = ref(false)
-const importVisible = ref(false)
 const fileImportVisible = ref(false)
-const fileImportType = ref<'word' | 'pdf'>('word')
 const fileImportSession = ref(0)
+const workbenchVisible = ref(false)
+const restoreDraftVisible = ref(false)
+const pendingDraft = ref<ImportDraft | null>(null)
+const pendingDraftTime = computed(() => pendingDraft.value
+  ? new Date(pendingDraft.value.timestamp).toLocaleString()
+  : '')
 const headerImportMenuVisible = ref(false)
 const generateVisible = ref(false)
 const exportVisible = ref(false)
@@ -290,26 +324,141 @@ async function closeAllImportMenus() {
   await nextTick()
 }
 
-async function openJsonImport() {
-  await closeAllImportMenus()
-  importVisible.value = true
+function closeImportModals() {
+  fileImportVisible.value = false
+  restoreDraftVisible.value = false
 }
 
-async function openFileImport(type: 'word' | 'pdf') {
+async function openSingleImport() {
   await closeAllImportMenus()
-
-  // Destroy previous dialog instance so a fresh session starts
-  fileImportVisible.value = false
+  closeImportModals()
   await nextTick()
 
-  fileImportType.value = type
+  try {
+    await cleanExpiredDrafts()
+    const draft = await loadDraft(props.knowledgeBaseId, props.setId)
+    if (draft) {
+      pendingDraft.value = draft
+      restoreDraftVisible.value = true
+      return
+    }
+  } catch (error: any) {
+    MessagePlugin.warning(error?.message || '读取导入草稿失败，将开始新的导入。')
+  }
+
+  await openFileImportDialog()
+}
+
+async function openFileImportDialog() {
+  closeImportModals()
+  await nextTick()
+
+  pendingDraft.value = null
   fileImportSession.value += 1
   fileImportVisible.value = true
 }
 
+function applyDraftToWorkbench(draft: ImportDraft) {
+  workbenchStore.reset()
+  workbenchStore.kbId = props.knowledgeBaseId
+  workbenchStore.setId = props.setId
+  workbenchStore.loadFromDraft(draft)
+}
+
+async function restoreImportDraft() {
+  await importUI.withImportLoading('正在恢复草稿…', async () => {
+    const draft = pendingDraft.value
+    const hasBlocks = (Array.isArray(draft.blocks) && draft.blocks.length > 0) || (Array.isArray(draft.blockOrder) && draft.blockOrder.length > 0)
+    if (!draft || !hasBlocks) {
+      MessagePlugin.warning('草稿中没有可恢复的 blocks，请重新导入。')
+      await startFreshImport()
+      return
+    }
+    fileImportVisible.value = false
+    restoreDraftVisible.value = false
+    headerImportMenuVisible.value = false
+    applyDraftToWorkbench(draft)
+    pendingDraft.value = null
+    await nextTick()
+    workbenchVisible.value = true
+  })
+}
+
+async function startFreshImport() {
+  await importUI.withImportLoading('正在重新导入…', async () => {
+    closeImportModals()
+    pendingDraft.value = null
+    await deleteDraft(props.knowledgeBaseId, props.setId)
+    restoreDraftVisible.value = false
+    await nextTick()
+    await openFileImportDialog()
+  })
+}
+
+async function handleFileParsed(payload: {
+  blocks: ImportBlock[]
+  summary: BlockPreviewSummary
+  strategyPreset: string
+  importFormat: 'json' | 'word' | 'pdf'
+  importMode: 'single' | 'batch'
+}) {
+  try {
+    fileImportVisible.value = false
+    restoreDraftVisible.value = false
+    headerImportMenuVisible.value = false
+    pendingDraft.value = null
+    workbenchStore.reset()
+    workbenchStore.kbId = props.knowledgeBaseId
+    workbenchStore.setId = props.setId
+    workbenchStore.strategyPreset = payload.strategyPreset
+    workbenchStore.defaultDifficulty = 'medium'
+    workbenchStore.importMode = payload.importMode
+    workbenchStore.importFormat = payload.importFormat
+    workbenchStore.setBlocksFromResponse(payload.blocks)
+
+    try {
+      const blockOrder = payload.blocks.map(b => b.id)
+      const blockMap: Record<string, ImportBlock> = {}
+      for (const b of payload.blocks) { blockMap[b.id] = b }
+      await saveDraft({
+        kbId: props.knowledgeBaseId,
+        setId: props.setId,
+        blockOrder,
+        blockMap,
+        deletedBlockStack: [],
+        deletedBlockMap: {},
+        strategyPreset: payload.strategyPreset,
+        defaultDifficulty: workbenchStore.defaultDifficulty,
+        importMode: payload.importMode,
+        importFormat: payload.importFormat,
+        currentStep: 'block-review',
+        questions: [],
+        timestamp: Date.now(),
+      })
+    } catch (error: any) {
+      MessagePlugin.warning(error?.message || '草稿保存失败，本次仍可继续处理。')
+    }
+
+    await nextTick()
+    workbenchVisible.value = true
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || '打开导入工作台失败')
+    console.error('[question-import] failed to open workbench', e)
+  }
+}
+
+async function handleWorkbenchImported() {
+  workbenchVisible.value = false
+  await refreshAfterMutation()
+}
+
+function handleWorkbenchAbandoned() {
+  workbenchVisible.value = false
+}
+
 // Guard: if any import dialog opens, close the popup menu
-watch([fileImportVisible, importVisible], ([fileVisible, jsonVisible]) => {
-  if (fileVisible || jsonVisible) {
+watch(fileImportVisible, (fileVisible) => {
+  if (fileVisible) {
     headerImportMenuVisible.value = false
   }
 })
@@ -393,9 +542,9 @@ onMounted(async () => {
 })
 
 import QuestionEditDialog from './QuestionEditDialog.vue'
-import QuestionImportDialog from './QuestionImportDialog.vue'
 import QuestionFileImportDialog from './QuestionFileImportDialog.vue'
 import QuestionGenerateDialog from './QuestionGenerateDialog.vue'
+import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 </script>
 
 <style scoped>
@@ -409,6 +558,7 @@ import QuestionGenerateDialog from './QuestionGenerateDialog.vue'
 .draft-review-tag { cursor: pointer; }
 .draft-review-tag:hover { color: var(--td-brand-color); }
 .question-empty { padding: 48px 16px; }
+.restore-draft-copy { margin: 0; color: var(--td-text-color-secondary); line-height: 1.7; }
 .import-type-menu { width: 320px; padding: 6px; }
 .import-type-item { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; border: 0; border-radius: 6px; color: var(--td-text-color-primary); background: transparent; text-align: left; cursor: pointer; }
 .import-type-item:not(:disabled):hover { background: var(--td-bg-color-container-hover); }
@@ -418,4 +568,17 @@ import QuestionGenerateDialog from './QuestionGenerateDialog.vue'
 .import-type-help { color: var(--td-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .import-type-item:disabled .import-type-description,
 .import-type-item:disabled .import-type-help { color: var(--td-text-color-disabled); }
+</style>
+
+<style>
+.import-loading-overlay {
+  position: fixed; inset: 0; z-index: 6000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.72); backdrop-filter: blur(2px);
+  opacity: 1; pointer-events: auto;
+  transition: opacity 0.5s ease;
+}
+.import-loading-overlay.leaving { opacity: 0; pointer-events: none; }
+.import-loading-content { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.import-loading-text { font-size: 14px; color: var(--td-text-color-secondary); }
 </style>
