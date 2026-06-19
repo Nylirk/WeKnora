@@ -188,6 +188,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewTaskDeadLetterRepository))
 	must(container.Provide(repository.NewEvaluationRepository))
 	must(container.Provide(repository.NewQuestionRepository))
+	must(container.Provide(repository.NewQuestionVectorIndexRepository))
 
 	// MCP manager for managing MCP client connections
 	logger.Debugf(ctx, "[Container] Registering MCP manager...")
@@ -214,6 +215,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewEvaluationService))
 	must(container.Provide(service.NewQuestionExtractionService))
 	must(container.Provide(service.NewBlockAnalysisService))
+	must(container.Provide(service.NewQuestionIndexService))
 	must(container.Provide(service.NewQuestionService))
 	must(container.Provide(service.NewUserService))
 	must(container.Provide(service.NewSystemSettingService))

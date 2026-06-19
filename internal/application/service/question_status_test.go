@@ -19,6 +19,9 @@ type questionStatusRepository struct {
 	fullSetUpdates   int
 	sourceUpdateErr  error
 	countUpdateErr   error
+	deletedQuestion  string
+	deletedSetID     string
+	allQuestions     []*types.Question
 }
 
 func (r *questionStatusRepository) GetQuestionSet(context.Context, uint64, string) (*types.QuestionSet, error) {
@@ -41,6 +44,11 @@ func (r *questionStatusRepository) GetQuestion(context.Context, uint64, string, 
 
 func (r *questionStatusRepository) UpdateQuestion(_ context.Context, question *types.Question) error {
 	r.question = question
+	return nil
+}
+
+func (r *questionStatusRepository) DeleteQuestion(_ context.Context, _ uint64, _ string, questionID string) error {
+	r.deletedQuestion = questionID
 	return nil
 }
 
@@ -70,8 +78,37 @@ func (r *questionStatusRepository) UpdateQuestionCount(context.Context, uint64, 
 	return r.countUpdateErr
 }
 
+func (r *questionStatusRepository) DeleteQuestionSet(_ context.Context, _ uint64, id string) error {
+	r.deletedSetID = id
+	return nil
+}
+
+func (r *questionStatusRepository) ListQuestions(_ context.Context, _ uint64, _ string, _ *types.QuestionListFilter, page *types.Pagination) (*types.PageResult, error) {
+	if page.Page > 1 {
+		return types.NewPageResult(0, page, []*types.Question{}), nil
+	}
+	return types.NewPageResult(int64(len(r.allQuestions)), page, r.allQuestions), nil
+}
+
 type questionStatusKBService struct {
 	interfaces.KnowledgeBaseService
+}
+
+type questionStatusIndexService struct {
+	interfaces.QuestionIndexService
+	indexed    [][]*types.Question
+	deleted    [][]string
+	indexError error
+}
+
+func (s *questionStatusIndexService) IndexQuestions(_ context.Context, questions []*types.Question) error {
+	s.indexed = append(s.indexed, questions)
+	return s.indexError
+}
+
+func (s *questionStatusIndexService) DeleteQuestionIndexes(_ context.Context, questionIDs []string) error {
+	s.deleted = append(s.deleted, questionIDs)
+	return nil
 }
 
 func (*questionStatusKBService) GetKnowledgeBaseByID(context.Context, string) (*types.KnowledgeBase, error) {
@@ -83,6 +120,15 @@ func newQuestionStatusService(repository *questionStatusRepository) *QuestionSer
 		repository:       repository,
 		knowledgeBaseSvc: &questionStatusKBService{},
 	}
+}
+
+func newQuestionStatusServiceWithIndex(
+	repository *questionStatusRepository,
+	indexService interfaces.QuestionIndexService,
+) *QuestionService {
+	service := newQuestionStatusService(repository)
+	service.questionIndexService = indexService
+	return service
 }
 
 func questionStatusContext() context.Context {
@@ -388,5 +434,168 @@ func TestImportQuestionsStatusValidation(t *testing.T) {
 				t.Fatalf("ImportQuestions() status = %q, want %q", repository.createdQuestions[0].Status, tt.want)
 			}
 		})
+	}
+}
+
+func TestQuestionMutationsScheduleDerivedIndexWithoutChangingSuccess(t *testing.T) {
+	repository := &questionStatusRepository{
+		set:      &types.QuestionSet{ID: "set-1", KnowledgeBaseID: "kb-1"},
+		question: &types.Question{ID: "q-1", TenantID: 1, QuestionSetID: "set-1", KnowledgeBaseID: "kb-1"},
+	}
+	indexService := &questionStatusIndexService{indexError: errors.New("index unavailable")}
+	service := newQuestionStatusServiceWithIndex(repository, indexService)
+
+	result, err := service.ImportQuestions(questionStatusContext(), "kb-1", "set-1", &types.ImportQuestionsRequest{
+		Items: []types.ImportQuestionItem{{
+			QuestionType: string(types.QuestionTypeShortAnswer), StemText: "题干", AnswerText: "答案",
+		}},
+	})
+	if err != nil || result.Created != 1 {
+		t.Fatalf("ImportQuestions() result=%+v error=%v", result, err)
+	}
+	if len(indexService.indexed) != 1 || len(indexService.indexed[0]) != 1 {
+		t.Fatalf("index calls = %+v", indexService.indexed)
+	}
+
+	if err := service.DeleteQuestion(questionStatusContext(), "kb-1", "set-1", "q-1"); err != nil {
+		t.Fatalf("DeleteQuestion() error = %v", err)
+	}
+	if len(indexService.deleted) != 1 || len(indexService.deleted[0]) != 1 || indexService.deleted[0][0] != "q-1" {
+		t.Fatalf("delete index calls = %+v", indexService.deleted)
+	}
+}
+
+func TestCreateAndRelevantUpdateScheduleQuestionIndex(t *testing.T) {
+	repository := &questionStatusRepository{set: &types.QuestionSet{ID: "set-1", KnowledgeBaseID: "kb-1"}}
+	indexService := &questionStatusIndexService{indexError: errors.New("index unavailable")}
+	service := newQuestionStatusServiceWithIndex(repository, indexService)
+
+	created, err := service.CreateQuestion(questionStatusContext(), "kb-1", "set-1", &types.CreateQuestionRequest{
+		QuestionType: string(types.QuestionTypeShortAnswer), StemText: "原题干", AnswerText: "答案",
+	})
+	if err != nil || created == nil {
+		t.Fatalf("CreateQuestion() question=%+v error=%v", created, err)
+	}
+	if len(indexService.indexed) != 1 {
+		t.Fatalf("create index calls = %d", len(indexService.indexed))
+	}
+
+	repository.question = &types.Question{
+		ID: "q-1", TenantID: 1, QuestionSetID: "set-1", KnowledgeBaseID: "kb-1",
+		QuestionType: string(types.QuestionTypeShortAnswer), StemText: "原题干", Status: types.QuestionStatusDraft,
+	}
+	answer := "新答案"
+	if _, err := service.UpdateQuestion(questionStatusContext(), "kb-1", "set-1", "q-1", &types.UpdateQuestionRequest{
+		AnswerText: &answer,
+	}); err != nil {
+		t.Fatalf("answer-only UpdateQuestion() error = %v", err)
+	}
+	// The answer made this question reviewed, so the retrieval enabled state changed.
+	if len(indexService.indexed) != 2 {
+		t.Fatalf("status-changing answer update index calls = %d", len(indexService.indexed))
+	}
+	secondAnswer := "另一个答案"
+	if _, err := service.UpdateQuestion(questionStatusContext(), "kb-1", "set-1", "q-1", &types.UpdateQuestionRequest{
+		AnswerText: &secondAnswer,
+	}); err != nil {
+		t.Fatalf("answer-only reviewed UpdateQuestion() error = %v", err)
+	}
+	if len(indexService.indexed) != 2 {
+		t.Fatalf("non-index answer update index calls = %d", len(indexService.indexed))
+	}
+
+	newStem := "新题干"
+	if _, err := service.UpdateQuestion(questionStatusContext(), "kb-1", "set-1", "q-1", &types.UpdateQuestionRequest{
+		StemText: &newStem,
+	}); err != nil {
+		t.Fatalf("stem UpdateQuestion() error = %v", err)
+	}
+	if len(indexService.indexed) != 3 {
+		t.Fatalf("stem update index calls = %d", len(indexService.indexed))
+	}
+}
+
+func TestDeleteQuestionSetCleansUpVectorIndexes(t *testing.T) {
+	repository := &questionStatusRepository{
+		set: &types.QuestionSet{ID: "set-1", KnowledgeBaseID: "kb-1"},
+		allQuestions: []*types.Question{
+			{ID: "q-1", TenantID: 1, KnowledgeBaseID: "kb-1", QuestionSetID: "set-1"},
+			{ID: "q-2", TenantID: 1, KnowledgeBaseID: "kb-1", QuestionSetID: "set-1"},
+			{ID: "q-3", TenantID: 1, KnowledgeBaseID: "kb-1", QuestionSetID: "set-1"},
+		},
+	}
+	indexService := &questionStatusIndexService{}
+	service := newQuestionStatusServiceWithIndex(repository, indexService)
+
+	if err := service.DeleteQuestionSet(questionStatusContext(), "kb-1", "set-1"); err != nil {
+		t.Fatalf("DeleteQuestionSet() error = %v", err)
+	}
+	if repository.deletedSetID != "set-1" {
+		t.Fatalf("DeleteQuestionSet not called on repository: deletedSetID=%q", repository.deletedSetID)
+	}
+	if len(indexService.deleted) != 1 {
+		t.Fatalf("expected 1 DeleteQuestionIndexes call, got %d", len(indexService.deleted))
+	}
+	deletedIDs := indexService.deleted[0]
+	if len(deletedIDs) != 3 {
+		t.Fatalf("expected 3 question IDs deleted, got %d: %v", len(deletedIDs), deletedIDs)
+	}
+	for _, want := range []string{"q-1", "q-2", "q-3"} {
+		found := false
+		for _, got := range deletedIDs {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected question ID %q in deleted IDs: %v", want, deletedIDs)
+		}
+	}
+	// Only the vector index side-effect should be scheduled; no IndexQuestions
+	// call because the questions are already gone from the DB.
+	if len(indexService.indexed) != 0 {
+		t.Fatalf("unexpected IndexQuestions call: indexed=%d", len(indexService.indexed))
+	}
+}
+
+func TestDeleteQuestionSetNoQuestionsStillDeletesSet(t *testing.T) {
+	repository := &questionStatusRepository{
+		set: &types.QuestionSet{ID: "set-1", KnowledgeBaseID: "kb-1"},
+	}
+	indexService := &questionStatusIndexService{}
+	service := newQuestionStatusServiceWithIndex(repository, indexService)
+
+	if err := service.DeleteQuestionSet(questionStatusContext(), "kb-1", "set-1"); err != nil {
+		t.Fatalf("DeleteQuestionSet() error = %v", err)
+	}
+	if repository.deletedSetID != "set-1" {
+		t.Fatalf("DeleteQuestionSet not called on repository: deletedSetID=%q", repository.deletedSetID)
+	}
+	// No questions in the set → no DeleteQuestionIndexes call.
+	if len(indexService.deleted) != 0 {
+		t.Fatalf("expected 0 DeleteQuestionIndexes calls, got %d", len(indexService.deleted))
+	}
+}
+
+func TestQuestionPreviewAndParseFlowsDoNotScheduleIndexing(t *testing.T) {
+	repository := &questionStatusRepository{set: &types.QuestionSet{ID: "set-1", KnowledgeBaseID: "kb-1"}}
+	indexService := &questionStatusIndexService{}
+	service := newQuestionStatusServiceWithIndex(repository, indexService)
+
+	_, _ = service.PreviewImportQuestionsFromFile(
+		questionStatusContext(), "kb-1", "set-1", nil, "questions.txt", &types.ImportFilePreviewRequest{},
+	)
+	_, _ = service.PreviewImportBlocks(
+		questionStatusContext(), "kb-1", "set-1", nil, "questions.txt", &types.BlockPreviewRequest{},
+	)
+	_, err := service.ParseImportedBlocks(
+		questionStatusContext(), "kb-1", "set-1", &types.ParseBlocksRequest{StrategyPreset: "general"},
+	)
+	if err != nil {
+		t.Fatalf("ParseImportedBlocks() error = %v", err)
+	}
+	if len(indexService.indexed) != 0 || len(indexService.deleted) != 0 {
+		t.Fatalf("preview/parse caused index side effects: indexed=%d deleted=%d", len(indexService.indexed), len(indexService.deleted))
 	}
 }

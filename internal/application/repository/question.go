@@ -3,10 +3,13 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type questionRepository struct {
@@ -15,6 +18,14 @@ type questionRepository struct {
 
 func NewQuestionRepository(db *gorm.DB) interfaces.QuestionRepository {
 	return &questionRepository{db: db}
+}
+
+type questionVectorIndexRepository struct {
+	db *gorm.DB
+}
+
+func NewQuestionVectorIndexRepository(db *gorm.DB) interfaces.QuestionVectorIndexRepository {
+	return &questionVectorIndexRepository{db: db}
 }
 
 func (r *questionRepository) CreateQuestionSet(ctx context.Context, qs *types.QuestionSet) error {
@@ -102,6 +113,14 @@ func (r *questionRepository) GetQuestion(ctx context.Context, tenantID uint64, s
 	return &q, nil
 }
 
+func (r *questionRepository) GetQuestionByID(ctx context.Context, tenantID uint64, id string) (*types.Question, error) {
+	var q types.Question
+	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).First(&q).Error; err != nil {
+		return nil, err
+	}
+	return &q, nil
+}
+
 func (r *questionRepository) ListQuestions(ctx context.Context, tenantID uint64, setID string, filter *types.QuestionListFilter, page *types.Pagination) (*types.PageResult, error) {
 	var total int64
 	var questions []*types.Question
@@ -164,4 +183,81 @@ func applyQuestionFilters(q *gorm.DB, filter *types.QuestionListFilter) *gorm.DB
 		q = q.Where("stem_text ILIKE ? OR answer_text ILIKE ? OR analysis_text ILIKE ?", pattern, pattern, pattern)
 	}
 	return q
+}
+
+func (r *questionVectorIndexRepository) Get(
+	ctx context.Context,
+	tenantID uint64,
+	questionID, embeddingModelID string,
+	engineType types.RetrieverEngineType,
+	indexMode string,
+) (*types.QuestionVectorIndex, error) {
+	var index types.QuestionVectorIndex
+	err := r.db.WithContext(ctx).Where(
+		"tenant_id = ? AND question_id = ? AND embedding_model_id = ? AND retriever_engine_type = ? AND index_mode = ?",
+		tenantID, questionID, embeddingModelID, engineType, indexMode,
+	).First(&index).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &index, nil
+}
+
+func (r *questionVectorIndexRepository) Upsert(ctx context.Context, index *types.QuestionVectorIndex) error {
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "tenant_id"},
+			{Name: "question_id"},
+			{Name: "embedding_model_id"},
+			{Name: "retriever_engine_type"},
+			{Name: "index_mode"},
+		},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"tenant_id", "knowledge_base_id", "question_set_id", "content_hash",
+			"status", "error_message", "indexed_at", "updated_at",
+		}),
+	}).Create(index).Error
+}
+
+func (r *questionVectorIndexRepository) UpdateStatus(
+	ctx context.Context,
+	tenantID uint64,
+	questionID, embeddingModelID string,
+	engineType types.RetrieverEngineType,
+	indexMode string,
+	status types.QuestionVectorIndexStatus,
+	errorMessage, contentHash string,
+	indexedAt *time.Time,
+) error {
+	updates := map[string]interface{}{
+		"status":        status,
+		"error_message": errorMessage,
+		"content_hash":  contentHash,
+		"indexed_at":    indexedAt,
+		"updated_at":    time.Now(),
+	}
+	return r.db.WithContext(ctx).Model(&types.QuestionVectorIndex{}).Where(
+		"tenant_id = ? AND question_id = ? AND embedding_model_id = ? AND retriever_engine_type = ? AND index_mode = ?",
+		tenantID, questionID, embeddingModelID, engineType, indexMode,
+	).Updates(updates).Error
+}
+
+func (r *questionVectorIndexRepository) ListByQuestionIDs(
+	ctx context.Context,
+	tenantID uint64,
+	questionIDs []string,
+) ([]*types.QuestionVectorIndex, error) {
+	if len(questionIDs) == 0 {
+		return []*types.QuestionVectorIndex{}, nil
+	}
+	var indexes []*types.QuestionVectorIndex
+	if err := r.db.WithContext(ctx).Where(
+		"tenant_id = ? AND question_id IN ?", tenantID, questionIDs,
+	).Find(&indexes).Error; err != nil {
+		return nil, err
+	}
+	return indexes, nil
 }

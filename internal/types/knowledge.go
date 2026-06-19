@@ -14,6 +14,8 @@ const (
 	KnowledgeTypeManual = "manual"
 	// KnowledgeTypeFAQ represents the FAQ knowledge type
 	KnowledgeTypeFAQ = "faq"
+	// KnowledgeTypeQuestion represents a question bank question index.
+	KnowledgeTypeQuestion = "question"
 )
 
 // Channel constants identify through which channel a knowledge entry was ingested.

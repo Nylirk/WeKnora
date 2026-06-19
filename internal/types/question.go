@@ -7,6 +7,43 @@ import (
 	"gorm.io/gorm"
 )
 
+type QuestionVectorIndexStatus string
+
+const (
+	QuestionVectorIndexStatusPending  QuestionVectorIndexStatus = "pending"
+	QuestionVectorIndexStatusIndexing QuestionVectorIndexStatus = "indexing"
+	QuestionVectorIndexStatusIndexed  QuestionVectorIndexStatus = "indexed"
+	QuestionVectorIndexStatusFailed   QuestionVectorIndexStatus = "failed"
+	QuestionVectorIndexStatusDeleted  QuestionVectorIndexStatus = "deleted"
+
+	QuestionVectorIndexModePrompt = "question_prompt"
+)
+
+type QuestionVectorIndex struct {
+	ID                  string                    `json:"id" gorm:"type:varchar(36);primaryKey"`
+	TenantID            uint64                    `json:"tenant_id" gorm:"not null;index;uniqueIndex:uq_question_vector_index_target"`
+	KnowledgeBaseID     string                    `json:"knowledge_base_id" gorm:"type:varchar(36);not null;index"`
+	QuestionSetID       string                    `json:"question_set_id" gorm:"type:varchar(36);not null;index"`
+	QuestionID          string                    `json:"question_id" gorm:"type:varchar(36);not null;index;uniqueIndex:uq_question_vector_index_target"`
+	EmbeddingModelID    string                    `json:"embedding_model_id" gorm:"type:varchar(36);not null;uniqueIndex:uq_question_vector_index_target"`
+	RetrieverEngineType RetrieverEngineType       `json:"retriever_engine_type" gorm:"type:varchar(50);not null;uniqueIndex:uq_question_vector_index_target"`
+	IndexMode           string                    `json:"index_mode" gorm:"type:varchar(32);not null;default:'question_prompt';uniqueIndex:uq_question_vector_index_target"`
+	ContentHash         string                    `json:"content_hash" gorm:"type:varchar(64);not null;default:''"`
+	Status              QuestionVectorIndexStatus `json:"status" gorm:"type:varchar(16);not null;default:'pending';index"`
+	ErrorMessage        string                    `json:"error_message" gorm:"type:text;not null;default:''"`
+	IndexedAt           *time.Time                `json:"indexed_at"`
+	CreatedAt           time.Time                 `json:"created_at"`
+	UpdatedAt           time.Time                 `json:"updated_at"`
+}
+
+func (*QuestionVectorIndex) TableName() string { return "question_vector_indexes" }
+func (qvi *QuestionVectorIndex) BeforeCreate(*gorm.DB) error {
+	if qvi.ID == "" {
+		qvi.ID = uuid.NewString()
+	}
+	return nil
+}
+
 type QuestionSetSourceType string
 
 const (
