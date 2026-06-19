@@ -68,15 +68,15 @@
       <aside class="block-meta-panel" v-if="store.selectedBlock">
         <section class="meta-section">
           <h4>标签</h4>
-          <div v-if="(Array.isArray(store.selectedBlock.tags) ? store.selectedBlock.tags : []).length" class="tag-list">
-            <t-tag v-for="(tag, i) in store.selectedBlock.tags" :key="i" size="small" variant="outline">{{ tag }}</t-tag>
+          <div v-if="selectedBlockTags.length" class="tag-list">
+            <t-tag v-for="(tag, i) in selectedBlockTags" :key="i" size="small" variant="outline">{{ tag }}</t-tag>
           </div>
           <span v-else class="meta-empty">暂无标签</span>
         </section>
         <section class="meta-section">
           <h4>异常信息</h4>
-          <div v-if="store.selectedBlock.anomalies.length" class="detail-anomalies">
-            <div v-for="a in store.selectedBlock.anomalies" :key="a.code" class="anomaly-line" :class="a.severity">
+          <div v-if="selectedBlockAnomalies.length" class="detail-anomalies">
+            <div v-for="a in selectedBlockAnomalies" :key="a.code" class="anomaly-line" :class="a.severity">
               <span class="anomaly-code">{{ a.code }}</span>
               <span>{{ a.message }}</span>
             </div>
@@ -91,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
 
 const store = useImportWorkbenchStore()
@@ -100,6 +100,13 @@ const emit = defineEmits<{ changed: [] }>()
 const editingText = ref('')
 const showSplitControl = ref(false)
 const splitKeyword = ref('')
+
+const selectedBlockAnomalies = computed(() =>
+  Array.isArray(store.selectedBlock?.anomalies) ? store.selectedBlock.anomalies : []
+)
+const selectedBlockTags = computed(() =>
+  Array.isArray(store.selectedBlock?.tags) ? store.selectedBlock.tags : []
+)
 
 watch(() => [store.selectedBlock?.id, store.selectedBlock?.current_text] as const, ([, currentText]) => {
   editingText.value = currentText ?? ''
