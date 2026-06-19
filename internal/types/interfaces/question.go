@@ -40,6 +40,8 @@ type QuestionService interface {
 	UpdateQuestionStatus(context.Context, string, string, string, *types.UpdateQuestionStatusRequest) (*types.Question, error)
 	ImportQuestions(context.Context, string, string, *types.ImportQuestionsRequest) (*types.ImportQuestionsResult, error)
 	PreviewImportQuestionsFromFile(ctx context.Context, kbID, setID string, fileData []byte, fileName string, req *types.ImportFilePreviewRequest) (*types.ImportFilePreviewResponse, error)
+	PreviewImportBlocks(ctx context.Context, kbID, setID string, fileData []byte, fileName string, req *types.BlockPreviewRequest) (*types.BlockPreviewResponse, error)
+	ParseImportedBlocks(ctx context.Context, kbID, setID string, req *types.ParseBlocksRequest) (*types.ImportFilePreviewResponse, error)
 	ExportToEvaluationDataset(context.Context, string, string, *types.ExportToEvaluationRequest) (*types.EvaluationDataset, error)
 	GenerateQuestions(context.Context, string, *types.GenerateQuestionsRequest) (*types.QuestionSet, error)
 }

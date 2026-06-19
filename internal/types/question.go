@@ -175,6 +175,7 @@ type ImportQuestionItem struct {
 	EvidenceChunkIDs  JSON   `json:"evidence_chunk_ids"`
 	Status            string `json:"status,omitempty"`
 	RawText           string `json:"raw_text,omitempty"`
+	SourcePayload     JSON   `json:"source_payload,omitempty"`
 }
 
 type ImportQuestionError struct {
