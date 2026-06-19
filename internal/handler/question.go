@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
@@ -13,6 +15,8 @@ import (
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	servicepkg "github.com/Tencent/WeKnora/internal/application/service"
 )
 
 type QuestionHandler struct {
@@ -263,6 +267,13 @@ func (h *QuestionHandler) PreviewImportQuestionsFromFile(c *gin.Context) {
 		return
 	}
 
+	// Gate: debug_export is only available in debug mode
+	if req.DebugExport && gin.Mode() != gin.DebugMode {
+		questionBadRequest(c, apperrors.NewBadRequestError(
+			"debug_export 仅在调试模式下可用"))
+		return
+	}
+
 	// Limit upload size for this endpoint (20 MB default for document import)
 	const defaultMaxFileImportBytes = 20 * 1024 * 1024
 	maxSize := secutils.GetMaxFileSize()
@@ -306,5 +317,21 @@ func (h *QuestionHandler) PreviewImportQuestionsFromFile(c *gin.Context) {
 		questionHandleError(c, err)
 		return
 	}
+
+	// If debug export is active, serve the zip file directly
+	if req.DebugExport && result.DebugExportPath != "" {
+		zipPath := filepath.Join(result.DebugExportPath, "debug-export.zip")
+		zipBytes, err := os.ReadFile(zipPath)
+		if err != nil {
+			servicepkg.CleanupDebugExport(c.Request.Context(), result.DebugExportPath, result.DebugManifest)
+			questionHandleError(c, err)
+			return
+		}
+		// Clean up temp files after reading the zip into memory
+		servicepkg.CleanupDebugExport(c.Request.Context(), result.DebugExportPath, result.DebugManifest)
+		c.Data(http.StatusOK, "application/zip", zipBytes)
+		return
+	}
+
 	questionOK(c, result)
 }

@@ -711,6 +711,27 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 	log.Infof("[import-file preview] extraction finished: items=%d errors=%d warnings=%d",
 		len(items), len(parseErrors), len(parseWarnings))
 
+	// 6a. Optional debug export (best-effort, non-fatal)
+	var debugDir string
+	var debugManifest []string
+	if req.DebugExport {
+		log.Infof("[import-file preview] debug export started: file=%s", fileName)
+		var zipPath string
+		var exportErr error
+		debugDir, zipPath, debugManifest, exportErr = createDebugExport(
+			extractedText, defaultType, defaultDifficulty,
+			items, parseErrors, parseWarnings,
+		)
+		if exportErr != nil {
+			log.Warnf("[import-file preview] debug export failed (continuing): %v", exportErr)
+			debugDir = ""
+			debugManifest = nil
+		} else {
+			log.Infof("[import-file preview] debug export ready: dir=%s zip=%s files=%d",
+				debugDir, zipPath, len(debugManifest))
+		}
+	}
+
 	// 7. Build response stats
 	withAnswer := 0
 	withoutAnswer := 0
@@ -749,6 +770,8 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 			WithAnswer:        withAnswer,
 			WithoutAnswer:     withoutAnswer,
 		},
+		DebugExportPath: debugDir,
+		DebugManifest:   debugManifest,
 	}, nil
 }
 

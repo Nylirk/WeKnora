@@ -207,6 +207,7 @@ type ImportFilePreviewRequest struct {
 	DefaultQuestionType string `form:"default_question_type"`
 	DefaultDifficulty   string `form:"default_difficulty"`
 	Mode                string `form:"mode"`
+	DebugExport         bool   `form:"debug_export"`
 }
 
 type ImportFilePreviewStats struct {
@@ -216,9 +217,11 @@ type ImportFilePreviewStats struct {
 }
 
 type ImportFilePreviewResponse struct {
-	Items          []ImportQuestionItem   `json:"items"`
-	Errors         []ImportQuestionError  `json:"errors"`
-	Warnings       []string               `json:"warnings"`
-	RawTextPreview string                 `json:"raw_text_preview"`
-	Stats          ImportFilePreviewStats `json:"stats"`
+	Items           []ImportQuestionItem   `json:"items"`
+	Errors          []ImportQuestionError  `json:"errors"`
+	Warnings        []string               `json:"warnings"`
+	RawTextPreview  string                 `json:"raw_text_preview"`
+	Stats           ImportFilePreviewStats `json:"stats"`
+	DebugExportPath string                 `json:"debug_export_path,omitempty"`
+	DebugManifest   []string               `json:"-"`
 }
