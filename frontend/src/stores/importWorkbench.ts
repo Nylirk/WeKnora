@@ -337,6 +337,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
         : null
     }
 
+    markBlockDirty(id)  // P1: ensure deleted block is persisted to IndexedDB
     markMetaDirty()
     scheduleValidateStructural()
   }
@@ -446,6 +447,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     Object.assign(newMap, newEntries)
     blockMap.value = newMap
 
+    markBlockDirty(id)  // P1: mark old block id for IndexedDB cleanup after split
     markMetaDirty()
     scheduleValidateStructural()
   }
@@ -476,6 +478,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     blockOrder.value = blockOrder.value.filter(bid => bid !== id)
 
     markBlockDirty(prevId)
+    markBlockDirty(id)  // P1: mark merged-away block for IndexedDB cleanup
     markMetaDirty()
     scheduleValidateStructural()
   }
@@ -506,6 +509,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     blockOrder.value = blockOrder.value.filter(bid => bid !== nextId)
 
     markBlockDirty(id)
+    markBlockDirty(nextId)  // P1: mark merged-away block for IndexedDB cleanup
     markMetaDirty()
     scheduleValidateStructural()
   }

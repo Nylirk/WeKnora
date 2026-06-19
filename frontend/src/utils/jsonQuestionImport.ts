@@ -56,9 +56,33 @@ function validateJsonQuestionItem(item: JsonQuestionItem): ImportBlock['anomalie
   return anomalies
 }
 
-function parseJsonText(text: string): JsonQuestionItem[] {
+function parseJsonL(text: string, _fileName?: string): JsonQuestionItem[] {
+  const lines = text.split('\n')
+  const items: JsonQuestionItem[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const lineTrimmed = lines[i].trim()
+    if (!lineTrimmed) continue
+    try {
+      const parsed = JSON.parse(lineTrimmed)
+      if (parsed && typeof parsed === 'object') {
+        items.push(parsed)
+      }
+    } catch {
+      // Generate a warning placeholder for unparseable lines
+      items.push({ _jsonl_parse_error: true, _line: i + 1, _raw: lineTrimmed.slice(0, 200) } as unknown as JsonQuestionItem)
+    }
+  }
+  return items
+}
+
+function parseJsonText(text: string, fileName?: string): JsonQuestionItem[] {
   const trimmed = text.trim()
   if (!trimmed) return []
+
+  // .jsonl files: always parse line-by-line
+  if (fileName && fileName.toLowerCase().endsWith('.jsonl')) {
+    return parseJsonL(text, fileName)
+  }
 
   // JSON array
   if (trimmed.startsWith('[')) {
@@ -67,32 +91,25 @@ function parseJsonText(text: string): JsonQuestionItem[] {
     return []
   }
 
-  // JSON object wrapper: { "questions": [...] } or { "items": [...] }
+  // Try JSON object / wrapper; fall back to JSONL on failure
   if (trimmed.startsWith('{')) {
-    const parsed = JSON.parse(trimmed)
-    if (parsed && typeof parsed === 'object') {
-      if (Array.isArray(parsed.questions)) return parsed.questions
-      if (Array.isArray(parsed.items)) return parsed.items
-      // Single question object
-      return [parsed as JsonQuestionItem]
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.questions)) return parsed.questions
+        if (Array.isArray(parsed.items)) return parsed.items
+        // Single question object
+        return [parsed as JsonQuestionItem]
+      }
+      return []
+    } catch {
+      // Not valid JSON — try JSONL
+      return parseJsonL(text, fileName)
     }
-    return []
   }
 
-  // JSONL: one JSON object per line
-  const lines = trimmed.split('\n')
-  const items: JsonQuestionItem[] = []
-  for (const line of lines) {
-    const lineTrimmed = line.trim()
-    if (!lineTrimmed) continue
-    try {
-      const parsed = JSON.parse(lineTrimmed)
-      if (parsed && typeof parsed === 'object') items.push(parsed)
-    } catch {
-      // Skip malformed lines
-    }
-  }
-  return items
+  // Fallback: try JSONL
+  return parseJsonL(text, fileName)
 }
 
 export async function parseJsonQuestionFileToBlocks(file: File): Promise<{
@@ -100,7 +117,7 @@ export async function parseJsonQuestionFileToBlocks(file: File): Promise<{
   summary: BlockPreviewSummary
 }> {
   const text = await file.text()
-  const items = parseJsonText(text)
+  const items = parseJsonText(text, file.name)
 
   const blocks: ImportBlock[] = []
   let blocksWithAnomalies = 0
@@ -110,6 +127,27 @@ export async function parseJsonQuestionFileToBlocks(file: File): Promise<{
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     const id = crypto.randomUUID()
+
+    // JSONL parse error placeholder
+    if ((item as any)._jsonl_parse_error) {
+      const lineNum = (item as any)._line || i + 1
+      const raw = (item as any)._raw || ''
+      const errorAnomaly = { code: 'JSONL_PARSE_ERROR', severity: 'error' as const, message: `第 ${lineNum} 行 JSON 解析失败` }
+      blocksWithAnomalies++
+      anomalyBreakdown['JSONL_PARSE_ERROR'] = (anomalyBreakdown['JSONL_PARSE_ERROR'] || 0) + 1
+      blocks.push({
+        id,
+        index: i,
+        original_text: raw,
+        current_text: raw,
+        question_number: null,
+        tags: [],
+        metadata: { import_format: 'json', source_line: lineNum, _parse_error: true },
+        anomalies: [errorAnomaly],
+      })
+      continue
+    }
+
     const qNum = resolveQuestionNumber(item, i)
     const anomalies = validateJsonQuestionItem(item)
     if (qNum != null) questionNumbers++

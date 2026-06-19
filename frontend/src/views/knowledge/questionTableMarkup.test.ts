@@ -383,3 +383,34 @@ test('handleFileParsed calls reset then setBlocksFromResponse', () => {
   assert.equal(setBlocksIdx >= 0, true, 'handleFileParsed must call setBlocksFromResponse')
   assert.equal(setBlocksIdx > resetIdx, true, 'setBlocksFromResponse must be called after reset')
 })
+
+// ===== P0: JSONL parsing tests =====
+
+test('jsonQuestionImport handles JSON array', () => {
+  const adapterSource = readFileSync(new URL('../../utils/jsonQuestionImport.ts', import.meta.url), 'utf8')
+  assert.equal(adapterSource.includes("startsWith('[')"), true, 'must handle JSON array')
+  assert.equal(adapterSource.includes('Array.isArray(parsed)'), true, 'must validate array')
+})
+
+test('jsonQuestionImport handles { questions: [...] } wrapper', () => {
+  const adapterSource = readFileSync(new URL('../../utils/jsonQuestionImport.ts', import.meta.url), 'utf8')
+  assert.equal(adapterSource.includes('parsed.questions'), true, 'must handle questions wrapper')
+  assert.equal(adapterSource.includes('parsed.items'), true, 'must handle items wrapper')
+})
+
+test('jsonQuestionImport handles single JSON object', () => {
+  const adapterSource = readFileSync(new URL('../../utils/jsonQuestionImport.ts', import.meta.url), 'utf8')
+  assert.equal(adapterSource.includes('Single question object'), true, 'must handle single question object')
+})
+
+test('jsonQuestionImport handles JSONL with .jsonl detection', () => {
+  const adapterSource = readFileSync(new URL('../../utils/jsonQuestionImport.ts', import.meta.url), 'utf8')
+  assert.equal(adapterSource.includes("endsWith('.jsonl')"), true, 'must detect .jsonl extension')
+  assert.equal(adapterSource.includes('function parseJsonL'), true, 'must have JSONL parser')
+})
+
+test('jsonQuestionImport does not silently drop malformed JSONL lines', () => {
+  const adapterSource = readFileSync(new URL('../../utils/jsonQuestionImport.ts', import.meta.url), 'utf8')
+  assert.equal(adapterSource.includes('JSONL_PARSE_ERROR'), true, 'must emit error for unparseable lines')
+  assert.equal(adapterSource.includes('_jsonl_parse_error'), true, 'must track parse errors')
+})
