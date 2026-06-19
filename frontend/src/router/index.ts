@@ -118,6 +118,12 @@ const router = createRouter({
           meta: { requiresInit: true, requiresAuth: true }
         },
         {
+          path: "knowledge-bases/:kbId/question-sets/:setId/question-import-workbench",
+          name: "questionImportWorkbench",
+          component: () => import("../views/knowledge/QuestionImportWorkbench.vue"),
+          meta: { requiresInit: true, requiresAuth: true }
+        },
+        {
           path: "knowledge-search",
           // 旧路径保留为重定向，打开全局命令面板（⌘K），带上可选的 q 参数
           redirect: (to) => {
