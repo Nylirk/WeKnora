@@ -368,7 +368,7 @@ func (s *agentService) registerTools(
 	}
 
 	// ---- Capability detection from SearchTargets ----
-	var hasVectorKB, hasWikiKB bool
+	var hasVectorKB, hasWikiKB, hasQuestionBankKB bool
 	var wikiKBIDs []string
 	var wikiScopes []tools.WikiScope
 	for _, target := range config.SearchTargets {
@@ -390,6 +390,9 @@ func (s *agentService) registerTools(
 				scope.KnowledgeIDs = append([]string(nil), target.KnowledgeIDs...)
 			}
 			wikiScopes = append(wikiScopes, scope)
+		}
+		if kb.IsQuestionBank() {
+			hasQuestionBankKB = true
 		}
 	}
 
@@ -415,8 +418,9 @@ func (s *agentService) registerTools(
 			tools.ToolWikiReplaceText:   true,
 			tools.ToolWikiRenamePage:    true,
 			tools.ToolWikiDeletePage:    true,
-			tools.ToolWikiReadIssue:     true,
-			tools.ToolWikiUpdateIssue:   true,
+			tools.ToolWikiReadIssue:      true,
+			tools.ToolWikiUpdateIssue:    true,
+			tools.ToolQuestionBankSearch: true,
 		}
 
 		// If no knowledge and no web search, also disable todo_write (not useful for simple chat)
@@ -466,6 +470,10 @@ func (s *agentService) registerTools(
 		tools.ToolWikiUpdateIssue:   true,
 	}
 
+	questionBankToolSet := map[string]bool{
+		tools.ToolQuestionBankSearch: true,
+	}
+
 	// Hard safety nets: drop tools whose runtime prerequisite is missing.
 	// This guards against stale configs where e.g. the user ticked wiki tools
 	// earlier but later swapped in a non-wiki KB (or vice versa for RAG).
@@ -497,6 +505,21 @@ func (s *agentService) registerTools(
 		allowedTools = filtered
 		if len(dropped) > 0 {
 			logger.Warnf(ctx, "Dropped RAG tools %v because no RAG-capable KB is in scope", dropped)
+		}
+	}
+	if !hasQuestionBankKB {
+		filtered := make([]string, 0, len(allowedTools))
+		dropped := make([]string, 0)
+		for _, t := range allowedTools {
+			if questionBankToolSet[t] {
+				dropped = append(dropped, t)
+				continue
+			}
+			filtered = append(filtered, t)
+		}
+		allowedTools = filtered
+		if len(dropped) > 0 {
+			logger.Warnf(ctx, "Dropped question bank tools %v because no question-bank-capable KB is in scope", dropped)
 		}
 	}
 
@@ -579,6 +602,9 @@ func (s *agentService) registerTools(
 			toolToRegister = tools.NewWikiRenamePageTool(s.wikiPageService, wikiKBIDs)
 		case tools.ToolWikiDeletePage:
 			toolToRegister = tools.NewWikiDeletePageTool(s.wikiPageService, wikiKBIDs)
+
+		case tools.ToolQuestionBankSearch:
+			toolToRegister = tools.NewQuestionBankSearchTool(s.db, config.SearchTargets)
 
 		default:
 			logger.Warnf(ctx, "Unknown tool: %s", toolName)

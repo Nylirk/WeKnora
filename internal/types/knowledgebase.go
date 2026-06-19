@@ -593,6 +593,8 @@ type KBCapabilities struct {
 	Graph bool `json:"graph"`
 	// FAQ means the KB is a FAQ-type KB (Q/A pairs).
 	FAQ bool `json:"faq"`
+	// QuestionBank means the KB is a question bank KB (structured questions in questions table).
+	QuestionBank bool `json:"question_bank"`
 }
 
 // Capabilities returns the computed capability flags for this KB.
@@ -602,11 +604,12 @@ func (kb *KnowledgeBase) Capabilities() KBCapabilities {
 		return KBCapabilities{}
 	}
 	return KBCapabilities{
-		Vector:  kb.IsVectorEnabled(),
-		Keyword: kb.IsKeywordEnabled(),
-		Wiki:    kb.IsWikiEnabled(),
-		Graph:   kb.IsGraphEnabled(),
-		FAQ:     kb.Type == KnowledgeBaseTypeFAQ,
+		Vector:       kb.IsVectorEnabled(),
+		Keyword:      kb.IsKeywordEnabled(),
+		Wiki:         kb.IsWikiEnabled(),
+		Graph:        kb.IsGraphEnabled(),
+		FAQ:          kb.Type == KnowledgeBaseTypeFAQ,
+		QuestionBank: kb.Type == KnowledgeBaseTypeQuestionBank,
 	}
 }
 
