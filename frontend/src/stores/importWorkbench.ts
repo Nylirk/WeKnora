@@ -1,25 +1,22 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { ImportBlock, ImportBlockAnomaly } from '@/api/question_block'
+import type { ImportBlock } from '@/api/question_block'
 import type { ImportQuestionItem } from '@/api/question'
 
 export type WorkbenchStep = 'block-review' | 'question-review'
 
 export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
-  // --- Persistent state (saved to draft) ---
   const kbId = ref('')
   const setId = ref('')
   const strategyPreset = ref('general')
   const defaultDifficulty = ref('medium')
   const importMode = ref<'single' | 'batch'>('batch')
+  const importFormat = ref<'json' | 'word' | 'pdf'>('word')
   const blocks = ref<ImportBlock[]>([])
-  const summary = ref({ total_blocks: 0, blocks_with_anomalies: 0, question_numbers: 0, anomaly_breakdown: {} as Record<string, number> })
-
-  // --- Transient state (not saved) ---
   const currentStep = ref<WorkbenchStep>('block-review')
   const selectedBlockId = ref<string | null>(null)
   const anomalyFilter = ref<'all' | 'error' | 'warning'>('all')
-  const deletedBlocks = ref<ImportBlock[]>([])  // undo stack
+  const deletedBlocks = ref<ImportBlock[]>([])
   const questions = ref<ImportQuestionItem[]>([])
   const questionErrors = ref<{ line_number: number; message: string }[]>([])
   const questionWarnings = ref<string[]>([])
@@ -28,7 +25,28 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
   const isImporting = ref(false)
   const draftExists = ref(false)
 
-  // --- Computed ---
+  // --- Computed summary (fix 10) ---
+  const summary = computed(() => {
+    let blocksWithAnomalies = 0
+    let questionNumbers = 0
+    const breakdown: Record<string, number> = {}
+    for (const b of blocks.value) {
+      if (b.question_number != null) questionNumbers++
+      if (b.anomalies.length > 0) {
+        blocksWithAnomalies++
+        for (const a of b.anomalies) {
+          breakdown[a.code] = (breakdown[a.code] || 0) + 1
+        }
+      }
+    }
+    return {
+      total_blocks: blocks.value.length,
+      blocks_with_anomalies: blocksWithAnomalies,
+      question_numbers: questionNumbers,
+      anomaly_breakdown: breakdown,
+    }
+  })
+
   const filteredBlocks = computed(() => {
     if (anomalyFilter.value === 'all') return blocks.value
     return blocks.value.filter(b =>
@@ -43,14 +61,37 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
 
   const hasDeletedBlocks = computed(() => deletedBlocks.value.length > 0)
 
-  // --- Block operations ---
-  function selectBlock(id: string | null) {
-    selectedBlockId.value = id
+  // Lightweight question number extraction (fix 9)
+  function extractQuestionNumber(text: string): number | null {
+    const m = text.match(/^\s*(\d+)[\.\)、]/)
+    if (m) {
+      const n = parseInt(m[1], 10)
+      if (n > 0 && n <= 99999) return n
+    }
+    // Also try bare number + CJK (PDF-style)
+    const m2 = text.match(/^\s*(\d{1,4})\s+[一-鿿]/)
+    if (m2) {
+      const n = parseInt(m2[1], 10)
+      if (n > 0 && n <= 9999) return n
+    }
+    return null
   }
+
+  function selectBlock(id: string | null) { selectedBlockId.value = id }
 
   function updateBlockText(id: string, text: string) {
     const block = blocks.value.find(b => b.id === id)
     if (block) block.current_text = text
+  }
+
+  function restoreOriginalText(id: string) {
+    const block = blocks.value.find(b => b.id === id)
+    if (!block) return
+    block.current_text = block.original_text
+    // Re-validate
+    block.anomalies = block.anomalies.filter(a =>
+      ['OPTION_ONLY_BLOCK', 'PAGE_NOISE_DETECTED', 'SECTION_HEADING_IN_STEM', 'QUESTION_TYPE_HEADING_IN_STEM'].includes(a.code)
+    )
   }
 
   function deleteBlock(id: string) {
@@ -58,11 +99,11 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     if (idx >= 0) {
       const [removed] = blocks.value.splice(idx, 1)
       deletedBlocks.value.push(removed)
-      // Re-index
       blocks.value.forEach((b, i) => { b.index = i })
       if (selectedBlockId.value === id) {
         selectedBlockId.value = blocks.value.length > 0 ? blocks.value[Math.min(idx, blocks.value.length - 1)].id : null
       }
+      validateBlocks()
     }
   }
 
@@ -72,6 +113,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
       const [restored] = deletedBlocks.value.splice(idx, 1)
       blocks.value.splice(restored.index, 0, restored)
       blocks.value.forEach((b, i) => { b.index = i })
+      validateBlocks()
     }
   }
 
@@ -83,35 +125,32 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     const parts: string[] = []
     let prev = 0
     for (const pos of splitPositions.sort((a, b) => a - b)) {
-      if (pos > prev) {
-        parts.push(text.slice(prev, pos).trim())
-      }
+      if (pos > prev) parts.push(text.slice(prev, pos).trim())
       prev = pos
     }
-    if (prev < text.length) {
-      parts.push(text.slice(prev).trim())
-    }
+    if (prev < text.length) parts.push(text.slice(prev).trim())
     if (parts.length <= 1) return
 
     const idx = blocks.value.findIndex(b => b.id === id)
     if (idx < 0) return
 
-    const newBlocks: ImportBlock[] = parts.map((text2, i) => ({
-      ...block,
-      id: crypto.randomUUID(),
-      index: idx + i,
-      current_text: text2,
-      original_text: text2,
-      question_number: i === 0 ? block.question_number : null,
-      tags: i === 0 ? [...block.tags] : [],
-      metadata: { ...block.metadata },
-      anomalies: [],
-    }))
+    const newBlocks: ImportBlock[] = parts.map((part, i) => {
+      const qNum = i === 0 ? block.question_number : extractQuestionNumber(part)
+      return {
+        ...block,
+        id: crypto.randomUUID(),
+        index: idx + i,
+        current_text: part,
+        original_text: part,
+        question_number: qNum,
+        tags: i === 0 ? [...block.tags] : [],
+        metadata: { ...block.metadata },
+        anomalies: [],
+      }
+    })
 
     blocks.value.splice(idx, 1, ...newBlocks)
     blocks.value.forEach((b, i) => { b.index = i })
-
-    // Re-validate after split
     validateBlocks()
   }
 
@@ -122,7 +161,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     const curr = blocks.value[idx]
     prev.current_text = prev.current_text + '\n' + curr.current_text
     prev.original_text = prev.original_text + '\n' + curr.original_text
-    prev.anomalies = [] // clear stale anomalies, will be re-validated
+    prev.anomalies = []
     blocks.value.splice(idx, 1)
     blocks.value.forEach((b, i) => { b.index = i })
     validateBlocks()
@@ -150,11 +189,9 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
   }
 
   function validateBlocks() {
-    // Client-side re-validation: mark duplicate numbers etc.
     const seen = new Map<number, string>()
     let prevNum: number | null = null
     for (const block of blocks.value) {
-      // Clear computed anomalies, keep only static ones (OPTION_ONLY_BLOCK etc.)
       block.anomalies = block.anomalies.filter(a =>
         ['OPTION_ONLY_BLOCK', 'PAGE_NOISE_DETECTED', 'SECTION_HEADING_IN_STEM', 'QUESTION_TYPE_HEADING_IN_STEM'].includes(a.code)
       )
@@ -175,22 +212,16 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     }
   }
 
-  function setBlocksFromResponse(b: ImportBlock[], s: typeof summary.value) {
+  function setBlocksFromResponse(b: ImportBlock[]) {
     blocks.value = b
-    summary.value = s
     deletedBlocks.value = []
     selectedBlockId.value = b.length > 0 ? b[0].id : null
   }
 
-  // --- Step navigation ---
-  function goToStep(step: WorkbenchStep) {
-    currentStep.value = step
-  }
+  function goToStep(step: WorkbenchStep) { currentStep.value = step }
 
-  // --- Reset ---
   function reset() {
     blocks.value = []
-    summary.value = { total_blocks: 0, blocks_with_anomalies: 0, question_numbers: 0, anomaly_breakdown: {} }
     currentStep.value = 'block-review'
     selectedBlockId.value = null
     deletedBlocks.value = []
@@ -204,13 +235,13 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
   }
 
   return {
-    kbId, setId, strategyPreset, defaultDifficulty, importMode,
+    kbId, setId, strategyPreset, defaultDifficulty, importMode, importFormat,
     blocks, summary, currentStep, selectedBlockId, anomalyFilter,
     deletedBlocks, questions, questionErrors, questionWarnings, questionStats,
     isParsing, isImporting, draftExists,
     filteredBlocks, selectedBlock, hasDeletedBlocks,
-    selectBlock, updateBlockText, deleteBlock, restoreBlock,
-    splitBlock, mergeWithPrevious, mergeWithNext,
+    selectBlock, updateBlockText, restoreOriginalText, extractQuestionNumber,
+    deleteBlock, restoreBlock, splitBlock, mergeWithPrevious, mergeWithNext,
     sortBlocksByQuestionNumber, validateBlocks,
     setBlocksFromResponse, goToStep, reset,
   }

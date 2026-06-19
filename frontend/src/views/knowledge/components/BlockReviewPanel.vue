@@ -1,6 +1,5 @@
 <template>
   <div class="block-review-panel">
-    <!-- Toolbar -->
     <div class="toolbar">
       <t-space>
         <t-select v-model="store.anomalyFilter" size="small" style="width: 120px">
@@ -8,9 +7,7 @@
           <t-option value="error" label="错误" />
           <t-option value="warning" label="警告" />
         </t-select>
-        <t-button size="small" variant="outline" @click="store.sortBlocksByQuestionNumber()">
-          按题号排序
-        </t-button>
+        <t-button size="small" variant="outline" @click="handleSort">按题号排序</t-button>
         <t-button size="small" variant="outline" theme="warning" :disabled="!store.hasDeletedBlocks" @click="restoreAllDeleted">
           恢复删除
         </t-button>
@@ -19,7 +16,6 @@
     </div>
 
     <div class="review-body">
-      <!-- Block list -->
       <div class="block-list">
         <div
           v-for="block in store.filteredBlocks"
@@ -29,17 +25,13 @@
           @click="store.selectBlock(block.id)"
         >
           <div class="block-item-header">
-            <t-tag v-if="block.question_number != null" size="small" theme="primary" variant="light">
-              #{{ block.question_number }}
-            </t-tag>
+            <t-tag v-if="block.question_number != null" size="small" theme="primary" variant="light">#{{ block.question_number }}</t-tag>
             <t-tag v-else size="small" theme="default">无题号</t-tag>
             <span class="block-item-index">idx {{ block.index }}</span>
             <t-space size="2px">
               <span v-for="a in block.anomalies" :key="a.code">
                 <t-tooltip :content="a.message">
-                  <t-tag size="small" :theme="a.severity === 'error' ? 'danger' : 'warning'" variant="light">
-                    {{ a.code }}
-                  </t-tag>
+                  <t-tag size="small" :theme="a.severity === 'error' ? 'danger' : 'warning'" variant="light">{{ a.code }}</t-tag>
                 </t-tooltip>
               </span>
             </t-space>
@@ -49,14 +41,16 @@
         <t-empty v-if="store.filteredBlocks.length === 0" description="无 blocks" />
       </div>
 
-      <!-- Block detail -->
       <div class="block-detail" v-if="store.selectedBlock">
         <div class="detail-toolbar">
           <t-space size="small">
+            <t-button size="small" variant="outline" @click="store.restoreOriginalText(store.selectedBlock!.id); emit('changed')">
+              恢复原始文本
+            </t-button>
             <t-button size="small" variant="outline" @click="doSplit">拆分</t-button>
-            <t-button size="small" variant="outline" @click="store.mergeWithPrevious(store.selectedBlock!.id)">合并上一个</t-button>
-            <t-button size="small" variant="outline" @click="store.mergeWithNext(store.selectedBlock!.id)">合并下一个</t-button>
-            <t-button size="small" variant="outline" theme="danger" @click="store.deleteBlock(store.selectedBlock!.id)">删除</t-button>
+            <t-button size="small" variant="outline" @click="store.mergeWithPrevious(store.selectedBlock!.id); emit('changed')">合并上一个</t-button>
+            <t-button size="small" variant="outline" @click="store.mergeWithNext(store.selectedBlock!.id); emit('changed')">合并下一个</t-button>
+            <t-button size="small" variant="outline" theme="danger" @click="store.deleteBlock(store.selectedBlock!.id); emit('changed')">删除</t-button>
           </t-space>
         </div>
         <div class="detail-meta">
@@ -76,7 +70,7 @@
           @change="onTextChange"
         />
         <div class="split-control" v-if="showSplitControl">
-          <span class="split-hint">输入拆分位置（如 "249" 按题号拆）：</span>
+          <span class="split-hint">输入拆分关键词（如 "249" 按题号拆）：</span>
           <t-input v-model="splitKeyword" size="small" style="width: 120px" placeholder="如: 249" @enter="doSplitByKeyword" />
           <t-button size="small" @click="doSplitByKeyword">执行拆分</t-button>
         </div>
@@ -91,6 +85,7 @@ import { ref, watch } from 'vue'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
 
 const store = useImportWorkbenchStore()
+const emit = defineEmits<{ changed: [] }>()
 
 const editingText = ref('')
 const showSplitControl = ref(false)
@@ -105,7 +100,13 @@ watch(() => store.selectedBlock, (block) => {
 function onTextChange(value: string) {
   if (store.selectedBlock) {
     store.updateBlockText(store.selectedBlock.id, value)
+    emit('changed')
   }
+}
+
+function handleSort() {
+  store.sortBlocksByQuestionNumber()
+  emit('changed')
 }
 
 function doSplit() {
@@ -127,6 +128,7 @@ function doSplitByKeyword() {
   }
   if (positions.length > 0) {
     store.splitBlock(store.selectedBlock.id, positions)
+    emit('changed')
   }
   showSplitControl.value = false
   splitKeyword.value = ''
@@ -137,6 +139,7 @@ function restoreAllDeleted() {
     const b = store.deletedBlocks[store.deletedBlocks.length - 1]
     store.restoreBlock(b.id)
   }
+  emit('changed')
 }
 </script>
 

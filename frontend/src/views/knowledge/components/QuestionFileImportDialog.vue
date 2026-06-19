@@ -4,74 +4,92 @@
     :header="dialogTitle"
     width="720px"
     :confirm-btn="null"
-    :cancel-btn="{ content: $t('common.cancel') }"
+    :cancel-btn="null"
     :close-on-overlay-click="false"
     @close="closeAndReset"
   >
     <div class="import-layout">
-      <!-- Left: import type -->
+      <!-- Left: import format selector -->
       <div class="left-panel">
-        <div class="panel-title">导入类型</div>
-        <t-radio-group v-model="importMode" class="import-type-group" variant="default-filled" direction="vertical">
-          <t-radio value="single" :disabled="parsing">
+        <div class="panel-title">导入格式</div>
+        <t-radio-group v-model="importFormat" class="format-group" variant="default-filled" direction="vertical">
+          <t-radio value="json" :disabled="parsing">
             <div class="radio-label">
-              <span class="radio-title">单个导入</span>
-              <span class="radio-desc">一次性整理一批题</span>
+              <span class="radio-title">JSON / JSONL</span>
+              <span class="radio-desc">结构化导入</span>
             </div>
           </t-radio>
-          <t-radio value="batch" :disabled="parsing">
+          <t-radio value="word" :disabled="parsing">
             <div class="radio-label">
-              <span class="radio-title">批量导入</span>
-              <span class="radio-desc">拆分为多个独立题集</span>
+              <span class="radio-title">Word / DOCX</span>
+              <span class="radio-desc">文档解析导入</span>
+            </div>
+          </t-radio>
+          <t-radio value="pdf" :disabled="parsing">
+            <div class="radio-label">
+              <span class="radio-title">PDF</span>
+              <span class="radio-desc">文档解析导入</span>
             </div>
           </t-radio>
         </t-radio-group>
       </div>
 
-      <!-- Right: file upload + config -->
+      <!-- Right: context-dependent content -->
       <div class="right-panel">
-        <div class="file-upload-area">
-          <label class="file-upload-label">
-            <input ref="fileInputRef" type="file" :accept="accept" class="file-input" @change="onFileSelected" />
-            <div class="file-upload-body">
-              <t-icon name="upload" size="24px" />
-              <span v-if="selectedFile">{{ selectedFile.name }} ({{ formatFileSize(selectedFile.size) }})</span>
-              <span v-else>选择或拖拽文件</span>
-              <t-button size="small" variant="outline" @click.stop="fileInputRef?.click()">
-                选择文件
-              </t-button>
+        <!-- JSON -->
+        <template v-if="importFormat === 'json'">
+          <div class="json-notice">
+            <t-alert theme="info" :close-btn="false">
+              JSON / JSONL 导入暂不支持工作台模式，请使用原导入流程。
+            </t-alert>
+          </div>
+          <div class="action-bar">
+            <t-button variant="outline" @click="closeAndReset">取消</t-button>
+          </div>
+        </template>
+
+        <!-- Word / PDF -->
+        <template v-else>
+          <div class="file-upload-area">
+            <label class="file-upload-label">
+              <input ref="fileInputRef" type="file" :accept="accept" class="file-input" @change="onFileSelected" />
+              <div class="file-upload-body">
+                <t-icon name="upload" size="24px" />
+                <span v-if="selectedFile">{{ selectedFile.name }} ({{ formatFileSize(selectedFile.size) }})</span>
+                <span v-else>选择或拖拽文件</span>
+                <t-button size="small" variant="outline" @click.stop="fileInputRef?.click()">选择文件</t-button>
+              </div>
+            </label>
+          </div>
+
+          <div class="config-row">
+            <div class="config-item">
+              <span class="config-label">默认难度</span>
+              <t-select v-model="parseConfig.default_difficulty" style="width: 100px" size="small">
+                <t-option value="easy" label="简单" />
+                <t-option value="medium" label="中等" />
+                <t-option value="hard" label="困难" />
+              </t-select>
             </div>
-          </label>
-        </div>
-
-        <div class="config-row">
-          <div class="config-item">
-            <span class="config-label">默认难度</span>
-            <t-select v-model="parseConfig.default_difficulty" style="width: 100px" size="small">
-              <t-option value="easy" label="简单" />
-              <t-option value="medium" label="中等" />
-              <t-option value="hard" label="困难" />
-            </t-select>
+            <div class="config-item" v-if="availablePresets.length > 1">
+              <span class="config-label">分块策略</span>
+              <t-select v-model="parseConfig.strategy_preset" style="width: 120px" size="small">
+                <t-option v-for="p in availablePresets" :key="p.value" :value="p.value" :label="p.label" />
+              </t-select>
+            </div>
           </div>
-          <div class="config-item" v-if="availablePresets.length > 1">
-            <span class="config-label">分块策略</span>
-            <t-select v-model="parseConfig.strategy_preset" style="width: 120px" size="small">
-              <t-option v-for="p in availablePresets" :key="p.value" :value="p.value" :label="p.label" />
-            </t-select>
+
+          <div v-if="previewError" class="preview-error">
+            <t-alert theme="error" :close-btn="false">{{ previewError }}</t-alert>
           </div>
-        </div>
 
-        <div v-if="previewError" class="preview-error">
-          <t-alert theme="error" :close-btn="false">{{ previewError }}</t-alert>
-        </div>
-
-        <!-- Footer: start parsing button -->
-        <div class="action-bar">
-          <t-button variant="outline" @click="closeAndReset">取消</t-button>
-          <t-button theme="primary" :loading="parsing" :disabled="!selectedFile || parsing" @click="handleStartParsing">
-            开始解析
-          </t-button>
-        </div>
+          <div class="action-bar">
+            <t-button variant="outline" @click="closeAndReset">取消</t-button>
+            <t-button theme="primary" :loading="parsing" :disabled="!selectedFile || parsing" @click="handleStartParsing">
+              开始解析
+            </t-button>
+          </div>
+        </template>
       </div>
     </div>
   </t-dialog>
@@ -99,17 +117,23 @@ const emit = defineEmits<{ 'update:visible': [value: boolean] }>()
 
 const dialogVisible = computed({
   get: () => props.visible,
-  set: (value: boolean) => {
-    if (!value) closeAndReset()
-  },
+  set: (value: boolean) => { if (!value) closeAndReset() },
 })
 
-const accept = computed(() => props.importType === 'word' ? '.doc,.docx' : '.pdf')
+const accept = computed(() => {
+  if (importFormat.value === 'word') return '.doc,.docx'
+  if (importFormat.value === 'pdf') return '.pdf'
+  return ''
+})
 
-const dialogTitle = computed(() => props.importType === 'word' ? 'Word / DOCX 导入题目' : 'PDF 导入题目')
+const dialogTitle = computed(() => {
+  if (importFormat.value === 'json') return 'JSON / JSONL 导入题目'
+  if (importFormat.value === 'word') return 'Word / DOCX 导入题目'
+  return 'PDF 导入题目'
+})
 
 const availablePresets = computed(() => {
-  if (props.importType === 'pdf') {
+  if (importFormat.value === 'pdf') {
     return [
       { value: 'general', label: 'General' },
       { value: 'pdf', label: 'PDF' },
@@ -122,11 +146,19 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const selectedFile = ref<File | null>(null)
 const parsing = ref(false)
 const previewError = ref('')
-const importMode = ref<'single' | 'batch'>('batch')
+const importFormat = ref<'json' | 'word' | 'pdf'>('word')
 
 const parseConfig = ref({
   default_difficulty: 'medium',
   strategy_preset: 'general',
+})
+
+watch(() => props.visible, (visible) => {
+  if (visible) {
+    // Default format from parent's importType
+    importFormat.value = props.importType === 'pdf' ? 'pdf' : 'word'
+    parseConfig.value.strategy_preset = props.importType === 'pdf' ? 'pdf' : 'general'
+  }
 })
 
 function formatFileSize(bytes: number): string {
@@ -142,8 +174,7 @@ function onFileSelected(event: Event) {
   previewError.value = ''
   selectedFile.value = file
   input.value = ''
-  // Auto-detect preset
-  if (props.importType === 'pdf') {
+  if (importFormat.value === 'pdf') {
     parseConfig.value.strategy_preset = 'pdf'
   }
 }
@@ -152,7 +183,6 @@ function closeAndReset() {
   selectedFile.value = null
   parsing.value = false
   previewError.value = ''
-  importMode.value = 'batch'
   parseConfig.value = { default_difficulty: 'medium', strategy_preset: 'general' }
   if (fileInputRef.value) fileInputRef.value.value = ''
   emit('update:visible', false)
@@ -171,7 +201,7 @@ async function handleStartParsing() {
       {
         default_difficulty: parseConfig.value.default_difficulty,
         strategy_preset: parseConfig.value.strategy_preset,
-        import_mode: importMode.value,
+        import_mode: 'batch',
       },
       { timeout: 120000 },
     )
@@ -182,28 +212,33 @@ async function handleStartParsing() {
       return
     }
 
-    // Save to IndexedDB
+    workbenchStore.kbId = props.knowledgeBaseId
+    workbenchStore.setId = props.setId
+    workbenchStore.strategyPreset = parseConfig.value.strategy_preset
+    workbenchStore.defaultDifficulty = parseConfig.value.default_difficulty
+    workbenchStore.importFormat = importFormat.value
+    workbenchStore.setBlocksFromResponse(result.blocks)
+
     await saveDraft({
       kbId: props.knowledgeBaseId,
       setId: props.setId,
       blocks: result.blocks,
       strategyPreset: parseConfig.value.strategy_preset,
       defaultDifficulty: parseConfig.value.default_difficulty,
-      importMode: importMode.value,
+      importMode: 'batch',
+      importFormat: importFormat.value,
+      currentStep: 'block-review',
+      questions: [],
       timestamp: Date.now(),
     })
 
-    // Initialize store and navigate to workbench
-    workbenchStore.kbId = props.knowledgeBaseId
-    workbenchStore.setId = props.setId
-    workbenchStore.strategyPreset = parseConfig.value.strategy_preset
-    workbenchStore.defaultDifficulty = parseConfig.value.default_difficulty
-    workbenchStore.importMode = importMode.value
-    workbenchStore.setBlocksFromResponse(result.blocks, result.summary)
-
     emit('update:visible', false)
 
-    router.push(`/platform/knowledge-bases/${props.knowledgeBaseId}/question-sets/${props.setId}/question-import-workbench`)
+    // Fix 3: use named route
+    router.push({
+      name: 'questionImportWorkbench',
+      params: { kbId: props.knowledgeBaseId, setId: props.setId },
+    })
   } catch (e: any) {
     if (e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
     previewError.value = e?.message || '解析失败，请重试'
@@ -211,28 +246,23 @@ async function handleStartParsing() {
     parsing.value = false
   }
 }
-
-watch(() => props.importType, () => {
-  if (props.visible) closeAndReset()
-})
 </script>
 
 <style scoped>
 .import-layout { display: flex; gap: 24px; min-height: 280px; }
 .left-panel { width: 160px; flex-shrink: 0; border-right: 1px solid var(--td-component-stroke); padding-right: 16px; }
 .left-panel .panel-title { font-weight: 500; margin-bottom: 12px; font-size: 14px; }
-.import-type-group { display: flex; flex-direction: column; gap: 8px; }
+.format-group { display: flex; flex-direction: column; gap: 8px; }
 .radio-label { display: flex; flex-direction: column; }
 .radio-title { font-weight: 500; font-size: 13px; }
 .radio-desc { font-size: 11px; color: var(--td-text-color-placeholder); }
 .right-panel { flex: 1; display: flex; flex-direction: column; gap: 16px; }
-.file-upload-area { }
+.json-notice { flex: 1; display: flex; align-items: center; }
 .file-upload-label { display: block; }
 .file-input { display: none; }
 .file-upload-body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 100px; border: 1px dashed var(--td-component-stroke); border-radius: 6px; color: var(--td-text-color-secondary); background: var(--td-bg-color-secondarycontainer); cursor: pointer; padding: 12px; }
 .config-row { display: flex; gap: 16px; flex-wrap: wrap; }
 .config-item { display: flex; align-items: center; gap: 6px; }
 .config-label { font-size: 13px; color: var(--td-text-color-secondary); white-space: nowrap; }
-.preview-error { }
 .action-bar { display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; padding-top: 8px; }
 </style>

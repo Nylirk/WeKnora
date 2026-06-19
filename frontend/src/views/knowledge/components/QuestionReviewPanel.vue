@@ -1,6 +1,5 @@
 <template>
   <div class="question-review-panel">
-    <!-- Stats bar -->
     <div class="stats-bar" v-if="store.questionStats.detected_questions > 0">
       <t-space size="small">
         <t-tag variant="light">识别 {{ store.questionStats.detected_questions }} 题</t-tag>
@@ -9,7 +8,6 @@
       </t-space>
     </div>
 
-    <!-- Warnings / errors -->
     <div v-if="store.questionWarnings.length" class="warnings-box">
       <t-alert theme="warning" :close-btn="false">
         <div v-for="(w, i) in store.questionWarnings" :key="i">{{ w }}</div>
@@ -21,16 +19,14 @@
       </t-alert>
     </div>
 
-    <!-- Parsing state -->
     <div v-if="store.isParsing" class="parsing-state">
       <t-loading text="解析中…" />
     </div>
 
     <div v-else-if="store.questions.length === 0 && !store.isParsing" class="empty-state">
-      <t-empty description="点击上方「解析题目」生成题目预览" />
+      <t-empty description="点击上方「下一步：题目解析」生成题目预览" />
     </div>
 
-    <!-- Question list -->
     <div v-else class="question-list">
       <div v-for="(item, index) in store.questions" :key="index" class="question-item">
         <div class="question-item-header">
@@ -50,7 +46,6 @@
       </div>
     </div>
 
-    <!-- Import section -->
     <div v-if="store.questions.length > 0 && !store.isParsing" class="import-section">
       <div class="import-section-title">确认导入</div>
       <t-radio-group v-model="importStatus" variant="default-filled">
@@ -62,7 +57,6 @@
       </t-button>
     </div>
 
-    <!-- Edit modal -->
     <t-dialog v-model:visible="editVisible" header="编辑题目" width="600px" :confirm-btn="null" attach="body" :z-index="3000">
       <t-form v-if="editingItem" label-align="top">
         <t-form-item label="题型">
@@ -97,12 +91,14 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
 import { importQuestions, type ImportQuestionItem, type QuestionType } from '@/api/question'
 import { parseImportedBlocks } from '@/api/question_block'
-import { deleteDraft } from '@/utils/importDraftDB'
+import { deleteDraft, saveDraft } from '@/utils/importDraftDB'
 
+const router = useRouter()
 const store = useImportWorkbenchStore()
 const importStatus = ref<'draft' | 'reviewed'>('draft')
 const editVisible = ref(false)
@@ -169,13 +165,28 @@ async function handleImport() {
     const created = result?.created ?? 0
     const errors = Array.isArray(result?.errors) ? result.errors : []
 
-    if (created > 0) {
+    if (errors.length === 0) {
+      // Fix 7: all success — clear draft and navigate back
       MessagePlugin.success(`成功导入 ${created} 题`)
       await deleteDraft(store.kbId, store.setId)
       store.reset()
-    }
-    if (errors.length) {
-      MessagePlugin.warning(`${errors.length} 条错误`)
+      router.push({ name: 'knowledgeBaseDetail', params: { kbId: store.kbId } })
+    } else {
+      // Fix 8: partial failure — keep draft and questions
+      MessagePlugin.warning(`导入 ${created}/${store.questions.length} 题，${errors.length} 条错误。请修复后重试。`)
+      // Save current state so user can edit and retry
+      await saveDraft({
+        kbId: store.kbId,
+        setId: store.setId,
+        blocks: store.blocks,
+        strategyPreset: store.strategyPreset,
+        defaultDifficulty: store.defaultDifficulty,
+        importMode: store.importMode,
+        importFormat: store.importFormat,
+        currentStep: store.currentStep,
+        questions: store.questions,
+        timestamp: Date.now(),
+      })
     }
   } catch (e: any) {
     MessagePlugin.error(e?.message || '导入失败')

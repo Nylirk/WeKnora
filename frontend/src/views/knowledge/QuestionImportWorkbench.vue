@@ -1,8 +1,7 @@
 <template>
   <div class="workbench-page">
-    <!-- Header -->
     <div class="workbench-header">
-      <t-button variant="text" @click="handleBack">
+      <t-button variant="text" @click="handleAbandon">
         <t-icon name="chevron-left" /> 返回
       </t-button>
       <h3 class="workbench-title">题库导入工作台</h3>
@@ -17,13 +16,12 @@
         <t-button v-if="store.currentStep === 'block-review'" theme="primary" @click="goToQuestionReview">
           下一步：题目解析
         </t-button>
-        <t-button v-else variant="outline" @click="store.goToStep('block-review')">
+        <t-button v-else variant="outline" @click="store.goToStep('block-review'); saveProgress()">
           返回 Block Review
         </t-button>
       </t-space>
     </div>
 
-    <!-- Summary bar -->
     <div class="summary-bar" v-if="store.summary.total_blocks > 0">
       <t-space size="small">
         <t-tag variant="light">{{ store.summary.total_blocks }} blocks</t-tag>
@@ -34,14 +32,12 @@
       </t-space>
     </div>
 
-    <!-- Steps -->
     <div class="workbench-body">
-      <BlockReviewPanel v-if="store.currentStep === 'block-review'" />
+      <BlockReviewPanel v-if="store.currentStep === 'block-review'" @changed="saveDebounced" />
       <QuestionReviewPanel v-else ref="questionReviewRef" />
     </div>
   </div>
 
-  <!-- Abandon confirmation -->
   <t-dialog
     v-model:visible="abandonVisible"
     header="放弃导入"
@@ -55,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
@@ -72,15 +68,38 @@ const abandonVisible = ref(false)
 const kbId = route.params.kbId as string
 const setId = route.params.setId as string
 
+// --- Debounced save (fix 4) ---
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+function saveDebounced() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => saveProgress(), 800)
+}
+function saveProgress() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
+  if (!store.kbId || !store.setId || store.blocks.length === 0) return
+  saveDraft({
+    kbId: store.kbId,
+    setId: store.setId,
+    blocks: store.blocks,
+    strategyPreset: store.strategyPreset,
+    defaultDifficulty: store.defaultDifficulty,
+    importMode: store.importMode,
+    importFormat: store.importFormat,
+    currentStep: store.currentStep,
+    questions: store.questions,
+    timestamp: Date.now(),
+  }).catch(() => {})
+}
+onBeforeUnmount(() => { if (saveTimer) clearTimeout(saveTimer) })
+
 onMounted(async () => {
   await cleanExpiredDrafts()
 
-  // If store already has blocks (from dialog → store), skip loading
+  // If store already has blocks (from dialog navigation), skip loading
   if (store.blocks.length > 0 && store.kbId === kbId && store.setId === setId) {
     return
   }
 
-  // Try to load draft from IndexedDB
   const draft = await loadDraft(kbId, setId)
   if (draft) {
     const confirmed = confirm(`发现未完成的草稿（${new Date(draft.timestamp).toLocaleString()}），是否恢复？`)
@@ -90,12 +109,10 @@ onMounted(async () => {
       store.strategyPreset = draft.strategyPreset
       store.defaultDifficulty = draft.defaultDifficulty
       store.importMode = draft.importMode as 'single' | 'batch'
-      store.setBlocksFromResponse(draft.blocks, {
-        total_blocks: draft.blocks.length,
-        blocks_with_anomalies: draft.blocks.filter(b => b.anomalies.length > 0).length,
-        question_numbers: draft.blocks.filter(b => b.question_number != null).length,
-        anomaly_breakdown: {},
-      })
+      store.importFormat = (draft.importFormat as 'json' | 'word' | 'pdf') || 'word'
+      store.setBlocksFromResponse(draft.blocks)
+      store.questions = draft.questions ?? []
+      store.currentStep = draft.currentStep || 'block-review'
       store.draftExists = true
       return
     } else {
@@ -103,28 +120,26 @@ onMounted(async () => {
     }
   }
 
-  // No blocks and no draft — go back
   MessagePlugin.warning('没有可用的 blocks，请先上传文件。')
-  router.replace(`/platform/knowledge-bases/${kbId}`)
+  router.replace({ name: 'knowledgeBaseDetail', params: { kbId } })
 })
 
 async function goToQuestionReview() {
   store.goToStep('question-review')
+  saveProgress()
   await nextTick()
   if (questionReviewRef.value) {
     await questionReviewRef.value.parseQuestions()
   }
 }
 
-function handleBack() {
-  router.push(`/platform/knowledge-bases/${kbId}`)
-}
-
+// Fix 6: back button uses same abandon flow
 function handleAbandon() {
   abandonVisible.value = true
 }
 
 async function abandonSaveDraft() {
+  await saveProgress()
   await saveDraft({
     kbId: store.kbId,
     setId: store.setId,
@@ -132,18 +147,21 @@ async function abandonSaveDraft() {
     strategyPreset: store.strategyPreset,
     defaultDifficulty: store.defaultDifficulty,
     importMode: store.importMode,
+    importFormat: store.importFormat,
+    currentStep: store.currentStep,
+    questions: store.questions,
     timestamp: Date.now(),
   })
   MessagePlugin.success('草稿已保存（7 天有效）')
   abandonVisible.value = false
-  router.push(`/platform/knowledge-bases/${kbId}`)
+  router.push({ name: 'knowledgeBaseDetail', params: { kbId: store.kbId } })
 }
 
 async function abandonDiscard() {
   await deleteDraft(store.kbId, store.setId)
   store.reset()
   abandonVisible.value = false
-  router.push(`/platform/knowledge-bases/${kbId}`)
+  router.push({ name: 'knowledgeBaseDetail', params: { kbId: store.kbId } })
 }
 </script>
 

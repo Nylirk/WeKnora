@@ -1,4 +1,6 @@
 import type { ImportBlock } from '@/api/question_block'
+import type { ImportQuestionItem } from '@/api/question'
+import type { WorkbenchStep } from '@/stores/importWorkbench'
 
 const DB_NAME = 'question-import-workbench'
 const DB_VERSION = 1
@@ -12,6 +14,9 @@ export interface ImportDraft {
   strategyPreset: string
   defaultDifficulty: string
   importMode: string
+  importFormat: string
+  currentStep: WorkbenchStep
+  questions: ImportQuestionItem[]
   timestamp: number
 }
 
