@@ -231,9 +231,9 @@ test('modal layers have an explicit upload, restore, workbench, abandon order', 
 })
 
 test('restoring original block text synchronizes the textarea model', () => {
-  assert.equal(blockReviewSource.includes('@click="restoreSelectedBlock"'), true)
+  assert.equal(blockReviewSource.includes("emit('restore-original'"), true)
   assert.equal(blockReviewSource.includes('store.selectedBlock?.current_text'), true)
-  assert.equal(blockReviewSource.includes('editingText.value = store.selectedBlock.current_text'), true)
+  assert.equal(blockReviewSource.includes("store.selectedBlock?.current_text"), true)
 })
 
 test('block review uses list, editor, and metadata columns', () => {

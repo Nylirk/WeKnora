@@ -9,8 +9,8 @@
         </t-space>
       </div>
 
-      <div v-if="store.questionWarnings.length" class="warnings-box">
-        <t-alert theme="warning" :close-btn="false"><div v-for="(w, i) in store.questionWarnings" :key="i">{{ w }}</div></t-alert>
+      <div v-if="filteredWarnings.length" class="warnings-box">
+        <t-alert theme="warning" :close-btn="false"><div v-for="(w, i) in filteredWarnings" :key="i">{{ w }}</div></t-alert>
       </div>
       <div v-if="store.questionErrors.length" class="errors-box">
         <t-alert theme="error" :close-btn="false"><div v-for="(e, i) in store.questionErrors" :key="i">#{{ e.line_number }}: {{ e.message }}</div></t-alert>
@@ -104,19 +104,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
 import { importQuestions, type ImportQuestionItem, type QuestionType } from '@/api/question'
+import { useImportUIStore } from '@/stores/importUIStore'
 import { deleteDraft } from '@/utils/importDraftDB'
 
 const store = useImportWorkbenchStore()
+const importUI = useImportUIStore()
 const importStatus = ref<'draft' | 'reviewed'>('draft')
 const importConfirmVisible = ref(false)
 const editVisible = ref(false)
 const editingIndex = ref(-1)
 const editingItem = ref<ImportQuestionItem | null>(null)
 const emit = defineEmits<{ changed: []; imported: []; import: [] }>()
+
+const filteredWarnings = computed(() => {
+  if (store.questions.length > 0) {
+    // Suppress "未识别到题目" when we have questions
+    return (store.questionWarnings || []).filter((w: string) =>
+      !w.includes('未识别到题目') && !w.includes('未识别') && !w.includes('未抽取')
+    )
+  }
+  return store.questionWarnings || []
+})
 
 const questionTypes = [
   { value: 'single_choice', label: '单选' }, { value: 'multiple_choice', label: '多选' },
@@ -137,23 +149,27 @@ function removeItem(index: number) { store.questions.splice(index, 1); store.que
 async function doImport() {
   if (!store.questions.length) { MessagePlugin.warning('没有可导入的题目'); return }
   importConfirmVisible.value = false
-  try {
-    const itemsWithStatus = store.questions.map(item => ({ ...item, status: importStatus.value }))
-    const result: any = await importQuestions(store.kbId, store.setId, { items: itemsWithStatus })
-    const created = result?.created ?? 0
-    const errors = Array.isArray(result?.errors) ? result.errors : []
-    if (errors.length === 0) {
-      store.clearImportWarnings()
-      MessagePlugin.success(`成功导入 ${created} 题`)
-      await deleteDraft(store.kbId, store.setId)
-      store.reset()
-      emit('imported')
-    } else {
-      MessagePlugin.warning(`导入 ${created}/${store.questions.length} 题，${errors.length} 条错误。请修复后重试。`)
-      store.questionErrors = errors.map((error: any, index: number) => ({ line_number: Number(error?.line_number ?? index + 1), message: String(error?.message ?? error ?? '导入失败') }))
-      emit('changed')
-    }
-  } catch (e: any) { MessagePlugin.error(e?.message || '导入失败') }
+  // Clear stale parse-stage warnings immediately
+  store.clearImportWarnings()
+  await importUI.withImportLoading('正在导入题目…', async () => {
+    try {
+      const itemsWithStatus = store.questions.map(item => ({ ...item, status: importStatus.value }))
+      const result: any = await importQuestions(store.kbId, store.setId, { items: itemsWithStatus })
+      const created = result?.created ?? 0
+      const errors = Array.isArray(result?.errors) ? result.errors : []
+      if (errors.length === 0) {
+        store.clearImportWarnings()
+        MessagePlugin.success(`成功导入 ${created} 题`)
+        await deleteDraft(store.kbId, store.setId)
+        store.reset()
+        emit('imported')
+      } else {
+        MessagePlugin.warning(`导入 ${created}/${store.questions.length} 题，${errors.length} 条错误。请修复后重试。`)
+        store.questionErrors = errors.map((error: any, index: number) => ({ line_number: Number(error?.line_number ?? index + 1), message: String(error?.message ?? error ?? '导入失败') }))
+        emit('changed')
+      }
+    } catch (e: any) { MessagePlugin.error(e?.message || '导入失败') }
+  })
 }
 
 defineExpose({ doImport })

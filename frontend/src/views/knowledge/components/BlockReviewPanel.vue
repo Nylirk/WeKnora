@@ -7,14 +7,13 @@
           <t-option value="error" label="错误" />
           <t-option value="warning" label="警告" />
         </t-select>
-        <t-button size="small" variant="outline" :disabled="store.loading" @click="handleSort">按题号排序</t-button>
-        <t-button size="small" variant="outline" theme="warning" :disabled="!store.hasDeletedBlocks" @click="restoreAllDeleted">恢复删除</t-button>
+        <t-button size="small" variant="outline" :disabled="importUI.loading" @click="emit('sort')">按题号排序</t-button>
+        <t-button size="small" variant="outline" theme="warning" :disabled="!store.hasDeletedBlocks || importUI.loading" @click="emit('restore-deleted')">恢复删除</t-button>
       </t-space>
       <span class="block-count">{{ store.filteredBlocks.length }} / {{ store.blocks.length }} blocks</span>
     </div>
 
     <div class="review-body">
-      <!-- Column 1: block list -->
       <div class="col-list">
         <div
           v-for="block in store.filteredBlocks"
@@ -40,41 +39,39 @@
         <t-empty v-if="store.filteredBlocks.length === 0" description="无 blocks" />
       </div>
 
-      <!-- Column 2: editor -->
       <div class="col-editor" v-if="store.selectedBlock">
         <div class="detail-toolbar">
           <t-space size="small">
-            <t-button size="small" variant="outline" @click="restoreSelectedBlock">恢复原始文本</t-button>
-            <t-button size="small" variant="outline" @click="doSplit">拆分</t-button>
-            <t-button size="small" variant="outline" @click="store.mergeWithPrevious(store.selectedBlock!.id); emit('changed')">合并上一个</t-button>
-            <t-button size="small" variant="outline" @click="store.mergeWithNext(store.selectedBlock!.id); emit('changed')">合并下一个</t-button>
-            <t-button size="small" variant="outline" theme="danger" @click="store.deleteBlock(store.selectedBlock!.id); emit('changed')">删除</t-button>
+            <t-button size="small" variant="outline" :disabled="importUI.loading" @click="emit('restore-original', store.selectedBlock!.id)">恢复原始文本</t-button>
+            <t-button size="small" variant="outline" :disabled="importUI.loading" @click="doSplit">拆分</t-button>
+            <t-button size="small" variant="outline" :disabled="importUI.loading" @click="emit('merge-previous', store.selectedBlock!.id)">合并上一个</t-button>
+            <t-button size="small" variant="outline" :disabled="importUI.loading" @click="emit('merge-next', store.selectedBlock!.id)">合并下一个</t-button>
+            <t-button size="small" variant="outline" theme="danger" :disabled="importUI.loading" @click="emit('delete-block', store.selectedBlock!.id)">删除</t-button>
           </t-space>
         </div>
         <t-textarea v-model="editingText" :autosize="{ minRows: 6, maxRows: 20 }" @change="onTextChange" />
         <div class="split-control" v-if="showSplitControl">
           <span class="split-hint">输入拆分关键词（如 "249"）：</span>
           <t-input v-model="splitKeyword" size="small" style="width: 120px" placeholder="如: 249" @enter="doSplitByKeyword" />
-          <t-button size="small" @click="doSplitByKeyword">执行拆分</t-button>
+          <t-button size="small" :disabled="importUI.loading" @click="doSplitByKeyword">执行拆分</t-button>
         </div>
       </div>
       <t-empty v-else description="选择一个 block" class="col-editor col-editor-empty" />
 
-      <!-- Column 3: meta -->
       <aside class="col-meta" v-if="store.selectedBlock">
         <section class="meta-section">
           <h4>标签</h4>
           <div class="tag-edit-list">
             <div v-for="(tag, i) in selectedBlockTags" :key="i" class="tag-edit-row">
               <t-tag size="small" variant="outline" class="tag-edit-text">{{ tag }}</t-tag>
-              <t-button size="small" variant="text" theme="danger" @click="removeTag(tag)">
+              <t-button size="small" variant="text" theme="danger" :disabled="importUI.loading" @click="emit('remove-tag', { id: store.selectedBlock!.id, tag })">
                 <t-icon name="close" size="12px" />
               </t-button>
             </div>
           </div>
           <div class="tag-add-row">
             <t-input v-model="newTag" size="small" placeholder="添加标签" @enter="addTag" style="flex:1" />
-            <t-button size="small" variant="outline" @click="addTag">添加</t-button>
+            <t-button size="small" variant="outline" :disabled="importUI.loading" @click="addTag">添加</t-button>
           </div>
         </section>
         <section class="meta-section">
@@ -95,10 +92,23 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
+import { useImportUIStore } from '@/stores/importUIStore'
 import type { ImportBlock } from '@/api/question_block'
 
 const store = useImportWorkbenchStore()
-const emit = defineEmits<{ changed: []; sort: [] }>()
+const importUI = useImportUIStore()
+const emit = defineEmits<{
+  changed: []
+  sort: []
+  'restore-original': [id: string]
+  'split-block': [payload: { id: string; positions: number[] }]
+  'merge-previous': [id: string]
+  'merge-next': [id: string]
+  'delete-block': [id: string]
+  'restore-deleted': []
+  'add-tag': [payload: { id: string; tag: string }]
+  'remove-tag': [payload: { id: string; tag: string }]
+}>()
 
 const editingText = ref('')
 const showSplitControl = ref(false)
@@ -112,30 +122,14 @@ const selectedBlockTags = computed(() =>
   Array.isArray(store.selectedBlock?.tags) ? store.selectedBlock.tags : []
 )
 
-function safeAnomalies(block: ImportBlock) {
-  return Array.isArray(block.anomalies) ? block.anomalies : []
-}
-function hasError(block: ImportBlock) {
-  return safeAnomalies(block).some(a => a?.severity === 'error')
-}
+function safeAnomalies(block: ImportBlock) { return Array.isArray(block.anomalies) ? block.anomalies : [] }
+function hasError(block: ImportBlock) { return safeAnomalies(block).some(a => a?.severity === 'error') }
 
 watch(() => [store.selectedBlock?.id, store.selectedBlock?.current_text] as const, ([, ct]) => {
-  editingText.value = ct ?? ''
-  showSplitControl.value = false
-  splitKeyword.value = ''
-  newTag.value = ''
+  editingText.value = ct ?? ''; showSplitControl.value = false; splitKeyword.value = ''; newTag.value = ''
 }, { immediate: true })
 
-function restoreSelectedBlock() {
-  if (!store.selectedBlock) return
-  store.restoreOriginalText(store.selectedBlock.id)
-  editingText.value = store.selectedBlock.current_text
-  emit('changed')
-}
-function onTextChange(value: string) {
-  if (store.selectedBlock) { store.updateBlockText(store.selectedBlock.id, value); emit('changed') }
-}
-function handleSort() { emit('sort') }
+function onTextChange(value: string) { if (store.selectedBlock) { store.updateBlockText(store.selectedBlock.id, value); emit('changed') } }
 function doSplit() { showSplitControl.value = !showSplitControl.value; splitKeyword.value = '' }
 function doSplitByKeyword() {
   const kw = splitKeyword.value.trim()
@@ -144,23 +138,13 @@ function doSplitByKeyword() {
   const positions: number[] = []
   let idx = 0
   while (idx < text.length) { const pos = text.indexOf(kw, idx); if (pos < 0) break; positions.push(pos); idx = pos + kw.length }
-  if (positions.length > 0) { store.splitBlock(store.selectedBlock.id, positions); emit('changed') }
+  if (positions.length > 0) { emit('split-block', { id: store.selectedBlock.id, positions }) }
   showSplitControl.value = false; splitKeyword.value = ''
-}
-function restoreAllDeleted() {
-  while (store.deletedBlocks.length > 0) store.restoreBlock(store.deletedBlocks[store.deletedBlocks.length - 1].id)
-  emit('changed')
 }
 function addTag() {
   if (!store.selectedBlock || !newTag.value.trim()) return
-  store.addTagToBlock(store.selectedBlock.id, newTag.value)
+  emit('add-tag', { id: store.selectedBlock.id, tag: newTag.value.trim() })
   newTag.value = ''
-  emit('changed')
-}
-function removeTag(tag: string) {
-  if (!store.selectedBlock) return
-  store.removeTagFromBlock(store.selectedBlock.id, tag)
-  emit('changed')
 }
 </script>
 

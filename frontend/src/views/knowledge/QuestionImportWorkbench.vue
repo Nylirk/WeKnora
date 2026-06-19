@@ -12,16 +12,6 @@
     :close-on-esc-keydown="false"
   >
     <div class="workbench-shell">
-      <!-- Unified loading overlay -->
-      <Transition name="loading-fade">
-        <div v-if="store.loading || store.loadingLeaving" class="loading-overlay">
-          <div class="loading-content">
-            <t-loading size="medium" />
-            <span class="loading-text">{{ store.loadingText || '处理中…' }}</span>
-          </div>
-        </div>
-      </Transition>
-
       <div class="workbench-header">
         <div class="workbench-heading">
           <h3>题库导入工作台</h3>
@@ -31,11 +21,11 @@
           </t-steps>
         </div>
         <t-space size="small">
-          <t-button variant="outline" :disabled="store.loading" @click="handleAbandon">放弃导入</t-button>
-          <t-button v-if="store.currentStep === 'block-review'" theme="primary" :disabled="store.loading" @click="goToQuestionReview">
+          <t-button variant="outline" :disabled="importUI.loading" @click="handleAbandon">放弃导入</t-button>
+          <t-button v-if="store.currentStep === 'block-review'" theme="primary" :disabled="importUI.loading" @click="goToQuestionReview">
             下一步：题目解析
           </t-button>
-          <t-button v-else variant="outline" :disabled="store.loading" @click="returnToBlockReview">
+          <t-button v-else variant="outline" :disabled="importUI.loading" @click="returnToBlockReview">
             返回分块审核
           </t-button>
         </t-space>
@@ -61,8 +51,20 @@
       </div>
 
       <div class="workbench-body">
-        <BlockReviewPanel v-if="store.currentStep === 'block-review'" @changed="saveDebounced" @sort="handleSort" />
-        <QuestionReviewPanel v-else ref="questionReviewRef" @changed="saveDebounced" @imported="handleImported" @import="handleImport" />
+        <BlockReviewPanel
+          v-if="store.currentStep === 'block-review'"
+          @changed="saveDebounced"
+          @sort="handleSort"
+          @restore-original="handleRestoreOriginal"
+          @split-block="handleSplitBlock"
+          @merge-previous="handleMergePrevious"
+          @merge-next="handleMergeNext"
+          @delete-block="handleDeleteBlock"
+          @restore-deleted="handleRestoreDeleted"
+          @add-tag="handleAddTag"
+          @remove-tag="handleRemoveTag"
+        />
+        <QuestionReviewPanel v-else @changed="saveDebounced" @imported="handleImported" @import="handleImport" />
       </div>
     </div>
   </t-dialog>
@@ -84,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
 import { useImportUIStore } from '@/stores/importUIStore'
@@ -96,7 +98,6 @@ const props = defineProps<{ visible: boolean; kbId: string; setId: string }>()
 const emit = defineEmits<{ 'update:visible': [value: boolean]; imported: []; abandoned: [] }>()
 const store = useImportWorkbenchStore()
 const importUI = useImportUIStore()
-const questionReviewRef = ref<InstanceType<typeof QuestionReviewPanel> | null>(null)
 const abandonVisible = ref(false)
 
 const importFormatLabel = computed(() => {
@@ -126,85 +127,84 @@ async function saveProgress() {
 }
 onBeforeUnmount(() => { if (saveTimer) void saveProgress().catch(() => {}) })
 
+// --- All async operations use importUI overlay ---
+
 async function goToQuestionReview() {
-  await store.withWorkbenchLoading('题目解析中…', async () => {
+  await importUI.withImportLoading('题目解析中…', async () => {
     const success = await store.parseQuestionsAction()
-    if (success) {
-      store.goToStep('question-review')
-      await saveProgress()
-    }
+    if (success) { store.goToStep('question-review'); await saveProgress() }
   })
 }
-
 function returnToBlockReview() { store.goToStep('block-review'); saveDebounced() }
 function handleAbandon() { abandonVisible.value = true }
 
+// Block Review operations — lightweight, no sync save
 async function handleSort() {
-  await store.withWorkbenchLoading('正在按题号排序…', async () => { store.sortBlocksByQuestionNumber() })
+  await importUI.withImportLoading('正在按题号排序…', async () => { store.sortBlocksByQuestionNumber() })
+  saveDebounced()
+}
+async function handleRestoreOriginal(id: string) {
+  await importUI.withImportLoading('正在恢复分块…', async () => { store.restoreOriginalText(id) })
+  saveDebounced()
+}
+async function handleSplitBlock(payload: { id: string; positions: number[] }) {
+  await importUI.withImportLoading('正在拆分分块…', async () => { store.splitBlock(payload.id, payload.positions) })
+  saveDebounced()
+}
+async function handleMergePrevious(id: string) {
+  await importUI.withImportLoading('正在合并分块…', async () => { store.mergeWithPrevious(id); saveDebounced() })
+  saveDebounced()
+}
+async function handleMergeNext(id: string) {
+  await importUI.withImportLoading('正在合并分块…', async () => { store.mergeWithNext(id) })
+  saveDebounced()
+}
+async function handleDeleteBlock(id: string) {
+  await importUI.withImportLoading('正在删除分块…', async () => { store.deleteBlock(id) })
+  saveDebounced()
+}
+async function handleRestoreDeleted() {
+  await importUI.withImportLoading('正在恢复分块…', async () => {
+    while (store.deletedBlocks.length > 0) store.restoreBlock(store.deletedBlocks[store.deletedBlocks.length - 1].id)
+  })
+  saveDebounced()
+}
+async function handleAddTag(payload: { id: string; tag: string }) {
+  store.addTagToBlock(payload.id, payload.tag)
+  saveDebounced()
+}
+async function handleRemoveTag(payload: { id: string; tag: string }) {
+  store.removeTagFromBlock(payload.id, payload.tag)
+  saveDebounced()
 }
 
+// --- Abandon flow ---
 async function confirmAbandonSaveDraft() {
   try {
     await importUI.withImportLoading('正在保存草稿…', async () => { await saveProgress() })
     MessagePlugin.success('草稿已保存，7 天内可恢复')
-    abandonVisible.value = false
-    store.reset()
-    emit('update:visible', false)
-    emit('abandoned')
-  } catch (e: any) {
-    MessagePlugin.error(e?.message || '保存草稿失败，请重试')
-  }
+    abandonVisible.value = false; store.reset()
+    emit('update:visible', false); emit('abandoned')
+  } catch (e: any) { MessagePlugin.error(e?.message || '保存草稿失败，请重试') }
 }
-
 async function confirmAbandonDiscard() {
   try {
     await importUI.withImportLoading('正在清除草稿…', async () => { await deleteDraft(props.kbId, props.setId) })
-    clearSaveTimer()
-    MessagePlugin.success('已放弃本次导入')
-    store.reset()
-    abandonVisible.value = false
-    emit('update:visible', false)
-    emit('abandoned')
-  } catch (e: any) {
-    MessagePlugin.error(e?.message || '清除草稿失败，请重试')
-  }
+    clearSaveTimer(); MessagePlugin.success('已放弃本次导入')
+    store.reset(); abandonVisible.value = false
+    emit('update:visible', false); emit('abandoned')
+  } catch (e: any) { MessagePlugin.error(e?.message || '清除草稿失败，请重试') }
 }
 
 async function handleImport() {
-  await importUI.withImportLoading('正在导入题目…', async () => {
-    await questionReviewRef.value?.doImport()
-  })
+  await importUI.withImportLoading('正在导入题目…', async () => {})
+  // QuestionReviewPanel.doImport handles its own importUI wrapping
 }
-
-async function handleImported() {
-  clearSaveTimer()
-  emit('update:visible', false)
-  emit('imported')
-}
-
-defineExpose({
-  getQuestionReviewRef() { return questionReviewRef.value },
-  async importWithLoading() {
-    await store.withWorkbenchLoading('正在导入题目…', async () => {
-      await questionReviewRef.value?.doImport()
-    })
-  },
-})
+async function handleImported() { clearSaveTimer(); emit('update:visible', false); emit('imported') }
 </script>
 
 <style scoped>
-.workbench-shell { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.loading-overlay {
-  position: absolute; inset: 0; z-index: 100;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,0.72); backdrop-filter: blur(2px);
-}
-.loading-content { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.loading-text { font-size: 14px; color: var(--td-text-color-secondary); }
-.loading-fade-enter-active { transition: opacity 0.2s; }
-.loading-fade-leave-active { transition: opacity 0.5s; }
-.loading-fade-enter-from, .loading-fade-leave-to { opacity: 0; }
-
+.workbench-shell { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .workbench-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 20px; border-bottom: 1px solid var(--td-component-stroke); background: var(--td-bg-color-container); }
 .workbench-heading { display: flex; align-items: center; gap: 28px; flex: 1; min-width: 0; }
 .workbench-heading h3 { flex-shrink: 0; margin: 0; font-size: 17px; font-weight: 600; white-space: nowrap; }

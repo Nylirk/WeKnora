@@ -60,26 +60,9 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
   const questionErrors = ref<{ line_number: number; message: string }[]>([])
   const questionWarnings = ref<string[]>([])
   const questionStats = ref({ detected_questions: 0, with_answer: 0, without_answer: 0 })
-  // Internal workbench overlay
-  const loading = ref(false)
-  const loadingText = ref('')
-  const loadingLeaving = ref(false)
   const isParsing = ref(false)
   const isImporting = ref(false)
   const draftExists = ref(false)
-
-  async function withWorkbenchLoading(text: string, task: () => Promise<void>): Promise<void> {
-    if (loading.value) return
-    loading.value = true
-    loadingText.value = text
-    loadingLeaving.value = false
-    try { await task() }
-    finally {
-      loadingLeaving.value = true; loading.value = false
-      await new Promise(r => setTimeout(r, 500))
-      loadingLeaving.value = false
-    }
-  }
 
   /** Clear import-stage warnings/errors (call on import success) */
   function clearImportWarnings() {
@@ -350,7 +333,6 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     kbId, setId, strategyPreset, defaultDifficulty, importMode, importFormat,
     blocks, summary, currentStep, selectedBlockId, anomalyFilter,
     deletedBlocks, questions, questionErrors, questionWarnings, questionStats,
-    loading, loadingText, loadingLeaving, withWorkbenchLoading,
     clearImportWarnings,
     isParsing, isImporting, draftExists,
     filteredBlocks, selectedBlock, hasDeletedBlocks,
