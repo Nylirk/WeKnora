@@ -347,3 +347,40 @@ test('validateBlocks filters anomalies safely with Array.isArray', () => {
   const storeSource = readFileSync(new URL('../../stores/importWorkbench.ts', import.meta.url), 'utf8')
   assert.equal(storeSource.includes('Array.isArray(block.anomalies) ? block.anomalies : []'), true)
 })
+
+// ===== Regression: currentStep must be declared and exported =====
+
+test('currentStep ref is declared in store setup', () => {
+  const storeSource = readFileSync(new URL('../../stores/importWorkbench.ts', import.meta.url), 'utf8')
+  assert.equal(storeSource.includes("currentStep = ref<WorkbenchStep>('block-review')"), true, 'currentStep ref must be declared')
+})
+
+test('currentStep is exported from store return', () => {
+  const storeSource = readFileSync(new URL('../../stores/importWorkbench.ts', import.meta.url), 'utf8')
+  assert.equal(storeSource.includes('    currentStep,'), true, 'currentStep must be in store return')
+})
+
+test('reset() assigns currentStep.value = block-review', () => {
+  const storeSource = readFileSync(new URL('../../stores/importWorkbench.ts', import.meta.url), 'utf8')
+  assert.equal(storeSource.includes("currentStep.value = 'block-review'"), true, 'reset must set currentStep back to block-review')
+})
+
+test('reset() clears blockOrder and blockMap', () => {
+  const storeSource = readFileSync(new URL('../../stores/importWorkbench.ts', import.meta.url), 'utf8')
+  assert.equal(storeSource.includes('blockOrder.value = []'), true, 'reset must clear blockOrder')
+  assert.equal(storeSource.includes('blockMap.value = {}'), true, 'reset must clear blockMap')
+})
+
+test('handleFileParsed wraps store init in try/catch', () => {
+  const hasTryCatch = source.includes('"打开导入工作台失败"') || source.includes("'打开导入工作台失败'")
+  assert.equal(hasTryCatch, true, 'handleFileParsed must catch errors when opening workbench')
+})
+
+test('handleFileParsed calls reset then setBlocksFromResponse', () => {
+  const handleFn = sourceSection(source, 'async function handleFileParsed', 'async function handleWorkbenchImported')
+  const resetIdx = handleFn.indexOf('workbenchStore.reset()')
+  const setBlocksIdx = handleFn.indexOf('workbenchStore.setBlocksFromResponse')
+  assert.equal(resetIdx >= 0, true, 'handleFileParsed must call reset')
+  assert.equal(setBlocksIdx >= 0, true, 'handleFileParsed must call setBlocksFromResponse')
+  assert.equal(setBlocksIdx > resetIdx, true, 'setBlocksFromResponse must be called after reset')
+})

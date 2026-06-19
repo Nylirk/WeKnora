@@ -402,44 +402,49 @@ async function handleFileParsed(payload: {
   importFormat: 'json' | 'word' | 'pdf'
   importMode: 'single' | 'batch'
 }) {
-  fileImportVisible.value = false
-  restoreDraftVisible.value = false
-  headerImportMenuVisible.value = false
-  pendingDraft.value = null
-  workbenchStore.reset()
-  workbenchStore.kbId = props.knowledgeBaseId
-  workbenchStore.setId = props.setId
-  workbenchStore.strategyPreset = payload.strategyPreset
-  workbenchStore.defaultDifficulty = 'medium'
-  workbenchStore.importMode = payload.importMode
-  workbenchStore.importFormat = payload.importFormat
-  workbenchStore.setBlocksFromResponse(payload.blocks)
-
   try {
-    const blockOrder = payload.blocks.map(b => b.id)
-    const blockMap: Record<string, ImportBlock> = {}
-    for (const b of payload.blocks) { blockMap[b.id] = b }
-    await saveDraft({
-      kbId: props.knowledgeBaseId,
-      setId: props.setId,
-      blockOrder,
-      blockMap,
-      deletedBlockStack: [],
-      deletedBlockMap: {},
-      strategyPreset: payload.strategyPreset,
-      defaultDifficulty: workbenchStore.defaultDifficulty,
-      importMode: payload.importMode,
-      importFormat: payload.importFormat,
-      currentStep: 'block-review',
-      questions: [],
-      timestamp: Date.now(),
-    })
-  } catch (error: any) {
-    MessagePlugin.warning(error?.message || '草稿保存失败，本次仍可继续处理。')
-  }
+    fileImportVisible.value = false
+    restoreDraftVisible.value = false
+    headerImportMenuVisible.value = false
+    pendingDraft.value = null
+    workbenchStore.reset()
+    workbenchStore.kbId = props.knowledgeBaseId
+    workbenchStore.setId = props.setId
+    workbenchStore.strategyPreset = payload.strategyPreset
+    workbenchStore.defaultDifficulty = 'medium'
+    workbenchStore.importMode = payload.importMode
+    workbenchStore.importFormat = payload.importFormat
+    workbenchStore.setBlocksFromResponse(payload.blocks)
 
-  await nextTick()
-  workbenchVisible.value = true
+    try {
+      const blockOrder = payload.blocks.map(b => b.id)
+      const blockMap: Record<string, ImportBlock> = {}
+      for (const b of payload.blocks) { blockMap[b.id] = b }
+      await saveDraft({
+        kbId: props.knowledgeBaseId,
+        setId: props.setId,
+        blockOrder,
+        blockMap,
+        deletedBlockStack: [],
+        deletedBlockMap: {},
+        strategyPreset: payload.strategyPreset,
+        defaultDifficulty: workbenchStore.defaultDifficulty,
+        importMode: payload.importMode,
+        importFormat: payload.importFormat,
+        currentStep: 'block-review',
+        questions: [],
+        timestamp: Date.now(),
+      })
+    } catch (error: any) {
+      MessagePlugin.warning(error?.message || '草稿保存失败，本次仍可继续处理。')
+    }
+
+    await nextTick()
+    workbenchVisible.value = true
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || '打开导入工作台失败')
+    console.error('[question-import] failed to open workbench', e)
+  }
 }
 
 async function handleWorkbenchImported() {

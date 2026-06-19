@@ -83,6 +83,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
   const defaultDifficulty = ref('medium')
   const importMode = ref<'single' | 'batch'>('batch')
   const importFormat = ref<'json' | 'word' | 'pdf'>('word')
+  const currentStep = ref<WorkbenchStep>('block-review')
 
   // P0: split blocks into order + map for O(1) access
   const blockOrder = ref<string[]>([])
@@ -673,6 +674,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
   return {
     // state
     kbId, setId, strategyPreset, defaultDifficulty, importMode, importFormat,
+    currentStep,
     blockOrder, blockMap, selectedBlockId, anomalyFilter,
     deletedBlockStack, deletedBlockMap,
     structuralAnomalies,
