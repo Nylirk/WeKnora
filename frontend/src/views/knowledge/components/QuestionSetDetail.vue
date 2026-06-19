@@ -150,8 +150,8 @@
       :close-btn="false"
       :close-on-overlay-click="false"
       :close-on-esc-keydown="false"
-      :confirm-btn="{ content: '恢复草稿', theme: 'primary' }"
-      :cancel-btn="{ content: '重新导入' }"
+      :confirm-btn="{ content: '恢复草稿', theme: 'primary', loading: restoringDraft }"
+      :cancel-btn="{ content: '重新导入', loading: startingFreshImport }"
       @confirm="restoreImportDraft"
       @cancel="startFreshImport"
     >
@@ -201,6 +201,8 @@ const fileImportSession = ref(0)
 const workbenchVisible = ref(false)
 const restoreDraftVisible = ref(false)
 const pendingDraft = ref<ImportDraft | null>(null)
+const restoringDraft = ref(false)
+const startingFreshImport = ref(false)
 const pendingDraftTime = computed(() => pendingDraft.value
   ? new Date(pendingDraft.value.timestamp).toLocaleString()
   : '')
@@ -361,28 +363,40 @@ function applyDraftToWorkbench(draft: ImportDraft) {
 }
 
 async function restoreImportDraft() {
-  const draft = pendingDraft.value
-  if (!draft || !Array.isArray(draft.blocks) || draft.blocks.length === 0) {
-    MessagePlugin.warning('草稿中没有可恢复的 blocks，请重新导入。')
-    await startFreshImport()
-    return
+  if (restoringDraft.value) return
+  restoringDraft.value = true
+  try {
+    const draft = pendingDraft.value
+    if (!draft || !Array.isArray(draft.blocks) || draft.blocks.length === 0) {
+      MessagePlugin.warning('草稿中没有可恢复的 blocks，请重新导入。')
+      await startFreshImport()
+      return
+    }
+    fileImportVisible.value = false
+    restoreDraftVisible.value = false
+    headerImportMenuVisible.value = false
+    applyDraftToWorkbench(draft)
+    pendingDraft.value = null
+    await nextTick()
+    workbenchVisible.value = true
+  } finally {
+    restoringDraft.value = false
   }
-
-  fileImportVisible.value = false
-  restoreDraftVisible.value = false
-  headerImportMenuVisible.value = false
-  applyDraftToWorkbench(draft)
-  pendingDraft.value = null
-  await nextTick()
-  workbenchVisible.value = true
 }
 
 async function startFreshImport() {
-  closeImportModals()
-  pendingDraft.value = null
-  await deleteDraft(props.knowledgeBaseId, props.setId)
-  await nextTick()
-  await openFileImportDialog()
+  if (startingFreshImport.value) return
+  startingFreshImport.value = true
+  try {
+    closeImportModals()
+    pendingDraft.value = null
+    await deleteDraft(props.knowledgeBaseId, props.setId)
+    restoreDraftVisible.value = false
+    await nextTick()
+    await openFileImportDialog()
+  } finally {
+    startingFreshImport.value = false
+  }
 }
 
 async function handleFileParsed(payload: {

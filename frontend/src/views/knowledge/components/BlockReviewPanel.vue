@@ -7,7 +7,7 @@
           <t-option value="error" label="错误" />
           <t-option value="warning" label="警告" />
         </t-select>
-        <t-button size="small" variant="outline" @click="handleSort">按题号排序</t-button>
+        <t-button size="small" variant="outline" :loading="sortingBlocks" :disabled="sortingBlocks" @click="handleSort">按题号排序</t-button>
         <t-button size="small" variant="outline" theme="warning" :disabled="!store.hasDeletedBlocks" @click="restoreAllDeleted">恢复删除</t-button>
       </t-space>
       <span class="block-count">{{ store.filteredBlocks.length }} / {{ store.blocks.length }} blocks</span>
@@ -104,6 +104,7 @@ const editingText = ref('')
 const showSplitControl = ref(false)
 const splitKeyword = ref('')
 const newTag = ref('')
+const sortingBlocks = ref(false)
 
 const selectedBlockAnomalies = computed(() =>
   Array.isArray(store.selectedBlock?.anomalies) ? store.selectedBlock.anomalies : []
@@ -135,7 +136,17 @@ function restoreSelectedBlock() {
 function onTextChange(value: string) {
   if (store.selectedBlock) { store.updateBlockText(store.selectedBlock.id, value); emit('changed') }
 }
-function handleSort() { store.sortBlocksByQuestionNumber(); emit('changed') }
+function handleSort() {
+  if (sortingBlocks.value) return
+  sortingBlocks.value = true
+  try {
+    store.sortBlocksByQuestionNumber()
+    emit('changed')
+  } finally {
+    // Small delay so UI shows the loading spinner briefly
+    setTimeout(() => { sortingBlocks.value = false }, 200)
+  }
+}
 function doSplit() { showSplitControl.value = !showSplitControl.value; splitKeyword.value = '' }
 function doSplitByKeyword() {
   const kw = splitKeyword.value.trim()
@@ -172,7 +183,7 @@ function removeTag(tag: string) {
 .col-list { overflow-y: auto; border-right: 1px solid var(--td-component-stroke); }
 .col-editor { overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
 .col-editor-empty { align-items: center; justify-content: center; }
-.col-meta { overflow-y: auto; padding: 14px; background: var(--td-bg-color-page); border-left: 1px solid var(--td-component-stroke); }
+.col-meta { overflow-y: auto; padding: 12px 16px; background: var(--td-bg-color-container); border-left: 1px solid var(--td-component-stroke); }
 .block-item { padding: 10px 12px; border-bottom: 1px solid var(--td-component-stroke); cursor: pointer; transition: background 0.15s; }
 .block-item:hover { background: var(--td-bg-color-container-hover); }
 .block-item.selected { background: var(--td-bg-color-container-active); }
@@ -180,18 +191,19 @@ function removeTag(tag: string) {
 .block-item-header { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; flex-wrap: wrap; }
 .block-item-index { font-size: 11px; color: var(--td-text-color-placeholder); }
 .block-item-preview { font-size: 12px; color: var(--td-text-color-secondary); line-height: 1.4; }
-.meta-section + .meta-section { margin-top: 20px; }
+.meta-section { padding: 12px 0; border-bottom: 1px solid var(--td-component-stroke); }
+.meta-section:last-child { border-bottom: none; }
 .meta-section h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
 .meta-empty { font-size: 12px; color: var(--td-text-color-placeholder); }
 .tag-edit-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
-.tag-edit-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
-.tag-edit-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-edit-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 4px 8px; border: 1px solid var(--td-component-stroke); border-radius: 4px; background: var(--td-bg-color-container); }
+.tag-edit-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .tag-add-row { display: flex; gap: 4px; }
-.detail-anomalies { display: flex; flex-direction: column; gap: 7px; }
-.anomaly-line { display: flex; flex-direction: column; gap: 2px; padding: 8px; border-radius: 6px; background: var(--td-bg-color-container); font-size: 12px; line-height: 1.5; }
-.anomaly-line.error { border-left: 3px solid var(--td-error-color); color: var(--td-error-color); }
-.anomaly-line.warning { border-left: 3px solid var(--td-warning-color); color: var(--td-warning-color); }
-.anomaly-code { font-size: 10px; font-weight: 600; opacity: .8; }
+.detail-anomalies { display: flex; flex-direction: column; gap: 4px; }
+.anomaly-line { font-size: 12px; line-height: 1.4; padding: 4px 0; display: flex; align-items: flex-start; gap: 4px; }
+.anomaly-line.error { color: var(--td-error-color); }
+.anomaly-line.warning { color: var(--td-warning-color); }
+.anomaly-code { font-size: 10px; font-weight: 600; opacity: .7; }
 .detail-empty { flex: 1; display: flex; align-items: center; justify-content: center; }
 .split-control { display: flex; align-items: center; gap: 8px; background: var(--td-bg-color-secondarycontainer); padding: 8px; border-radius: 4px; }
 .split-hint { font-size: 12px; color: var(--td-text-color-secondary); }

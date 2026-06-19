@@ -143,7 +143,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
       if (selectedBlockId.value === id) {
         selectedBlockId.value = blocks.value.length > 0 ? blocks.value[Math.min(idx, blocks.value.length - 1)].id : null
       }
-      validateBlocks()
+      scheduleValidateBlocks()
     }
   }
 
@@ -153,7 +153,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
       const [restored] = deletedBlocks.value.splice(idx, 1)
       blocks.value.splice(restored.index, 0, restored)
       blocks.value.forEach((b, i) => { b.index = i })
-      validateBlocks()
+      scheduleValidateBlocks()
     }
   }
 
@@ -184,7 +184,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     })
     blocks.value.splice(idx, 1, ...newBlocks)
     blocks.value.forEach((b, i) => { b.index = i })
-    validateBlocks()
+    scheduleValidateBlocks()
   }
 
   function mergeWithPrevious(id: string) {
@@ -196,7 +196,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     prev.anomalies = []
     blocks.value.splice(idx, 1)
     blocks.value.forEach((b, i) => { b.index = i })
-    validateBlocks()
+    scheduleValidateBlocks()
   }
 
   function mergeWithNext(id: string) {
@@ -208,7 +208,7 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     curr.anomalies = []
     blocks.value.splice(idx + 1, 1)
     blocks.value.forEach((b, i) => { b.index = i })
-    validateBlocks()
+    scheduleValidateBlocks()
   }
 
   function sortBlocksByQuestionNumber() {
@@ -217,6 +217,16 @@ export const useImportWorkbenchStore = defineStore('importWorkbench', () => {
     numbered.sort((a, b) => (a.question_number ?? 0) - (b.question_number ?? 0))
     blocks.value = [...numbered, ...unnumbered]
     blocks.value.forEach((b, i) => { b.index = i })
+  }
+
+  let validateTimer: ReturnType<typeof setTimeout> | null = null
+
+  function scheduleValidateBlocks() {
+    if (validateTimer) clearTimeout(validateTimer)
+    validateTimer = setTimeout(() => {
+      validateTimer = null
+      validateBlocks()
+    }, 300)
   }
 
   function validateBlocks() {
