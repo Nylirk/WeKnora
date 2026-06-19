@@ -15,14 +15,15 @@ import (
 )
 
 type QuestionService struct {
-	repository         interfaces.QuestionRepository
-	evaluationService  interfaces.EvaluationService
-	evaluationRepo     interfaces.EvaluationRepository
-	knowledgeBaseSvc   interfaces.KnowledgeBaseService
-	chunkService       interfaces.ChunkService
-	knowledgeService   interfaces.KnowledgeService
-	docReader          interfaces.DocumentReader
-	extractionService  *QuestionExtractionService
+	repository           interfaces.QuestionRepository
+	evaluationService    interfaces.EvaluationService
+	evaluationRepo       interfaces.EvaluationRepository
+	knowledgeBaseSvc     interfaces.KnowledgeBaseService
+	chunkService         interfaces.ChunkService
+	knowledgeService     interfaces.KnowledgeService
+	docReader            interfaces.DocumentReader
+	extractionService    *QuestionExtractionService
+	blockAnalysisService *BlockAnalysisService
 }
 
 func NewQuestionService(
@@ -34,16 +35,18 @@ func NewQuestionService(
 	knowledgeSvc interfaces.KnowledgeService,
 	docReader interfaces.DocumentReader,
 	extractionSvc *QuestionExtractionService,
+	blockAnalysisSvc *BlockAnalysisService,
 ) interfaces.QuestionService {
 	return &QuestionService{
-		repository:        repo,
-		evaluationService: evalSvc,
-		evaluationRepo:    evalRepo,
-		knowledgeBaseSvc:  kbSvc,
-		chunkService:      chunkSvc,
-		knowledgeService:  knowledgeSvc,
-		docReader:         docReader,
-		extractionService: extractionSvc,
+		repository:           repo,
+		evaluationService:    evalSvc,
+		evaluationRepo:       evalRepo,
+		knowledgeBaseSvc:     kbSvc,
+		chunkService:         chunkSvc,
+		knowledgeService:     knowledgeSvc,
+		docReader:            docReader,
+		extractionService:    extractionSvc,
+		blockAnalysisService: blockAnalysisSvc,
 	}
 }
 

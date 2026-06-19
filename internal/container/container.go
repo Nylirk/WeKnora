@@ -213,6 +213,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
 	must(container.Provide(service.NewQuestionExtractionService))
+	must(container.Provide(service.NewBlockAnalysisService))
 	must(container.Provide(service.NewQuestionService))
 	must(container.Provide(service.NewUserService))
 	must(container.Provide(service.NewSystemSettingService))
