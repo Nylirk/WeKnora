@@ -32,22 +32,17 @@
 
     <!-- 2. Parse config -->
     <div class="parse-config">
-      <t-space size="small" break-line>
-        <div class="config-item">
-          <span class="config-label">{{ $t('questionBank.type', '题型') }}：</span>
-          <t-select v-model="parseConfig.default_question_type" style="width: 120px" size="small">
-            <t-option v-for="qt in questionTypes" :key="qt.value" :value="qt.value" :label="qt.label" />
-          </t-select>
-        </div>
-        <div class="config-item">
-          <span class="config-label">{{ $t('questionBank.difficulty', '难度') }}：</span>
-          <t-select v-model="parseConfig.default_difficulty" style="width: 100px" size="small">
-            <t-option value="easy" :label="$t('questionBank.easy', '简单')" />
-            <t-option value="medium" :label="$t('questionBank.medium', '中等')" />
-            <t-option value="hard" :label="$t('questionBank.hard', '困难')" />
-          </t-select>
-        </div>
-      </t-space>
+      <div class="config-item">
+        <span class="config-label">{{ $t('questionBank.fileImportDefaultDifficulty', '默认难度') }}：</span>
+        <t-select v-model="parseConfig.default_difficulty" style="width: 100px" size="small">
+          <t-option value="easy" :label="$t('questionBank.easy', '简单')" />
+          <t-option value="medium" :label="$t('questionBank.medium', '中等')" />
+          <t-option value="hard" :label="$t('questionBank.hard', '困难')" />
+        </t-select>
+      </div>
+      <div class="config-hint">
+        {{ $t('questionBank.fileImportDefaultDifficultyHint', '仅作为导入时的默认值。当前暂不自动识别原文中的难度。') }}
+      </div>
     </div>
 
     <!-- 3. Preview summary (brief warnings/errors only; stats in drawer) -->
@@ -121,6 +116,10 @@
       :header="$t('questionBank.editQuestion', '编辑题目')"
       width="600px"
       :confirm-btn="null"
+      attach="body"
+      :z-index="3000"
+      top="8vh"
+      class="edit-question-dialog"
     >
       <t-form v-if="editingItem" label-align="top">
         <t-form-item label="题型">
@@ -332,7 +331,6 @@ function openRawCompare(item: ImportQuestionItem) {
 }
 
 const parseConfig = ref({
-  default_question_type: 'short_answer',
   default_difficulty: 'medium',
   mode: 'rule',
 })
@@ -365,7 +363,6 @@ function cleanupDialogState() {
   importMode.value = 'draft'
   duplicateMode.value = 'skip'
   parseConfig.value = {
-    default_question_type: 'short_answer',
     default_difficulty: 'medium',
     mode: 'rule',
   }
@@ -684,6 +681,7 @@ onBeforeUnmount(() => {
 .parse-config { margin: 16px 0; }
 .config-item { display: flex; align-items: center; gap: 6px; }
 .config-label { font-size: 13px; color: var(--td-text-color-secondary); }
+.config-hint { margin-top: 6px; font-size: 12px; color: var(--td-text-color-placeholder); }
 .preview-area { margin-top: 16px; }
 .preview-stats { margin-bottom: 12px; }
 .raw-text { max-height: 160px; overflow-y: auto; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; background: var(--td-bg-color-secondarycontainer); padding: 12px; border-radius: 4px; }
@@ -738,5 +736,13 @@ onBeforeUnmount(() => {
    does not overlap dialog footer at 1366px viewport (560px dialog). */
 .dialog-shifted-left {
   margin-left: -44px;
+}
+</style>
+
+<style>
+/* Edit question sub-dialog — teleported to body, needs unscoped rules */
+.edit-question-dialog .t-dialog__body {
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
 }
 </style>

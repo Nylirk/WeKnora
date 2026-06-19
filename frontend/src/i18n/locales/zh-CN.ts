@@ -133,6 +133,8 @@ export default {
     fileImportModeReviewed: "确认无误，导入为已审",
     fileImportModeDraftHelp: "文档识别可能存在误拆题、漏答案，推荐先以草稿导入后人工复核。",
     fileImportEmptyAnswer: "缺答案",
+    fileImportDefaultDifficulty: "默认难度",
+    fileImportDefaultDifficultyHint: "仅作为导入时的默认值。当前暂不自动识别原文中的难度。",
     fileImportError: "错误",
     fileImportErrorFileType: "仅支持 DOC、DOCX、PDF 文件。",
     fileImportErrorReadFailed: "文件读取失败",
