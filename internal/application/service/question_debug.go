@@ -27,6 +27,9 @@ func createDebugExport(
 	items []types.ImportQuestionItem,
 	parseErrors []types.ImportQuestionError,
 	parseWarnings []string,
+	fileName string,
+	fileType string,
+	fileSize int64,
 ) (debugDir string, zipPath string, manifest []string, err error) {
 	requestID := uuid.New().String()
 	debugDir = filepath.Join(os.TempDir(), "weknora-question-import-debug", requestID)
@@ -105,6 +108,9 @@ func createDebugExport(
 
 	// 06_summary.json — pipeline metadata
 	summaryJSON, err := json.MarshalIndent(map[string]interface{}{
+		"filename":           fileName,
+		"file_type":          fileType,
+		"file_size":          fileSize,
 		"default_type":       defaultType,
 		"default_difficulty": defaultDifficulty,
 		"extracted_len":      len(extractedText),
@@ -126,10 +132,13 @@ func createDebugExport(
 
 	// --- Zip everything ---
 	zipPath = filepath.Join(debugDir, "debug-export.zip")
+	// Add zip to manifest before creation so any partial file is cleaned on failure.
+	manifest = append(manifest, zipPath)
 	if err := createZip(zipPath, debugDir, manifest); err != nil {
+		// Explicitly remove the partial/empty zip file.
+		_ = os.Remove(zipPath)
 		return debugDir, "", manifest, fmt.Errorf("failed to create zip: %w", err)
 	}
-	manifest = append(manifest, zipPath)
 
 	return debugDir, zipPath, manifest, nil
 }
@@ -153,17 +162,28 @@ func writeDebugFile(debugDir, name string, content []byte) (string, error) {
 
 // createZip creates a zip archive at zipPath containing every file in filePaths,
 // stored relative to baseDir. A zip-slip guard rejects paths that escape baseDir.
-func createZip(zipPath, baseDir string, filePaths []string) error {
+func createZip(zipPath, baseDir string, filePaths []string) (err error) {
 	f, err := os.Create(zipPath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
+	// Clean up partial zip file on any error.
+	defer func() {
+		if err != nil {
+			_ = os.Remove(zipPath)
+		}
+	}()
+
 	w := zip.NewWriter(f)
 	defer w.Close()
 
 	for _, fp := range filePaths {
+		// Skip the zip file itself to avoid reading it while writing
+		if fp == zipPath {
+			continue
+		}
 		rel, err := filepath.Rel(baseDir, fp)
 		if err != nil {
 			return fmt.Errorf("zip: cannot compute relative path for %s: %w", fp, err)

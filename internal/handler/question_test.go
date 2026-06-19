@@ -170,6 +170,9 @@ func TestPreviewImportDebugExport_DebugModeServesZip(t *testing.T) {
 	if !strings.HasPrefix(contentType, "application/zip") {
 		t.Errorf("expected Content-Type application/zip, got %s", contentType)
 	}
+	if cd := rec.Header().Get("Content-Disposition"); !strings.Contains(cd, "question-import-debug.zip") {
+		t.Errorf("expected Content-Disposition with question-import-debug.zip, got %s", cd)
+	}
 
 	// Verify response body is a valid zip
 	zipReader, err := zip.NewReader(bytes.NewReader(rec.Body.Bytes()), int64(rec.Body.Len()))
@@ -228,6 +231,82 @@ func TestPreviewImportDebugExport_NoDebugParam(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "preview text") {
 		t.Errorf("expected JSON with raw_text_preview, got: %s", rec.Body.String())
+	}
+}
+
+func TestPreviewImportDebugExport_EmptyTextServesZip(t *testing.T) {
+	gin.SetMode(gin.DebugMode)
+	defer gin.SetMode(gin.TestMode)
+
+	// Simulate: the service produces a debug bundle for empty extracted text
+	debugDir := filepath.Join(os.TempDir(), "weknora-question-import-debug", "handler-empty-test")
+	if err := os.MkdirAll(debugDir, 0700); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+
+	var manifest []string
+	for _, entry := range []struct{ name, content string }{
+		{"01_extracted.md", ""},
+		{"02_normalized.md", ""},
+		{"03_lines.txt", "     1  \n"},
+		{"04_blocks.txt", ""},
+		{"05_items.json", `{"items":[],"errors":[],"warnings":["未能从文件中抽取文本，请确认文件内容可复制，或等待 OCR 支持。"]}`},
+		{"06_summary.json", `{"filename":"empty.docx","file_type":"docx","file_size":0,"extracted_len":0,"item_count":0}`},
+	} {
+		path := filepath.Join(debugDir, entry.name)
+		if err := os.WriteFile(path, []byte(entry.content), 0644); err != nil {
+			t.Fatalf("write %s: %v", entry.name, err)
+		}
+		manifest = append(manifest, path)
+	}
+
+	zipPath := filepath.Join(debugDir, "debug-export.zip")
+	if err := createTestZip(zipPath, debugDir, manifest); err != nil {
+		t.Fatalf("create test zip: %v", err)
+	}
+	manifest = append(manifest, zipPath)
+
+	defer servicepkg.CleanupDebugExport(context.Background(), debugDir, manifest)
+
+	stub := &stubQuestionServiceForDebugExport{
+		previewFn: func(ctx context.Context, kbID, setID string, fileData []byte, fileName string, req *types.ImportFilePreviewRequest) (*types.ImportFilePreviewResponse, error) {
+			return &types.ImportFilePreviewResponse{
+				Warnings:        []string{"未能从文件中抽取文本，请确认文件内容可复制，或等待 OCR 支持。"},
+				DebugExportPath:  debugDir,
+				DebugManifest:    manifest,
+			}, nil
+		},
+	}
+
+	router := newQuestionTestRouter(stub)
+	req := createMultipartRequest(t,
+		"/api/v1/knowledge-bases/kb-1/question-sets/set-1/questions/import-file/preview",
+		"empty.docx", []byte{},
+		map[string]string{"debug_export": "1"},
+	)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 for empty text debug export, got %d: body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.HasPrefix(rec.Header().Get("Content-Type"), "application/zip") {
+		t.Errorf("expected Content-Type application/zip for empty text, got %s", rec.Header().Get("Content-Type"))
+	}
+	// Verify the zip is valid and contains expected files
+	zipReader, err := zip.NewReader(bytes.NewReader(rec.Body.Bytes()), int64(rec.Body.Len()))
+	if err != nil {
+		t.Fatalf("empty text debug zip is not valid: %v", err)
+	}
+	foundFiles := make(map[string]bool)
+	for _, f := range zipReader.File {
+		foundFiles[f.Name] = true
+	}
+	for _, want := range []string{"01_extracted.md", "06_summary.json"} {
+		if !foundFiles[want] {
+			t.Errorf("empty text zip missing expected file: %s", want)
+		}
 	}
 }
 

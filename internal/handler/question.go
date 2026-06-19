@@ -329,6 +329,7 @@ func (h *QuestionHandler) PreviewImportQuestionsFromFile(c *gin.Context) {
 		}
 		// Clean up temp files after reading the zip into memory
 		servicepkg.CleanupDebugExport(c.Request.Context(), result.DebugExportPath, result.DebugManifest)
+		c.Header("Content-Disposition", `attachment; filename="question-import-debug.zip"`)
 		c.Data(http.StatusOK, "application/zip", zipBytes)
 		return
 	}

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,6 +30,7 @@ func TestCreateDebugExport_Success(t *testing.T) {
 	debugDir, zipPath, manifest, err := createDebugExport(
 		text, defaultType, defaultDifficulty,
 		items, parseErrors, parseWarnings,
+		"test.docx", "docx", 1234,
 	)
 	if err != nil {
 		t.Fatalf("createDebugExport failed: %v", err)
@@ -67,6 +69,7 @@ func TestCreateDebugExport_EmptyText(t *testing.T) {
 	debugDir, _, manifest, err := createDebugExport(
 		"", "", "",
 		nil, nil, nil,
+		"empty.pdf", "pdf", 0,
 	)
 	if err != nil {
 		t.Fatalf("createDebugExport failed on empty text: %v", err)
@@ -246,6 +249,79 @@ func TestCleanupDebugExport_NilManifest(t *testing.T) {
 func TestCleanupDebugExport_EmptyDebugDir(t *testing.T) {
 	// Should not panic
 	CleanupDebugExport(context.Background(), "", nil)
+}
+
+func TestCreateDebugExport_SummaryContainsFileMetadata(t *testing.T) {
+	debugDir, _, manifest, err := createDebugExport(
+		"1. test\n答案：A", "short_answer", "medium",
+		[]types.ImportQuestionItem{{LineNumber: 1, QuestionType: "single_choice", StemText: "test", AnswerText: "A", Difficulty: "medium"}},
+		nil, nil,
+		"exam-questions.docx", "docx", 20480,
+	)
+	if err != nil {
+		t.Fatalf("createDebugExport failed: %v", err)
+	}
+	defer CleanupDebugExport(context.Background(), debugDir, manifest)
+
+	summaryPath := filepath.Join(debugDir, "06_summary.json")
+	data, err := os.ReadFile(summaryPath)
+	if err != nil {
+		t.Fatalf("cannot read summary: %v", err)
+	}
+	var summary map[string]interface{}
+	if err := json.Unmarshal(data, &summary); err != nil {
+		t.Fatalf("cannot parse summary: %v", err)
+	}
+	if summary["filename"] != "exam-questions.docx" {
+		t.Errorf("filename: got %v, want 'exam-questions.docx'", summary["filename"])
+	}
+	if summary["file_type"] != "docx" {
+		t.Errorf("file_type: got %v, want 'docx'", summary["file_type"])
+	}
+	// file_size is JSON number; json.Unmarshal into interface{} yields float64
+	if fs, ok := summary["file_size"].(float64); !ok || int64(fs) != 20480 {
+		t.Errorf("file_size: got %v (%T), want 20480", summary["file_size"], summary["file_size"])
+	}
+}
+
+func TestCreateDebugExport_PartialZipCleanup(t *testing.T) {
+	// Verify that when createZip fails midway, the partial zip file is cleaned up.
+	// We simulate this by passing a file path that doesn't exist in the manifest;
+	// createZip will fail when trying to os.ReadFile the missing file, leaving a
+	// partial/empty zip that must be removed.
+	debugDir := filepath.Join(os.TempDir(), "weknora-question-import-debug-test-zipcleanup")
+	if err := os.MkdirAll(debugDir, 0700); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	defer os.RemoveAll(debugDir) // fallback cleanup
+
+	// Write a real debug file
+	p01 := filepath.Join(debugDir, "01_extracted.md")
+	if err := os.WriteFile(p01, []byte("test"), 0644); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	manifest := []string{p01}
+
+	// Add a non-existent file to the manifest to trigger a read error in createZip
+	missingFile := filepath.Join(debugDir, "02_missing.md")
+	manifest = append(manifest, missingFile)
+
+	zipPath := filepath.Join(debugDir, "debug-export.zip")
+	manifest = append(manifest, zipPath) // Pre-register zip for cleanup
+
+	err := createZip(zipPath, debugDir, manifest)
+	if err == nil {
+		t.Fatal("expected createZip to fail on missing file")
+	}
+	// The zip file must have been cleaned up in the error path
+	if _, statErr := os.Stat(zipPath); !os.IsNotExist(statErr) {
+		t.Errorf("partial zip file should have been deleted, but it still exists: %v", statErr)
+		_ = os.Remove(zipPath) // clean up
+	}
+	// Existing files should still be there (only zip was explicitly cleaned)
+	if _, err := os.Stat(p01); os.IsNotExist(err) {
+		t.Errorf("existing debug file should not have been deleted")
+	}
 }
 
 func containsStr(s, substr string) bool {
