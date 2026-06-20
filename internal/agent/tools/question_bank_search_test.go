@@ -1377,7 +1377,7 @@ func TestQuestionBankSearch_Semantic_InvalidMode(t *testing.T) {
 	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
-		"mode":  "hybrid",
+		"mode":  "fuzzy",
 		"query": "test",
 	})
 	result, err := tool.Execute(context.Background(), args)
@@ -1574,6 +1574,175 @@ func TestQuestionBankSearch_Semantic_NilDependencies(t *testing.T) {
 		}
 		if !strings.Contains(result.Output, "q2") {
 			t.Error("expected q2 in keyword results")
+		}
+	})
+}
+
+func TestQuestionBankSearch_Hybrid_RequiresQuery(t *testing.T) {
+	db := setupQuestionBankTestDB(t)
+	seedQuestionBank(t, db)
+	targets := searchTargetsWithKBs([]string{"qb1"})
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
+
+	args, _ := json.Marshal(map[string]interface{}{
+		"mode":  "hybrid",
+		"query": "",
+	})
+	result, err := tool.Execute(context.Background(), args)
+	if err == nil {
+		t.Error("expected error for empty query in hybrid mode")
+	}
+	if result.Success {
+		t.Error("expected failure")
+	}
+}
+
+func TestQuestionBankSearch_Hybrid_ModeAccepted(t *testing.T) {
+	db := setupQuestionBankTestDB(t)
+	seedQuestionBank(t, db)
+	targets := searchTargetsWithKBs([]string{"qb1"})
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
+
+	// Hybrid mode with nil semantic deps should fall back to keyword-only + warning.
+	args, _ := json.Marshal(map[string]interface{}{
+		"mode":  "hybrid",
+		"query": "prime",
+		"limit": 10,
+	})
+	result, err := tool.Execute(context.Background(), args)
+	if err != nil {
+		t.Fatalf("hybrid with fallback should not error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.Error)
+	}
+	if mode, _ := result.Data["mode"].(string); mode != "hybrid" {
+		t.Errorf("expected mode=hybrid, got %q", mode)
+	}
+	if fusion, _ := result.Data["fusion"].(string); fusion != "rrf" {
+		t.Errorf("expected fusion=rrf, got %q", fusion)
+	}
+	if warning, _ := result.Data["semantic_warning"].(string); warning == "" {
+		t.Error("expected semantic_warning when deps are nil")
+	}
+	if !strings.Contains(result.Output, "q2") {
+		t.Error("expected q2 (prime question) in keyword fallback results")
+	}
+}
+
+func TestQuestionBankSearch_Hybrid_KeywordSemanticMerge(t *testing.T) {
+	db := setupSemanticQuestionBankTestDB(t)
+	seedSemanticQuestions(t, db)
+
+	engine := &stubRetrieveEngine{
+		sourceIDs: []string{"q2", "q3"},
+		kbID:      "qb1",
+	}
+	kbService := &stubKBService{
+		kbs: map[string]*types.KnowledgeBase{
+			"qb1": {ID: "qb1", TenantID: 1, Type: "question_bank", EmbeddingModelID: "emb1", VectorStoreID: strPtr("vs1")},
+		},
+	}
+	modelService := &stubModelService{embedder: &stubEmbedder{dimensions: 768, modelName: "test", modelID: "emb1"}}
+	registry := &stubEngineRegistry{engine: engine}
+
+	targets := searchTargetsWithKBs([]string{"qb1"})
+	tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
+
+	// Query "polymorphism" — keyword hits q3 ("Define polymorphism"), semantic hits q2, q3.
+	args, _ := json.Marshal(map[string]interface{}{
+		"mode":  "hybrid",
+		"query": "polymorphism",
+		"limit": 10,
+	})
+	result, err := tool.Execute(context.Background(), args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.Error)
+	}
+
+	results, _ := result.Data["results"].([]QuestionBankSearchResult)
+	if len(results) == 0 {
+		t.Fatal("expected at least one result")
+	}
+	for _, r := range results {
+		if r.MatchType != "hybrid" {
+			t.Errorf("expected match_type=hybrid, got %q for %s", r.MatchType, r.ID)
+		}
+	}
+	// q3 should rank high — it appears in both keyword ("polymorphism") and semantic.
+	foundQ3 := false
+	for _, r := range results {
+		if r.ID == "q3" {
+			foundQ3 = true
+			if r.KeywordRank == 0 {
+				t.Error("q3 should have a keyword rank")
+			}
+			if r.SemanticRank == 0 {
+				t.Error("q3 should have a semantic rank")
+			}
+			if r.RRFScore == 0 {
+				t.Error("q3 should have an RRF score")
+			}
+			break
+		}
+	}
+	if !foundQ3 {
+		t.Error("q3 (polymorphism) should be in results")
+	}
+}
+
+func TestQuestionBankSearch_Hybrid_StructuredFilters(t *testing.T) {
+	db := setupSemanticQuestionBankTestDB(t)
+	seedSemanticQuestions(t, db)
+
+	engine := &stubRetrieveEngine{
+		sourceIDs: []string{"q1", "q2", "q3"},
+		kbID:      "qb1",
+	}
+	kbService := &stubKBService{
+		kbs: map[string]*types.KnowledgeBase{
+			"qb1": {ID: "qb1", TenantID: 1, Type: "question_bank", EmbeddingModelID: "emb1", VectorStoreID: strPtr("vs1")},
+		},
+	}
+	modelService := &stubModelService{embedder: &stubEmbedder{dimensions: 768, modelName: "test", modelID: "emb1"}}
+	registry := &stubEngineRegistry{engine: engine}
+
+	targets := searchTargetsWithKBs([]string{"qb1"})
+
+	t.Run("hybrid_status_filter", func(t *testing.T) {
+		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
+		args, _ := json.Marshal(map[string]interface{}{
+			"mode":   "hybrid",
+			"query":  "test",
+			"limit":  10,
+			"status": "reviewed",
+		})
+		result, _ := tool.Execute(context.Background(), args)
+		results, _ := result.Data["results"].([]QuestionBankSearchResult)
+		for _, r := range results {
+			if r.Status != "reviewed" {
+				t.Errorf("expected only reviewed, got %q for %s", r.Status, r.ID)
+			}
+		}
+	})
+
+	t.Run("hybrid_exclude_ids", func(t *testing.T) {
+		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
+		args, _ := json.Marshal(map[string]interface{}{
+			"mode":                 "hybrid",
+			"query":                "test",
+			"limit":                10,
+			"exclude_question_ids": []string{"q1"},
+		})
+		result, _ := tool.Execute(context.Background(), args)
+		results, _ := result.Data["results"].([]QuestionBankSearchResult)
+		for _, r := range results {
+			if r.ID == "q1" {
+				t.Error("q1 should be excluded")
+			}
 		}
 	})
 }

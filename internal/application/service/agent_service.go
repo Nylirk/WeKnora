@@ -478,7 +478,8 @@ func (s *agentService) registerTools(
 	}
 
 	questionBankToolSet := map[string]bool{
-		tools.ToolQuestionBankSearch: true,
+		tools.ToolQuestionBankSearch:    true,
+		tools.ToolSimilarQuestionSearch: true,
 	}
 
 	// Hard safety nets: drop tools whose runtime prerequisite is missing.
@@ -612,6 +613,15 @@ func (s *agentService) registerTools(
 
 		case tools.ToolQuestionBankSearch:
 			toolToRegister = tools.NewQuestionBankSearchTool(
+				s.db, config.SearchTargets,
+				s.knowledgeBaseService,
+				s.modelService,
+				s.engineRegistry,
+				s.storeOwnership,
+			)
+
+		case tools.ToolSimilarQuestionSearch:
+			toolToRegister = tools.NewSimilarQuestionSearchTool(
 				s.db, config.SearchTargets,
 				s.knowledgeBaseService,
 				s.modelService,

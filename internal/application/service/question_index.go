@@ -4,10 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -87,102 +85,9 @@ func newQuestionIndexService(
 
 // BuildQuestionIndexContent builds the only embedding input used for a question.
 // Answer, analysis and grading fields are intentionally not read here.
+// Delegates to the canonical implementation in types.BuildQuestionIndexContent.
 func BuildQuestionIndexContent(q *types.Question) string {
-	if q == nil {
-		return ""
-	}
-	fields := []struct {
-		name  string
-		value string
-	}{
-		{name: "question_type", value: strings.TrimSpace(q.QuestionType)},
-		{name: "difficulty", value: strings.TrimSpace(string(q.Difficulty))},
-		{name: "stem_text", value: strings.TrimSpace(q.StemText)},
-		{name: "question_body", value: readableQuestionJSON(q.QuestionBody)},
-		{name: "knowledge_points", value: readableQuestionJSON(q.KnowledgePoints)},
-		{name: "tags", value: readableQuestionJSON(q.Tags)},
-	}
-
-	var builder strings.Builder
-	for _, field := range fields {
-		if field.value == "" || field.value == "{}" || field.value == "[]" {
-			continue
-		}
-		if builder.Len() > 0 {
-			builder.WriteByte('\n')
-		}
-		builder.WriteString(field.name)
-		builder.WriteString(": ")
-		builder.WriteString(field.value)
-	}
-
-	content := builder.String()
-	if utf8.RuneCountInString(content) <= questionIndexMaxChars {
-		return content
-	}
-	return string([]rune(content)[:questionIndexMaxChars])
-}
-
-func readableQuestionJSON(raw types.JSON) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var value interface{}
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return strings.TrimSpace(string(raw))
-	}
-	return formatQuestionJSONValue(value)
-}
-
-func formatQuestionJSONValue(value interface{}) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return strings.TrimSpace(typed)
-	case bool, float64:
-		return fmt.Sprint(typed)
-	case []interface{}:
-		parts := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if formatted := formatQuestionJSONValue(item); formatted != "" {
-				parts = append(parts, formatted)
-			}
-		}
-		if len(parts) == 0 {
-			return "[]"
-		}
-		return "[" + strings.Join(parts, "; ") + "]"
-	case map[string]interface{}:
-		keys := make([]string, 0, len(typed))
-		for key := range typed {
-			if !isQuestionIndexForbiddenKey(key) {
-				keys = append(keys, key)
-			}
-		}
-		sort.Strings(keys)
-		parts := make([]string, 0, len(keys))
-		for _, key := range keys {
-			if formatted := formatQuestionJSONValue(typed[key]); formatted != "" {
-				parts = append(parts, key+": "+formatted)
-			}
-		}
-		if len(parts) == 0 {
-			return "{}"
-		}
-		return "{" + strings.Join(parts, "; ") + "}"
-	default:
-		return fmt.Sprint(typed)
-	}
-}
-
-func isQuestionIndexForbiddenKey(key string) bool {
-	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), "-", "_"))
-	return strings.Contains(normalized, "answer") ||
-		strings.Contains(normalized, "analysis") ||
-		strings.Contains(normalized, "explanation") ||
-		strings.Contains(normalized, "solution") ||
-		strings.Contains(normalized, "rubric")
+	return types.BuildQuestionIndexContent(q)
 }
 
 func questionIndexPayloadHash(content string, enabled bool) string {
