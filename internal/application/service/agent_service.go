@@ -11,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/agent/approval"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -61,6 +62,8 @@ type agentService struct {
 	wikiPageService       interfaces.WikiPageService
 	tenantService         interfaces.TenantService
 	toolApprovalGate      approval.MCPApproval
+	engineRegistry        interfaces.RetrieveEngineRegistry
+	storeOwnership        retriever.TenantStoreOwnership
 }
 
 // NewAgentService creates a new agent service
@@ -81,6 +84,8 @@ func NewAgentService(
 	wikiPageService interfaces.WikiPageService,
 	tenantService interfaces.TenantService,
 	toolApprovalGate approval.MCPApproval,
+	engineRegistry interfaces.RetrieveEngineRegistry,
+	storeOwnership retriever.TenantStoreOwnership,
 ) interfaces.AgentService {
 	return &agentService{
 		cfg:                   cfg,
@@ -99,6 +104,8 @@ func NewAgentService(
 		wikiPageService:       wikiPageService,
 		tenantService:         tenantService,
 		toolApprovalGate:      toolApprovalGate,
+		engineRegistry:        engineRegistry,
+		storeOwnership:        storeOwnership,
 	}
 }
 
@@ -410,14 +417,14 @@ func (s *agentService) registerTools(
 			tools.ToolDataAnalysis:        true,
 			tools.ToolDataSchema:          true,
 			// Wiki tools also require at least one KB in scope.
-			tools.ToolWikiReadPage:      true,
-			tools.ToolWikiSearch:        true,
-			tools.ToolWikiReadSourceDoc: true,
-			tools.ToolWikiFlagIssue:     true,
-			tools.ToolWikiWritePage:     true,
-			tools.ToolWikiReplaceText:   true,
-			tools.ToolWikiRenamePage:    true,
-			tools.ToolWikiDeletePage:    true,
+			tools.ToolWikiReadPage:       true,
+			tools.ToolWikiSearch:         true,
+			tools.ToolWikiReadSourceDoc:  true,
+			tools.ToolWikiFlagIssue:      true,
+			tools.ToolWikiWritePage:      true,
+			tools.ToolWikiReplaceText:    true,
+			tools.ToolWikiRenamePage:     true,
+			tools.ToolWikiDeletePage:     true,
 			tools.ToolWikiReadIssue:      true,
 			tools.ToolWikiUpdateIssue:    true,
 			tools.ToolQuestionBankSearch: true,
@@ -604,7 +611,13 @@ func (s *agentService) registerTools(
 			toolToRegister = tools.NewWikiDeletePageTool(s.wikiPageService, wikiKBIDs)
 
 		case tools.ToolQuestionBankSearch:
-			toolToRegister = tools.NewQuestionBankSearchTool(s.db, config.SearchTargets)
+			toolToRegister = tools.NewQuestionBankSearchTool(
+				s.db, config.SearchTargets,
+				s.knowledgeBaseService,
+				s.modelService,
+				s.engineRegistry,
+				s.storeOwnership,
+			)
 
 		default:
 			logger.Warnf(ctx, "Unknown tool: %s", toolName)
