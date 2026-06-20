@@ -46,7 +46,7 @@ vector index. The source question itself is always excluded from results.
     },
     "knowledge_base_id": {
       "type": "string",
-      "description": "Optional knowledge base ID to restrict search scope. Must be a question_bank KB in the current search targets."
+      "description": "Optional. Must equal the source question's knowledge_base_id in this version; cross-KB similar search is not supported yet."
     },
     "limit": {
       "type": "integer",
@@ -185,6 +185,15 @@ func (t *SimilarQuestionSearchTool) Execute(ctx context.Context, args json.RawMe
 		}, err
 	}
 
+	// Cross-KB similar question search is not supported in this version.
+	// Guard early to avoid unnecessary engine/model/embedding work.
+	if input.KnowledgeBaseID != "" && input.KnowledgeBaseID != sourceQuestion.KnowledgeBaseID {
+		return &types.ToolResult{
+			Success: false,
+			Error:   "Cross-KB similar question search is not supported in this version.",
+		}, fmt.Errorf("cross-KB similar search not supported")
+	}
+
 	// 2. Resolve the source question's KB for engine + embedding.
 	kb, err := t.knowledgeBaseService.GetKnowledgeBaseByIDOnly(ctx, sourceQuestion.KnowledgeBaseID)
 	if err != nil || kb == nil || kb.Type != types.KnowledgeBaseTypeQuestionBank {
@@ -243,17 +252,8 @@ func (t *SimilarQuestionSearchTool) Execute(ctx context.Context, args json.RawMe
 		topK = semanticMaxTopK
 	}
 
-	// Cross-KB similar question search is not supported in this version.
-	// The resolved engine belongs to the source question's KB; using it
-	// to query a different KB's vector store produces incorrect results.
-	if input.KnowledgeBaseID != "" && input.KnowledgeBaseID != sourceQuestion.KnowledgeBaseID {
-		return &types.ToolResult{
-			Success: false,
-			Error:   "Cross-KB similar question search is not supported in this version.",
-		}, fmt.Errorf("cross-KB similar search not supported")
-	}
-
-	// Determine which KB IDs to search (always use the source question's KB).
+	// Determine which KB IDs to search (always the source question's KB,
+	// cross-KB already rejected above).
 	searchKBIDs := []string{sourceQuestion.KnowledgeBaseID}
 
 	params := types.RetrieveParams{
