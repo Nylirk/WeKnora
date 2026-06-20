@@ -73,7 +73,6 @@ type QuestionSet struct {
 	QuestionCount    int                        `json:"question_count" gorm:"column:question_count;not null;default:0"`
 	GenerationConfig JSON                       `json:"generation_config" gorm:"type:jsonb;not null"`
 	GenerationScope  JSON                       `json:"generation_scope" gorm:"type:jsonb;not null"`
-	ProcessingConfig JSON                       `json:"processing_config" gorm:"type:jsonb;not null"`
 	ProcessingStage  QuestionSetProcessingStage `json:"processing_stage" gorm:"type:varchar(32);not null;default:''"`
 	ErrorMessage     string                     `json:"error_message" gorm:"type:text;not null;default:''"`
 	CreatedAt        time.Time                  `json:"created_at"`
@@ -165,39 +164,15 @@ const (
 	QuestionSetProcessingStageFailed           QuestionSetProcessingStage = "failed"
 )
 
-// QuestionSetProcessingConfig holds auto-processing configuration for a question set.
-// Both KnowledgePointKnowledgeBaseID and SyllabusKnowledgeBaseID are optional.
-// When a KB ID is empty, the corresponding auto capability is skipped.
-type QuestionSetProcessingConfig struct {
-	// KnowledgePointKnowledgeBaseID is the KB used for auto knowledge point matching.
-	// Optional; when empty, auto knowledge point tagging is disabled.
-	KnowledgePointKnowledgeBaseID string `json:"knowledge_point_knowledge_base_id"`
-	// SyllabusKnowledgeBaseID is the KB used for auto syllabus screening.
-	// Optional; when empty, auto syllabus checking is disabled.
-	SyllabusKnowledgeBaseID string `json:"syllabus_knowledge_base_id"`
-}
-
-// AutoKnowledgePointEnabled returns true when a knowledge point KB is configured.
-func (c *QuestionSetProcessingConfig) AutoKnowledgePointEnabled() bool {
-	return c != nil && c.KnowledgePointKnowledgeBaseID != ""
-}
-
-// AutoSyllabusCheckEnabled returns true when a syllabus KB is configured.
-func (c *QuestionSetProcessingConfig) AutoSyllabusCheckEnabled() bool {
-	return c != nil && c.SyllabusKnowledgeBaseID != ""
-}
-
 type CreateQuestionSetRequest struct {
-	Name             string                         `json:"name" binding:"required"`
-	Description      string                         `json:"description"`
-	ProcessingConfig *QuestionSetProcessingConfig   `json:"processing_config"`
+	Name        string `json:"name" binding:"required"`
+	Description string `json:"description"`
 }
 
 type UpdateQuestionSetRequest struct {
-	Name             *string                        `json:"name"`
-	Description      *string                        `json:"description"`
-	Status           *string                        `json:"status"`
-	ProcessingConfig *QuestionSetProcessingConfig   `json:"processing_config"`
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	Status      *string `json:"status"`
 }
 
 // QuestionSetProcessingStatus is the API response for question set processing status.

@@ -71,10 +71,6 @@ func (s *QuestionService) CreateQuestionSet(ctx context.Context, kbID string, re
 	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
 		return nil, err
 	}
-	processingConfig := normalizeJSONObject(nil)
-	if req.ProcessingConfig != nil {
-		processingConfig = normalizeProcessingConfig(req.ProcessingConfig)
-	}
 	qs := &types.QuestionSet{
 		TenantID:         tenantID(ctx),
 		KnowledgeBaseID:  kbID,
@@ -84,7 +80,6 @@ func (s *QuestionService) CreateQuestionSet(ctx context.Context, kbID string, re
 		Status:           types.QuestionSetStatusActive,
 		GenerationConfig: normalizeJSONObject(nil),
 		GenerationScope:  normalizeJSONObject(nil),
-		ProcessingConfig: processingConfig,
 		ProcessingStage:  types.QuestionSetProcessingStageIdle,
 	}
 	if err := s.repository.CreateQuestionSet(ctx, qs); err != nil {
@@ -146,17 +141,6 @@ func (s *QuestionService) UpdateQuestionSet(ctx context.Context, kbID, setID str
 	}
 	if req.Status != nil {
 		qs.Status = types.QuestionSetStatus(*req.Status)
-	}
-	if req.ProcessingConfig != nil {
-		qs.ProcessingConfig = normalizeProcessingConfig(req.ProcessingConfig)
-		// Reset processing stage when config changes, so a re-import can restart the pipeline.
-		if qs.ProcessingStage != types.QuestionSetProcessingStageIdle &&
-			qs.ProcessingStage != types.QuestionSetProcessingStageReadyForReview &&
-			qs.ProcessingStage != types.QuestionSetProcessingStageFailed {
-			// Don't reset if currently processing; the pipeline owns the stage.
-		} else {
-			qs.ProcessingStage = types.QuestionSetProcessingStageIdle
-		}
 	}
 	if err := s.repository.UpdateQuestionSet(ctx, qs); err != nil {
 		return nil, err
@@ -404,7 +388,18 @@ func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID strin
 	if err != nil {
 		return nil, err
 	}
-	cfg := resolveProcessingConfig(qs.ProcessingConfig)
+	// Read auto-processing config from parent QuestionBank KnowledgeBase.
+	kb, err := s.knowledgeBaseSvc.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil {
+		return nil, err
+	}
+	var cfg *types.QuestionBankConfig
+	if kb.IsQuestionBank() && kb.QuestionBankConfig != nil {
+		cfg = kb.QuestionBankConfig
+	} else {
+		cfg = &types.QuestionBankConfig{}
+	}
+
 	result := &types.ImportQuestionsResult{}
 	var created []*types.Question
 	for _, item := range req.Items {
@@ -887,34 +882,22 @@ func normalizeJSONMap(val map[string]interface{}) types.JSON {
 	return types.JSON(data)
 }
 
-func normalizeProcessingConfig(cfg *types.QuestionSetProcessingConfig) types.JSON {
-	if cfg == nil {
-		return types.JSON([]byte("{}"))
-	}
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		return types.JSON([]byte("{}"))
-	}
-	return types.JSON(data)
-}
-
-// resolveProcessingConfig unmarshals the ProcessingConfig JSON field into a struct.
-func resolveProcessingConfig(raw types.JSON) *types.QuestionSetProcessingConfig {
-	cfg := &types.QuestionSetProcessingConfig{}
-	if len(raw) == 0 {
-		return cfg
-	}
-	_ = json.Unmarshal(raw, cfg)
-	return cfg
-}
-
 // GetQuestionSetProcessingStatus returns the current processing status for a question set.
+// Auto-processing enablement is read from the parent question_bank KnowledgeBase.
 func (s *QuestionService) GetQuestionSetProcessingStatus(ctx context.Context, kbID, setID string) (*types.QuestionSetProcessingStatus, error) {
 	qs, err := s.getQuestionSetForKB(ctx, kbID, setID)
 	if err != nil {
 		return nil, err
 	}
-	cfg := resolveProcessingConfig(qs.ProcessingConfig)
+	// Read auto-processing config from parent QuestionBank KnowledgeBase.
+	kb, kberr := s.knowledgeBaseSvc.GetKnowledgeBaseByID(ctx, kbID)
+	var cfg *types.QuestionBankConfig
+	if kberr == nil && kb.IsQuestionBank() && kb.QuestionBankConfig != nil {
+		cfg = kb.QuestionBankConfig
+	} else {
+		cfg = &types.QuestionBankConfig{}
+	}
+
 	status := &types.QuestionSetProcessingStatus{
 		Stage:                qs.ProcessingStage,
 		ErrorMessage:         qs.ErrorMessage,
@@ -922,7 +905,6 @@ func (s *QuestionService) GetQuestionSetProcessingStatus(ctx context.Context, kb
 		SyllabusCheckEnabled: cfg.AutoSyllabusCheckEnabled(),
 	}
 	if !cfg.AutoKnowledgePointEnabled() {
-		// Show skip reason regardless of current stage.
 		status.SkippedAutoTaggingReason = "未配置知识点知识库，自动知识点关联已禁用"
 	}
 	if !cfg.AutoSyllabusCheckEnabled() {
@@ -933,11 +915,12 @@ func (s *QuestionService) GetQuestionSetProcessingStatus(ctx context.Context, kb
 
 // startProcessingPipeline kicks off the background processing pipeline for imported questions.
 // It does NOT block the import response — all work runs in a detached goroutine.
+// The cfg is read from the parent question_bank KnowledgeBase (may be empty).
 func (s *QuestionService) startProcessingPipeline(
 	ctx context.Context,
 	qs *types.QuestionSet,
 	questions []*types.Question,
-	cfg *types.QuestionSetProcessingConfig,
+	cfg *types.QuestionBankConfig,
 ) {
 	s.setProcessingStage(ctx, qs, types.QuestionSetProcessingStageDraftImported, "")
 

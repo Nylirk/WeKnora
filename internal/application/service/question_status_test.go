@@ -106,6 +106,14 @@ func (r *questionStatusRepository) ListQuestions(_ context.Context, _ uint64, _ 
 
 type questionStatusKBService struct {
 	interfaces.KnowledgeBaseService
+	kb *types.KnowledgeBase
+}
+
+func (s *questionStatusKBService) GetKnowledgeBaseByID(context.Context, string) (*types.KnowledgeBase, error) {
+	if s.kb != nil {
+		return s.kb, nil
+	}
+	return &types.KnowledgeBase{ID: "kb-1", Type: types.KnowledgeBaseTypeQuestionBank}, nil
 }
 
 type questionStatusIndexService struct {
@@ -123,10 +131,6 @@ func (s *questionStatusIndexService) IndexQuestions(_ context.Context, questions
 func (s *questionStatusIndexService) DeleteQuestionIndexes(_ context.Context, questionIDs []string) error {
 	s.deleted = append(s.deleted, questionIDs)
 	return nil
-}
-
-func (*questionStatusKBService) GetKnowledgeBaseByID(context.Context, string) (*types.KnowledgeBase, error) {
-	return &types.KnowledgeBase{ID: "kb-1", Type: types.KnowledgeBaseTypeQuestionBank}, nil
 }
 
 func newQuestionStatusService(repository *questionStatusRepository) *QuestionService {
@@ -498,9 +502,8 @@ func TestImportQuestionsTriggersProcessingStage(t *testing.T) {
 	}
 }
 
-// TestCreateQuestionSetWithProcessingConfig verifies that create with processing_config
-// stores the config correctly.
-func TestCreateQuestionSetWithProcessingConfig(t *testing.T) {
+// TestQuestionBankConfigHelper verifies the KB-level QuestionBankConfig helpers.
+func TestQuestionBankConfigHelper(t *testing.T) {
 	tests := []struct {
 		name             string
 		knowledgePointID string
@@ -512,26 +515,18 @@ func TestCreateQuestionSetWithProcessingConfig(t *testing.T) {
 		{name: "knowledge point only", knowledgePointID: "kp-kb-1", syllabusID: "", wantAutoTag: true, wantSyllabus: false},
 		{name: "syllabus only", knowledgePointID: "", syllabusID: "syl-kb-1", wantAutoTag: false, wantSyllabus: true},
 		{name: "both configured", knowledgePointID: "kp-kb-1", syllabusID: "syl-kb-1", wantAutoTag: true, wantSyllabus: true},
+		{name: "nil config", knowledgePointID: "", syllabusID: "", wantAutoTag: false, wantSyllabus: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repository := &questionStatusRepository{}
-			service := newQuestionStatusService(repository)
-
-			req := &types.CreateQuestionSetRequest{
-				Name:        "Test Set",
-				Description: "desc",
-				ProcessingConfig: &types.QuestionSetProcessingConfig{
+			var cfg *types.QuestionBankConfig
+			if tt.name != "nil config" {
+				cfg = &types.QuestionBankConfig{
 					KnowledgePointKnowledgeBaseID: tt.knowledgePointID,
 					SyllabusKnowledgeBaseID:       tt.syllabusID,
-				},
+				}
 			}
-			qs, err := service.CreateQuestionSet(questionStatusContext(), "kb-1", req)
-			if err != nil {
-				t.Fatalf("CreateQuestionSet() error = %v", err)
-			}
-			cfg := resolveProcessingConfig(qs.ProcessingConfig)
 			if cfg.AutoKnowledgePointEnabled() != tt.wantAutoTag {
 				t.Fatalf("AutoKnowledgePointEnabled() = %v, want %v", cfg.AutoKnowledgePointEnabled(), tt.wantAutoTag)
 			}
@@ -543,24 +538,24 @@ func TestCreateQuestionSetWithProcessingConfig(t *testing.T) {
 }
 
 // TestGetQuestionSetProcessingStatusSkippedReasons verifies skipped reasons
-// are returned when auto capabilities are disabled.
+// are returned from the parent KB config.
 func TestGetQuestionSetProcessingStatusSkippedReasons(t *testing.T) {
 	tests := []struct {
-		name                   string
-		knowledgePointID       string
-		syllabusID             string
-		wantAutoTagSkipped     bool
-		wantSyllabusSkipped    bool
+		name                string
+		knowledgePointID    string
+		syllabusID          string
+		wantAutoTagSkipped  bool
+		wantSyllabusSkipped bool
 	}{
 		{
-			name:               "empty config shows all skipped reasons",
-			wantAutoTagSkipped: true,
+			name:                "empty config shows all skipped reasons",
+			wantAutoTagSkipped:  true,
 			wantSyllabusSkipped: true,
 		},
 		{
-			name:               "knowledge point configured removes tag skip",
-			knowledgePointID:   "kp-kb-1",
-			wantAutoTagSkipped: false,
+			name:                "knowledge point configured removes tag skip",
+			knowledgePointID:    "kp-kb-1",
+			wantAutoTagSkipped:  false,
 			wantSyllabusSkipped: true,
 		},
 	}
@@ -574,14 +569,20 @@ func TestGetQuestionSetProcessingStatusSkippedReasons(t *testing.T) {
 					ProcessingStage: types.QuestionSetProcessingStageIdle,
 				},
 			}
-			// Set up processing config
-			cfg := &types.QuestionSetProcessingConfig{
-				KnowledgePointKnowledgeBaseID: tt.knowledgePointID,
-				SyllabusKnowledgeBaseID:       tt.syllabusID,
+			kb := &types.KnowledgeBase{
+				ID:   "kb-1",
+				Type: types.KnowledgeBaseTypeQuestionBank,
+				QuestionBankConfig: &types.QuestionBankConfig{
+					KnowledgePointKnowledgeBaseID: tt.knowledgePointID,
+					SyllabusKnowledgeBaseID:       tt.syllabusID,
+				},
 			}
-			repository.set.ProcessingConfig = normalizeProcessingConfig(cfg)
+			kbService := &questionStatusKBService{kb: kb}
+			service := &QuestionService{
+				repository:       repository,
+				knowledgeBaseSvc: kbService,
+			}
 
-			service := newQuestionStatusService(repository)
 			status, err := service.GetQuestionSetProcessingStatus(questionStatusContext(), "kb-1", "set-1")
 			if err != nil {
 				t.Fatalf("GetQuestionSetProcessingStatus() error = %v", err)

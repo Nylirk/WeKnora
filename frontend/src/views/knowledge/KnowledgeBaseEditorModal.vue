@@ -222,6 +222,56 @@
                   </div>
                 </div>
 
+                <!-- 题库配置（仅 question_bank 类型） -->
+                <div v-if="isQuestionBank && formData" v-show="currentSection === 'questionBank'" class="section">
+                  <div class="section-content">
+                    <div class="section-header">
+                      <h3 class="section-title">题库配置</h3>
+                      <p class="section-desc">设置自动知识点关联和考纲筛选所需的知识库。两项均可为空。</p>
+                    </div>
+                    <div class="section-body">
+                      <div class="form-item">
+                        <label class="form-label">知识点知识库</label>
+                        <t-select
+                          v-model="formData.questionBankConfig.knowledgePointKbId"
+                          clearable
+                          placeholder="选择知识点知识库（可选）"
+                          :loading="loadingKbList"
+                          filterable
+                        >
+                          <t-option v-for="kb in availableKbs" :key="kb.id" :value="kb.id" :label="kb.name" />
+                        </t-select>
+                        <p v-if="!formData.questionBankConfig.knowledgePointKbId" class="form-tip kb-hint">
+                          未选择知识点知识库，不会启用自动知识点关联。
+                        </p>
+                      </div>
+                      <div class="form-item">
+                        <label class="form-label">考纲</label>
+                        <t-select
+                          v-model="formData.questionBankConfig.syllabusKbId"
+                          clearable
+                          placeholder="选择考纲（可选）"
+                          :loading="loadingKbList"
+                          filterable
+                        >
+                          <t-option v-for="kb in availableKbs" :key="kb.id" :value="kb.id" :label="kb.name" />
+                        </t-select>
+                        <p v-if="!formData.questionBankConfig.syllabusKbId" class="form-tip kb-hint">
+                          未选择考纲，不会启用自动考纲筛选。
+                        </p>
+                      </div>
+                      <t-alert
+                        v-if="!formData.questionBankConfig.knowledgePointKbId && !formData.questionBankConfig.syllabusKbId"
+                        theme="info"
+                        :close-btn="false"
+                        style="margin-top: 8px"
+                      >
+                        题目仍可导入，但只会创建草稿题目，不启用自动关联和考纲筛选。
+                      </t-alert>
+                    </div>
+                  </div>
+                </div>
+
                 <!-- 解析引擎 -->
                 <div v-if="showDocumentSections && formData && currentSection === 'parser'" class="section">
                   <KBParserSettings
@@ -397,7 +447,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import KbCreateContextualGuide from '@/components/KbCreateContextualGuide.vue'
 import { KB_EDITOR_FOCUS_SECTION_EVENT, markContextualGuideDone } from '@/config/contextualGuides'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
-import { createKnowledgeBase, getKnowledgeBaseById, listKnowledgeFiles, updateKnowledgeBase, rebuildKBIndex } from '@/api/knowledge-base'
+import { createKnowledgeBase, getKnowledgeBaseById, listKnowledgeFiles, listKnowledgeBases, updateKnowledgeBase, rebuildKBIndex } from '@/api/knowledge-base'
 import { updateKBConfig, type KBModelConfigRequest } from '@/api/initialization'
 import { type ModelConfig } from '@/api/model'
 import { useChatResourcesStore } from '@/stores/chatResources'
@@ -489,6 +539,8 @@ const dsCount = ref(0)
 // that predate per-KB ownership tracking; those KBs have no "owner" and
 // only tenant Admin+ can mutate their share settings.
 const kbCreatorId = ref<string>('')
+const availableKbs = ref<{ id: string; name: string }[]>([])
+const loadingKbList = ref(false)
 
 // Backend gate for /knowledge-bases/:id/shares (POST/PUT/DELETE) is
 // g.OwnedKBOrAdmin(): only the KB creator or tenant Admin+ may mutate
@@ -531,7 +583,7 @@ const navItems = computed(() => {
   if (formData.value?.type === 'faq') {
     items.push({ key: 'faq', icon: 'help-circle', label: t('knowledgeEditor.sidebar.faq') })
   } else if (formData.value?.type === 'question_bank') {
-    // question_bank type: no parser/chunking/multimodal/asr/graph sections
+    items.push({ key: 'questionBank', icon: 'file-paste', label: '题库配置' })
   } else {
     items.push(
       { key: 'parser', icon: 'file-search', label: t('settings.parserEngine') },
@@ -624,6 +676,9 @@ watch(
       if (!['basic', 'models', 'faq'].includes(currentSection.value)) {
         currentSection.value = 'faq'
       }
+    } else if (newType === 'question_bank') {
+      loadAvailableKbs()
+
     } else if (oldType === 'faq' && currentSection.value === 'faq') {
       currentSection.value = 'basic'
     }
@@ -704,10 +759,20 @@ const initFormData = (type: 'document' | 'faq' | 'question_bank' = 'document') =
     // existing binding from the KB response below.
     vectorStoreId: '' as string,
     vectorStoreInfo: {
+        // Question bank auto-processing config
+        questionBankConfig: {
+          knowledgePointKbId: (kb as any).question_bank_config?.knowledge_point_knowledge_base_id || "" as string,
+          syllabusKbId: (kb as any).question_bank_config?.syllabus_knowledge_base_id || "" as string,
+        },
       source: undefined as string | undefined,
       name: undefined as string | undefined,
       engineType: undefined as string | undefined,
       status: undefined as string | undefined,
+    },
+    // Question bank auto-processing config (only for question_bank KBs)
+    questionBankConfig: {
+      knowledgePointKbId: '' as string,
+      syllabusKbId: '' as string,
     },
   }
 }
@@ -721,6 +786,21 @@ const loadAllModels = async (force = false) => {
     console.error('Failed to load model list:', error)
     MessagePlugin.error(t('knowledgeEditor.messages.loadModelsFailed'))
     allModels.value = []
+  }
+}
+
+// Load available KBs for question bank config selectors
+const loadAvailableKbs = async () => {
+  loadingKbList.value = true
+  try {
+    const response: any = await listKnowledgeBases()
+    const data = response?.data ?? response
+    const list = Array.isArray(data) ? data : (data?.data ?? [])
+    availableKbs.value = list.map((kb: any) => ({ id: kb.id, name: kb.name }))
+  } catch {
+    // silent
+  } finally {
+    loadingKbList.value = false
   }
 }
 
@@ -822,6 +902,11 @@ const loadKBData = async () => {
       // response.
       vectorStoreId: '',
       vectorStoreInfo: {
+        // Question bank auto-processing config
+        questionBankConfig: {
+          knowledgePointKbId: (kb as any).question_bank_config?.knowledge_point_knowledge_base_id || "" as string,
+          syllabusKbId: (kb as any).question_bank_config?.syllabus_knowledge_base_id || "" as string,
+        },
         source: kb.vector_store_source,
         name: kb.vector_store_name,
         engineType: kb.vector_store_engine_type,
@@ -1067,6 +1152,13 @@ const buildSubmitData = () => {
     const storageProvider = resolvedStorageProvider()
     data.storage_provider_config = { provider: storageProvider }
     data.storage_config = { provider: storageProvider }
+      // Include question bank auto-processing config
+      if (formData.value.questionBankConfig) {
+        data.question_bank_config = {
+          knowledge_point_knowledge_base_id: formData.value.questionBankConfig.knowledgePointKbId || "",
+          syllabus_knowledge_base_id: formData.value.questionBankConfig.syllabusKbId || "",
+        }
+      }
     return data
   }
 
@@ -1211,10 +1303,17 @@ const doSubmit = async () => {
       }
 
       if (formData.value.type === 'question_bank') {
-        await updateKnowledgeBase(props.kbId, {
+        const qbUpdate: any = {
           name: data.name,
           description: data.description,
-        })
+        }
+        if (formData.value.questionBankConfig) {
+          qbUpdate.question_bank_config = {
+            knowledge_point_knowledge_base_id: formData.value.questionBankConfig.knowledgePointKbId || '',
+            syllabus_knowledge_base_id: formData.value.questionBankConfig.syllabusKbId || '',
+          }
+        }
+        await updateKnowledgeBase(props.kbId, qbUpdate)
         MessagePlugin.success(t('knowledgeEditor.messages.updateSuccess'))
       } else {
         // 1. 更新基本信息（名称、描述）和 FAQ/Wiki 配置
@@ -1895,5 +1994,6 @@ watch(
     font-weight: 500;
   }
 }
+.kb-hint { margin: 4px 0 0; color: var(--td-text-color-placeholder); font-size: 12px; }
 </style>
 
