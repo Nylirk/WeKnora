@@ -386,6 +386,16 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		}, fmt.Errorf("semantic search requires a non-empty query")
 	}
 
+	// Guard against nil dependencies so semantic mode returns a clear
+	// error instead of panicking. Keyword mode is unaffected.
+	if t.knowledgeBaseService == nil || t.modelService == nil ||
+		t.engineRegistry == nil || t.ownership == nil {
+		return &types.ToolResult{
+			Success: false,
+			Error:   "Semantic question search is not available: required services are not configured.",
+		}, fmt.Errorf("semantic question search requires knowledgeBaseService, modelService, engineRegistry, and ownership")
+	}
+
 	// 1. Collect question_bank KBs in scope.
 	type kbTarget struct {
 		kb       *types.KnowledgeBase
@@ -462,26 +472,6 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		}, fmt.Errorf("semantic question search requires vector retriever and embedding model")
 	}
 
-	// Group by embedding model to avoid regenerating the same embedding.
-	type embedKey struct {
-		modelID string
-	}
-	type retrieveGroup struct {
-		embeddingModelID string
-		engine           *retriever.CompositeRetrieveEngine
-		kbIDs            []string
-	}
-	groups := make(map[embedKey]*retrieveGroup)
-	for _, r := range retrievals {
-		key := embedKey{modelID: r.embeddingModelID}
-		g := groups[key]
-		if g == nil {
-			g = &retrieveGroup{embeddingModelID: r.embeddingModelID, engine: r.engine}
-			groups[key] = g
-		}
-		g.kbIDs = append(g.kbIDs, r.kbID)
-	}
-
 	// 3. Compute topK with overfetch.
 	topK := limit * semanticOverfetchFactor
 	if topK < semanticMinTopK {
@@ -491,45 +481,47 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		topK = semanticMaxTopK
 	}
 
-	// 4. For each group, generate embedding and retrieve.
-	type questionWithScore struct {
-		id    string
-		kbID  string
-		score float64
-	}
+	// 4. For each KB retrieval, generate embedding (cached by model ID)
+	//    and query its own engine. Each KB uses its own resolved engine so
+	//    that KBs with different vector stores are queried independently.
+	embeddingCache := make(map[string][]float32)
+
 	var orderedIDs []string
 	idToScore := make(map[string]float64)
 	idToKB := make(map[string]string)
 	seen := make(map[string]bool)
 
-	for _, g := range groups {
-		embedder, err := t.modelService.GetEmbeddingModel(ctx, g.embeddingModelID)
-		if err != nil {
-			logger.Warnf(ctx, "Semantic question search: cannot get embedding model %s: %v", g.embeddingModelID, err)
-			continue
+	for _, r := range retrievals {
+		// Resolve or cache the query embedding.
+		embedding, ok := embeddingCache[r.embeddingModelID]
+		if !ok {
+			embedder, err := t.modelService.GetEmbeddingModel(ctx, r.embeddingModelID)
+			if err != nil {
+				logger.Warnf(ctx, "Semantic question search: cannot get embedding model %s: %v", r.embeddingModelID, err)
+				continue
+			}
+			embedding, err = embedder.Embed(ctx, query)
+			if err != nil {
+				logger.Warnf(ctx, "Semantic question search: embedding failed for model %s: %v", r.embeddingModelID, err)
+				continue
+			}
+			embeddingCache[r.embeddingModelID] = embedding
 		}
-		embedding, err := embedder.Embed(ctx, query)
-		if err != nil {
-			logger.Warnf(ctx, "Semantic question search: embedding failed for model %s: %v", g.embeddingModelID, err)
-			continue
-		}
+
 		params := types.RetrieveParams{
 			Query:            query,
 			Embedding:        embedding,
-			KnowledgeBaseIDs: g.kbIDs,
+			KnowledgeBaseIDs: []string{r.kbID},
 			TopK:             topK,
 			RetrieverType:    types.VectorRetrieverType,
 			KnowledgeType:    types.KnowledgeTypeQuestion,
 		}
-		// If question_set_id is specified, map it to KnowledgeIDs since
-		// IndexInfo.KnowledgeID = QuestionSetID for question indexes.
 		if input.QuestionSetID != "" {
 			params.KnowledgeIDs = []string{input.QuestionSetID}
 		}
-		// CompositeRetrieveEngine.Retrieve takes a slice of params.
-		results, err := g.engine.Retrieve(ctx, []types.RetrieveParams{params})
+		results, err := r.engine.Retrieve(ctx, []types.RetrieveParams{params})
 		if err != nil {
-			logger.Warnf(ctx, "Semantic question search: retrieve failed: %v", err)
+			logger.Warnf(ctx, "Semantic question search: retrieve failed for KB %s: %v", r.kbID, err)
 			continue
 		}
 		for _, retrieveResult := range results {

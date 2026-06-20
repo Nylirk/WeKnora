@@ -723,6 +723,7 @@ type stubRetrieveEngine struct {
 	sourceIDs []string
 	scores    []float64
 	kbID      string
+	lastKBIDs []string // records KnowledgeBaseIDs from the last Retrieve call
 }
 
 func (e *stubRetrieveEngine) EngineType() types.RetrieverEngineType {
@@ -732,6 +733,7 @@ func (e *stubRetrieveEngine) Support() []types.RetrieverType {
 	return []types.RetrieverType{types.VectorRetrieverType}
 }
 func (e *stubRetrieveEngine) Retrieve(ctx context.Context, params types.RetrieveParams) ([]*types.RetrieveResult, error) {
+	e.lastKBIDs = append([]string{}, params.KnowledgeBaseIDs...)
 	results := make([]*types.IndexWithScore, 0, len(e.sourceIDs))
 	for i, id := range e.sourceIDs {
 		score := 0.9 - float64(i)*0.05
@@ -792,6 +794,26 @@ func (r *stubEngineRegistry) GetAllRetrieveEngineServices() []interfaces.Retriev
 }
 func (r *stubEngineRegistry) GetByStoreID(storeID string) (interfaces.RetrieveEngineService, error) {
 	return r.engine, nil
+}
+
+// stubMultiEngineRegistry returns different engines depending on the store ID.
+type stubMultiEngineRegistry struct {
+	enginesByStore map[string]interfaces.RetrieveEngineService
+}
+
+func (r *stubMultiEngineRegistry) Register(engine interfaces.RetrieveEngineService) error { return nil }
+func (r *stubMultiEngineRegistry) GetRetrieveEngineService(engineType types.RetrieverEngineType) (interfaces.RetrieveEngineService, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (r *stubMultiEngineRegistry) GetAllRetrieveEngineServices() []interfaces.RetrieveEngineService {
+	return nil
+}
+func (r *stubMultiEngineRegistry) GetByStoreID(storeID string) (interfaces.RetrieveEngineService, error) {
+	engine, ok := r.enginesByStore[storeID]
+	if !ok {
+		return nil, fmt.Errorf("store %s not found", storeID)
+	}
+	return engine, nil
 }
 
 // setupSemanticQuestionBankTestDB creates an in-memory DB with tables needed
@@ -1455,4 +1477,103 @@ func TestQuestionBankSearch_Keyword_TagsFilter(t *testing.T) {
 	if len(results) == 0 {
 		t.Error("expected at least one result for tags filter")
 	}
+}
+
+func TestQuestionBankSearch_Semantic_MultiKB_DifferentEngines(t *testing.T) {
+	db := setupSemanticQuestionBankTestDB(t)
+	// Use fresh seed: two KBs under tenant 1 sharing one embedding model
+	// but bound to different vector stores.
+	db.Exec(`INSERT INTO knowledge_bases(id, tenant_id, type, deleted_at) VALUES
+		('kba', 1, 'question_bank', NULL),
+		('kbb', 1, 'question_bank', NULL)`)
+	db.Exec(`INSERT INTO question_sets(id, tenant_id, knowledge_base_id, name, deleted_at) VALUES
+		('qs_a', 1, 'kba', 'Set A', NULL),
+		('qs_b', 1, 'kbb', 'Set B', NULL)`)
+	db.Exec(`INSERT INTO questions(id, tenant_id, question_set_id, knowledge_base_id, question_type, stem_text, answer_text, analysis_text, difficulty, knowledge_points, tags, status, created_at) VALUES
+		('qa1', 1, 'qs_a', 'kba', 'single_choice', 'Question A1', 'Answer A1', '', 'easy', '[]', '[]', 'reviewed', '2024-01-01'),
+		('qb1', 1, 'qs_b', 'kbb', 'single_choice', 'Question B1', 'Answer B1', '', 'easy', '[]', '[]', 'reviewed', '2024-01-02')`)
+
+	engineA := &stubRetrieveEngine{sourceIDs: []string{"qa1"}, kbID: "kba"}
+	engineB := &stubRetrieveEngine{sourceIDs: []string{"qb1"}, kbID: "kbb"}
+
+	multiRegistry := &stubMultiEngineRegistry{
+		enginesByStore: map[string]interfaces.RetrieveEngineService{
+			"vs_a": engineA,
+			"vs_b": engineB,
+		},
+	}
+	kbService := &stubKBService{
+		kbs: map[string]*types.KnowledgeBase{
+			"kba": {ID: "kba", TenantID: 1, Type: "question_bank", EmbeddingModelID: "emb1", VectorStoreID: strPtr("vs_a")},
+			"kbb": {ID: "kbb", TenantID: 1, Type: "question_bank", EmbeddingModelID: "emb1", VectorStoreID: strPtr("vs_b")},
+		},
+	}
+	modelService := &stubModelService{embedder: &stubEmbedder{dimensions: 768, modelName: "test", modelID: "emb1"}}
+
+	targets := searchTargetsWithKBs([]string{"kba", "kbb"})
+	tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, multiRegistry, &stubStoreOwnership{})
+
+	args, _ := json.Marshal(map[string]interface{}{
+		"mode":  "semantic",
+		"query": "test",
+		"limit": 10,
+	})
+	_, err := tool.Execute(context.Background(), args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify each engine was queried for ONLY its own KB — not a merged list.
+	if len(engineA.lastKBIDs) != 1 || engineA.lastKBIDs[0] != "kba" {
+		t.Errorf("engineA should only query [kba], got %v", engineA.lastKBIDs)
+	}
+	if len(engineB.lastKBIDs) != 1 || engineB.lastKBIDs[0] != "kbb" {
+		t.Errorf("engineB should only query [kbb], got %v", engineB.lastKBIDs)
+	}
+}
+
+func TestQuestionBankSearch_Semantic_NilDependencies(t *testing.T) {
+	db := setupQuestionBankTestDB(t)
+	seedQuestionBank(t, db)
+	targets := searchTargetsWithKBs([]string{"qb1"})
+
+	// All semantic dependencies nil — semantic mode must return clear error.
+	t.Run("semantic_fails_with_nil_deps", func(t *testing.T) {
+		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
+		args, _ := json.Marshal(map[string]interface{}{
+			"mode":  "semantic",
+			"query": "test",
+			"limit": 10,
+		})
+		result, err := tool.Execute(context.Background(), args)
+		if err == nil {
+			t.Error("expected error for nil semantic dependencies")
+		}
+		if result.Success {
+			t.Error("expected failure")
+		}
+		if !strings.Contains(result.Error, "not available") && !strings.Contains(result.Error, "not configured") {
+			t.Errorf("expected clear error about missing services, got %q", result.Error)
+		}
+	})
+
+	// Keyword mode must still work with nil semantic dependencies.
+	t.Run("keyword_works_with_nil_deps", func(t *testing.T) {
+		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
+		args, _ := json.Marshal(map[string]interface{}{
+			"mode":  "keyword",
+			"query": "prime",
+			"limit": 10,
+		})
+		result, err := tool.Execute(context.Background(), args)
+		if err != nil {
+			t.Fatalf("keyword mode should work: %v", err)
+		}
+		if !result.Success {
+			t.Fatalf("keyword mode should succeed: %s", result.Error)
+		}
+		if !strings.Contains(result.Output, "q2") {
+			t.Error("expected q2 in keyword results")
+		}
+	})
 }
