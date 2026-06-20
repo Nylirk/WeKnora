@@ -668,7 +668,7 @@ func (*stubKBService) ListKnowledgeBases(context.Context) ([]*types.KnowledgeBas
 func (*stubKBService) ListKnowledgeBasesByTenantID(context.Context, uint64) ([]*types.KnowledgeBase, error) {
 	return nil, nil
 }
-func (*stubKBService) UpdateKnowledgeBase(context.Context, string, string, string, *types.KnowledgeBaseConfig) (*types.KnowledgeBase, error) {
+func (*stubKBService) UpdateKnowledgeBase(context.Context, string, string, string, *types.KnowledgeBaseConfig, *types.QuestionBankConfig) (*types.KnowledgeBase, error) {
 	return nil, nil
 }
 func (*stubKBService) DeleteKnowledgeBase(context.Context, string) error { return nil }

@@ -56,14 +56,37 @@ test('syncs question totals to the selected set', () => {
   assert.equal(importSource.includes('allowDuplicates'), true)
 })
 
-test('renders the question set sidebar as a four-column list with a popup menu', () => {
-  assert.equal(bankSource.includes('class="set-list-header"'), true)
-  assert.equal(bankSource.includes('v-for="(set, index) in filteredQuestionSets"'), true)
-  assert.equal(bankSource.includes('{{ index + 1 }}'), true)
-  assert.equal(bankSource.includes('{{ set.question_count || 0 }} 题'), true)
+test('renders the question category sidebar with document-category style markup', () => {
+  // Uses tag-sidebar / tag-list / tag-list-item classes matching KnowledgeBase.vue
+  assert.equal(bankSource.includes('class="tag-sidebar"'), true)
+  assert.equal(bankSource.includes('class="sidebar-header"'), true)
+  assert.equal(bankSource.includes('class="tag-search-bar"'), true)
+  assert.equal(bankSource.includes('class="tag-list"'), true)
+  assert.equal(bankSource.includes('class="tag-list-item"'), true)
+  assert.equal(bankSource.includes('class="tag-hash-icon"'), true)
+  // Title uses "题目分类"
+  assert.equal(bankSource.includes('题目分类'), true)
+  // Search placeholder "搜索分类"
+  assert.equal(bankSource.includes('搜索分类'), true)
+  // Inline create: + button, input, confirm/cancel
+  assert.equal(bankSource.includes('creatingInlineSet'), true)
+  assert.equal(bankSource.includes('class="tag-edit-input"'), true)
+  assert.equal(bankSource.includes('class="tag-inline-actions"'), true)
+  assert.equal(bankSource.includes('startCreateSet'), true)
+  assert.equal(bankSource.includes('confirmCreateSet'), true)
+  assert.equal(bankSource.includes('cancelCreateSet'), true)
+  // Count is pure number, no "题" suffix
+  assert.equal(bankSource.includes('{{ set.question_count || 0 }} 题'), false)
+  assert.equal(bankSource.includes('set.question_count'), true)
+  // Inline edit: rename without modal
+  assert.equal(bankSource.includes('startEditSet'), true)
+  assert.equal(bankSource.includes('submitEditSet'), true)
+  assert.equal(bankSource.includes('cancelEditSet'), true)
+  // Popup menu for delete
   assert.equal(bankSource.includes('<t-popup'), true)
-  assert.equal(bankSource.includes('openRenameDialog(set)'), true)
   assert.equal(bankSource.includes('confirmDeleteSet(set)'), true)
+  // No old set-list-header grid
+  assert.equal(bankSource.includes('class="set-list-header"'), false)
   assert.equal(bankSource.includes('source_type'), false)
   assert.equal(bankSource.includes('class="set-meta"'), false)
 })

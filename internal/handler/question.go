@@ -209,6 +209,18 @@ func (h *QuestionHandler) UpdateQuestionStatus(c *gin.Context) {
 	questionOK(c, result)
 }
 
+// GetQuestionSetProcessingStatus returns the background processing status for a question set.
+func (h *QuestionHandler) GetQuestionSetProcessingStatus(c *gin.Context) {
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	result, err := h.questionService.GetQuestionSetProcessingStatus(c.Request.Context(), kbID, setID)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, result)
+}
+
 func (h *QuestionHandler) ImportQuestions(c *gin.Context) {
 	var req types.ImportQuestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

@@ -63,20 +63,21 @@ const (
 )
 
 type QuestionSet struct {
-	ID               string                `json:"id" gorm:"type:varchar(36);primaryKey"`
-	TenantID         uint64                `json:"tenant_id" gorm:"index;not null"`
-	KnowledgeBaseID  string                `json:"knowledge_base_id" gorm:"type:varchar(36);index;not null"`
-	Name             string                `json:"name" gorm:"type:varchar(255);not null"`
-	Description      string                `json:"description" gorm:"type:text;not null;default:''"`
-	SourceType       QuestionSetSourceType `json:"source_type" gorm:"type:varchar(32);not null;default:'manual'"`
-	Status           QuestionSetStatus     `json:"status" gorm:"type:varchar(32);not null;default:'active'"`
-	QuestionCount    int                   `json:"question_count" gorm:"column:question_count;not null;default:0"`
-	GenerationConfig JSON                  `json:"generation_config" gorm:"type:jsonb;not null"`
-	GenerationScope  JSON                  `json:"generation_scope" gorm:"type:jsonb;not null"`
-	ErrorMessage     string                `json:"error_message" gorm:"type:text;not null;default:''"`
-	CreatedAt        time.Time             `json:"created_at"`
-	UpdatedAt        time.Time             `json:"updated_at"`
-	DeletedAt        gorm.DeletedAt        `json:"-" gorm:"index"`
+	ID               string                     `json:"id" gorm:"type:varchar(36);primaryKey"`
+	TenantID         uint64                     `json:"tenant_id" gorm:"index;not null"`
+	KnowledgeBaseID  string                     `json:"knowledge_base_id" gorm:"type:varchar(36);index;not null"`
+	Name             string                     `json:"name" gorm:"type:varchar(255);not null"`
+	Description      string                     `json:"description" gorm:"type:text;not null;default:''"`
+	SourceType       QuestionSetSourceType      `json:"source_type" gorm:"type:varchar(32);not null;default:'manual'"`
+	Status           QuestionSetStatus          `json:"status" gorm:"type:varchar(32);not null;default:'active'"`
+	QuestionCount    int                        `json:"question_count" gorm:"column:question_count;not null;default:0"`
+	GenerationConfig JSON                       `json:"generation_config" gorm:"type:jsonb;not null"`
+	GenerationScope  JSON                       `json:"generation_scope" gorm:"type:jsonb;not null"`
+	ProcessingStage  QuestionSetProcessingStage `json:"processing_stage" gorm:"type:varchar(32);not null;default:''"`
+	ErrorMessage     string                     `json:"error_message" gorm:"type:text;not null;default:''"`
+	CreatedAt        time.Time                  `json:"created_at"`
+	UpdatedAt        time.Time                  `json:"updated_at"`
+	DeletedAt        gorm.DeletedAt             `json:"-" gorm:"index"`
 }
 
 func (*QuestionSet) TableName() string { return "question_sets" }
@@ -149,6 +150,20 @@ type QuestionListFilter struct {
 	Keyword        string `form:"keyword"`
 }
 
+// QuestionSetProcessingStage tracks the background processing stage of a question set
+// after import. It is only meaningful for sets with source_type=import.
+type QuestionSetProcessingStage string
+
+const (
+	QuestionSetProcessingStageIdle             QuestionSetProcessingStage = "" // not yet imported or no auto-processing
+	QuestionSetProcessingStageDraftImported    QuestionSetProcessingStage = "draft_imported"
+	QuestionSetProcessingStageIndexing         QuestionSetProcessingStage = "indexing"
+	QuestionSetProcessingStageAutoTagging      QuestionSetProcessingStage = "auto_tagging"
+	QuestionSetProcessingStageSyllabusChecking QuestionSetProcessingStage = "syllabus_checking"
+	QuestionSetProcessingStageReadyForReview   QuestionSetProcessingStage = "ready_for_review"
+	QuestionSetProcessingStageFailed           QuestionSetProcessingStage = "failed"
+)
+
 type CreateQuestionSetRequest struct {
 	Name        string `json:"name" binding:"required"`
 	Description string `json:"description"`
@@ -158,6 +173,16 @@ type UpdateQuestionSetRequest struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
 	Status      *string `json:"status"`
+}
+
+// QuestionSetProcessingStatus is the API response for question set processing status.
+type QuestionSetProcessingStatus struct {
+	Stage                    QuestionSetProcessingStage `json:"stage"`
+	ErrorMessage             string                     `json:"error_message"`
+	SkippedAutoTaggingReason string                     `json:"skipped_auto_tagging_reason,omitempty"`
+	SkippedSyllabusReason    string                     `json:"skipped_syllabus_reason,omitempty"`
+	AutoTaggingEnabled       bool                       `json:"auto_tagging_enabled"`
+	SyllabusCheckEnabled     bool                       `json:"syllabus_check_enabled"`
 }
 
 type CreateQuestionRequest struct {

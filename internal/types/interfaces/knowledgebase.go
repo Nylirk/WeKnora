@@ -72,6 +72,7 @@ type KnowledgeBaseService interface {
 	//   - Possible errors such as not existing, insufficient permissions, etc.
 	UpdateKnowledgeBase(ctx context.Context,
 		id string, name string, description string, config *types.KnowledgeBaseConfig,
+		questionBankConfig *types.QuestionBankConfig,
 	) (*types.KnowledgeBase, error)
 
 	// DeleteKnowledgeBase deletes a knowledge base
@@ -164,6 +165,10 @@ type KnowledgeBaseRepository interface {
 	//   - Knowledge base object, if found and owned by tenant
 	//   - Possible errors such as record not existing or wrong tenant, database errors, etc.
 	GetKnowledgeBaseByIDAndTenant(ctx context.Context, id string, tenantID uint64) (*types.KnowledgeBase, error)
+
+	// GetKnowledgeBaseByName queries a knowledge base by name within a tenant
+	// for duplicate name detection. Returns nil if none found.
+	GetKnowledgeBaseByName(ctx context.Context, tenantID uint64, name string) (*types.KnowledgeBase, error)
 
 	// GetKnowledgeBaseByIDs queries knowledge bases by multiple IDs
 	// Parameters:

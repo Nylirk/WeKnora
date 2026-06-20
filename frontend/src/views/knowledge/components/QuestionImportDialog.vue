@@ -82,13 +82,39 @@
         </t-list-item>
       </t-list>
     </div>
+
+    <div v-if="processingStatus" class="import-processing-status">
+      <t-divider />
+      <h4>后台处理状态</h4>
+      <t-descriptions bordered size="small" :column="1">
+        <t-descriptions-item label="处理阶段">
+          <t-tag :theme="processingStatus.stage === 'failed' ? 'danger' : processingStatus.stage === 'ready_for_review' ? 'success' : 'primary'" variant="light" size="small">
+            {{ stageLabel(processingStatus.stage) }}
+          </t-tag>
+        </t-descriptions-item>
+        <t-descriptions-item v-if="processingStatus.auto_tagging_enabled" label="自动知识点关联">已启用</t-descriptions-item>
+        <t-descriptions-item v-else label="自动知识点关联">
+          <span class="skipped-text">{{ processingStatus.skipped_auto_tagging_reason || '已禁用' }}</span>
+        </t-descriptions-item>
+        <t-descriptions-item v-if="processingStatus.syllabus_check_enabled" label="自动考纲筛选">已启用</t-descriptions-item>
+        <t-descriptions-item v-else label="自动考纲筛选">
+          <span class="skipped-text">{{ processingStatus.skipped_syllabus_reason || '已禁用' }}</span>
+        </t-descriptions-item>
+        <t-descriptions-item v-if="processingStatus.error_message" label="错误信息">
+          <span class="error-text">{{ processingStatus.error_message }}</span>
+        </t-descriptions-item>
+        <t-descriptions-item v-if="processingStatus.stage === 'ready_for_review'" label="操作建议">
+          题目已完成后台处理，请进入题库编辑页审核题目、知识点、考纲适用性、难度和考试频率。
+        </t-descriptions-item>
+      </t-descriptions>
+    </div>
   </t-dialog>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { importQuestions, type ImportQuestionError, type Question } from '@/api/question'
+import { importQuestions, getQuestionSetProcessingStatus, type ImportQuestionError, type Question, type QuestionSetProcessingStatus, type QuestionSetProcessingStage } from '@/api/question'
 import {
   classifyQuestionImportItems,
   parseQuestionImportInput,
@@ -117,6 +143,8 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const backendErrors = ref<ImportQuestionError[]>([])
 const allowDuplicates = ref(false)
 const importing = ref(false)
+const processingStatus = ref<QuestionSetProcessingStatus | null>(null)
+const pollingTimer = ref<ReturnType<typeof setInterval> | null>(null)
 const activeRawData = computed(() => importMode.value === 'paste' ? pastedData.value : fileData.value)
 const hasInput = computed(() => activeRawData.value.trim().length > 0)
 const parsed = computed(() => parseQuestionImportInput(activeRawData.value))
@@ -159,8 +187,55 @@ async function onFileDrop(event: DragEvent) {
   if (file) await readFile(file)
 }
 
+function stageLabel(stage: QuestionSetProcessingStage): string {
+  const map: Record<string, string> = {
+    '': '未开始',
+    draft_imported: '已导入为草稿',
+    indexing: '向量化中',
+    auto_tagging: '知识点匹配中',
+    syllabus_checking: '考纲筛选中',
+    ready_for_review: '待人工审核',
+    failed: '处理失败',
+  }
+  return map[stage] || stage
+}
+
+async function pollProcessingStatus() {
+  try {
+    const response: any = await getQuestionSetProcessingStatus(props.knowledgeBaseId, props.setId)
+    processingStatus.value = response?.data ?? response
+    if (processingStatus.value) {
+      const stage = processingStatus.value.stage
+      if (stage === 'ready_for_review' || stage === 'failed' || stage === '') {
+        stopPolling()
+        if (stage === 'ready_for_review') {
+          MessagePlugin.success('题目已导入为草稿，后台处理完成，可进入题库编辑页审核')
+        } else if (stage === 'failed') {
+          MessagePlugin.error(`后台处理失败：${processingStatus.value.error_message || '未知错误'}`)
+        }
+      }
+    }
+  } catch {
+    // polling is best-effort
+  }
+}
+
+function startPolling() {
+  stopPolling()
+  pollProcessingStatus()
+  pollingTimer.value = setInterval(pollProcessingStatus, 3000)
+}
+
+function stopPolling() {
+  if (pollingTimer.value !== null) {
+    clearInterval(pollingTimer.value)
+    pollingTimer.value = null
+  }
+}
+
 async function doImport() {
   backendErrors.value = []
+  processingStatus.value = null
   if (parsed.value.items.length === 0) {
     MessagePlugin.warning('没有可导入的题目')
     return
@@ -175,13 +250,20 @@ async function doImport() {
     const response: any = await importQuestions(props.knowledgeBaseId, props.setId, { items })
     const result = response?.data ?? response
     backendErrors.value = Array.isArray(result?.errors) ? result.errors : []
-    MessagePlugin.success(`成功导入 ${result?.created || 0} 道题目`)
-    const missingAnswerCount = items.filter(item => !item.answer_text.trim()).length
-    if (missingAnswerCount) {
-      MessagePlugin.warning(`${missingAnswerCount} 道题缺少答案，审核或导出前需要补全`)
+    const created = result?.created || 0
+    if (created > 0) {
+      MessagePlugin.success(`已导入 ${created} 道题目为草稿，正在启动后台处理...`)
+      const missingAnswerCount = items.filter(item => !item.answer_text.trim()).length
+      if (missingAnswerCount) {
+        MessagePlugin.warning(`${missingAnswerCount} 道题缺少答案，审核或导出前需要补全`)
+      }
+      emit('imported')
+      // Start polling for processing status
+      startPolling()
+    } else {
+      MessagePlugin.warning('没有题目被导入')
     }
-    if ((result?.created || 0) > 0) emit('imported')
-    if (parseErrors.value.length === 0) dialogVisible.value = false
+    if (parseErrors.value.length === 0 && created === 0) dialogVisible.value = false
   } catch (e: any) {
     MessagePlugin.error(e?.message || '导入失败')
   } finally {
@@ -190,12 +272,16 @@ async function doImport() {
 }
 
 watch(() => props.visible, visible => {
-  if (!visible) return
+  if (!visible) {
+    stopPolling()
+    return
+  }
   importMode.value = 'paste'
   pastedData.value = ''
   fileData.value = ''
   selectedFileName.value = ''
   backendErrors.value = []
+  processingStatus.value = null
   allowDuplicates.value = false
 })
 </script>
@@ -216,4 +302,8 @@ watch(() => props.visible, visible => {
 .error-line { color: var(--td-error-color); }
 .warning-title,
 .warning-line { color: var(--td-warning-color); }
+.import-processing-status { margin-top: 12px; }
+.import-processing-status h4 { margin: 0 0 8px; font-size: 14px; }
+.skipped-text { color: var(--td-text-color-placeholder); }
+.error-text { color: var(--td-error-color); }
 </style>

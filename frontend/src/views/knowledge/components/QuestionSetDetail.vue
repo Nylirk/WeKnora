@@ -32,6 +32,21 @@
       </div>
     </div>
 
+    <!-- Processing status banner (only visible when processing is active) -->
+    <div v-if="processingStatus && processingStatus.stage && processingStatus.stage !== 'ready_for_review'" class="processing-banner">
+      <t-alert
+        :theme="processingStatus.stage === 'failed' ? 'error' : 'info'"
+        :close-btn="false"
+      >
+        <template #message>
+          <div class="processing-banner-content">
+            <span>{{ stageLabel(processingStatus.stage) }}</span>
+            <span v-if="processingStatus.error_message" class="processing-error">：{{ processingStatus.error_message }}</span>
+          </div>
+        </template>
+      </t-alert>
+    </div>
+
     <div class="filter-bar">
       <t-select v-model="filter.question_type" :placeholder="$t('questionBank.typeFilter', '题型')" clearable style="width: 120px" @change="reloadFromFirstPage">
         <t-option v-for="qt in questionTypes" :key="qt" :value="qt" :label="questionTypeLabel(qt)" />
@@ -173,12 +188,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, nextTick, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import {
   getQuestionSet, listQuestions, deleteQuestion as apiDeleteQuestion,
-  exportToEvaluationDataset, updateQuestionStatus,
+  exportToEvaluationDataset, updateQuestionStatus, getQuestionSetProcessingStatus,
   type Question, type QuestionListFilter, type QuestionType,
+  type QuestionSetProcessingStatus, type QuestionSetProcessingStage,
 } from '@/api/question'
 import type { BlockPreviewSummary, ImportBlock } from '@/api/question_block'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
@@ -192,6 +208,52 @@ const props = defineProps<{ setId: string; knowledgeBaseId: string; setName?: st
 const emit = defineEmits<{ generated: []; changed: [total: number] }>()
 const workbenchStore = useImportWorkbenchStore()
 const importUI = useImportUIStore()
+
+// Processing status
+const processingStatus = ref<QuestionSetProcessingStatus | null>(null)
+let processingPollTimer: ReturnType<typeof setInterval> | null = null
+
+function stageLabel(stage: QuestionSetProcessingStage): string {
+  const map: Record<string, string> = {
+    '': '未开始',
+    draft_imported: '已导入为草稿',
+    indexing: '向量化中',
+    auto_tagging: '知识点匹配中',
+    syllabus_checking: '考纲筛选中',
+    ready_for_review: '待人工审核',
+    failed: '处理失败',
+  }
+  return map[stage] || stage
+}
+
+async function fetchProcessingStatus() {
+  if (!props.knowledgeBaseId || !props.setId) return
+  try {
+    const response: any = await getQuestionSetProcessingStatus(props.knowledgeBaseId, props.setId)
+    processingStatus.value = response?.data ?? response
+    if (processingStatus.value) {
+      const stage = processingStatus.value.stage
+      if (stage === 'ready_for_review' || stage === 'failed' || stage === '') {
+        stopProcessingPolling()
+      }
+    }
+  } catch {
+    // best-effort
+  }
+}
+
+function startProcessingPolling() {
+  stopProcessingPolling()
+  fetchProcessingStatus()
+  processingPollTimer = setInterval(fetchProcessingStatus, 5000)
+}
+
+function stopProcessingPolling() {
+  if (processingPollTimer !== null) {
+    clearInterval(processingPollTimer)
+    processingPollTimer = null
+  }
+}
 
 const questionTypes: QuestionType[] = ['single_choice', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer', 'essay', 'composite']
 const questionColumns = computed(() => [
@@ -450,6 +512,8 @@ async function handleFileParsed(payload: {
 async function handleWorkbenchImported() {
   workbenchVisible.value = false
   await refreshAfterMutation()
+  // Restart polling to pick up new processing status
+  startProcessingPolling()
 }
 
 function handleWorkbenchAbandoned() {
@@ -539,6 +603,11 @@ onMounted(async () => {
     } catch { /* ignore */ }
   }
   await loadQuestions()
+  startProcessingPolling()
+})
+
+onBeforeUnmount(() => {
+  stopProcessingPolling()
 })
 
 import QuestionEditDialog from './QuestionEditDialog.vue'
@@ -559,6 +628,9 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .draft-review-tag:hover { color: var(--td-brand-color); }
 .question-empty { padding: 48px 16px; }
 .restore-draft-copy { margin: 0; color: var(--td-text-color-secondary); line-height: 1.7; }
+.processing-banner { margin-bottom: 16px; }
+.processing-banner-content { display: flex; gap: 4px; }
+.processing-error { color: var(--td-error-color); }
 .import-type-menu { width: 320px; padding: 6px; }
 .import-type-item { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; border: 0; border-radius: 6px; color: var(--td-text-color-primary); background: transparent; text-align: left; cursor: pointer; }
 .import-type-item:not(:disabled):hover { background: var(--td-bg-color-container-hover); }

@@ -20,7 +20,24 @@ export interface QuestionSet {
   name: string; description: string; source_type: QuestionSetSourceType
   status: QuestionSetStatus; question_count: number
   generation_config: Record<string, unknown>; generation_scope: Record<string, unknown>
+  processing_stage: QuestionSetProcessingStage
   error_message: string; created_at: string; updated_at: string
+}
+
+export interface QuestionBankConfig {
+  knowledge_point_knowledge_base_id: string
+  syllabus_knowledge_base_id: string
+}
+
+export type QuestionSetProcessingStage = '' | 'draft_imported' | 'indexing' | 'auto_tagging' | 'syllabus_checking' | 'ready_for_review' | 'failed'
+
+export interface QuestionSetProcessingStatus {
+  stage: QuestionSetProcessingStage
+  error_message: string
+  skipped_auto_tagging_reason?: string
+  skipped_syllabus_reason?: string
+  auto_tagging_enabled: boolean
+  syllabus_check_enabled: boolean
 }
 
 export interface Question {
@@ -106,6 +123,9 @@ export const updateQuestionStatus = (kbId: string, setId: string, questionId: st
 
 export const importQuestions = (kbId: string, setId: string, data: ImportQuestionsRequest) =>
   post(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/import`, data).then(unwrap<ImportQuestionsResult>)
+
+export const getQuestionSetProcessingStatus = (kbId: string, setId: string) =>
+  get(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/processing-status`).then(unwrap<QuestionSetProcessingStatus>)
 
 export const exportToEvaluationDataset = (kbId: string, setId: string, data: { name: string; description?: string }) =>
   post(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/export`, data).then(unwrap<any>)

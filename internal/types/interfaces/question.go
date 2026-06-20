@@ -10,6 +10,7 @@ import (
 type QuestionRepository interface {
 	CreateQuestionSet(context.Context, *types.QuestionSet) error
 	GetQuestionSet(context.Context, uint64, string) (*types.QuestionSet, error)
+	GetQuestionSetByName(context.Context, uint64, string, string) (*types.QuestionSet, error)
 	GetQuestionSetByKB(context.Context, uint64, string) (*types.QuestionSet, error)
 	ListQuestionSets(context.Context, uint64, string, *types.Pagination) (*types.PageResult, error)
 	UpdateQuestionSet(context.Context, *types.QuestionSet) error
@@ -47,6 +48,7 @@ type QuestionService interface {
 	ListQuestionSets(context.Context, string, *types.Pagination) (*types.PageResult, error)
 	UpdateQuestionSet(context.Context, string, string, *types.UpdateQuestionSetRequest) (*types.QuestionSet, error)
 	DeleteQuestionSet(context.Context, string, string) error
+	GetQuestionSetProcessingStatus(context.Context, string, string) (*types.QuestionSetProcessingStatus, error)
 
 	CreateQuestion(context.Context, string, string, *types.CreateQuestionRequest) (*types.Question, error)
 	GetQuestion(context.Context, string, string, string) (*types.Question, error)

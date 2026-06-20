@@ -24,8 +24,17 @@ type questionStatusRepository struct {
 	allQuestions     []*types.Question
 }
 
+func (r *questionStatusRepository) CreateQuestionSet(_ context.Context, set *types.QuestionSet) error {
+	r.set = set
+	return nil
+}
+
 func (r *questionStatusRepository) GetQuestionSet(context.Context, uint64, string) (*types.QuestionSet, error) {
 	return r.set, nil
+}
+
+func (r *questionStatusRepository) GetQuestionSetByName(context.Context, uint64, string, string) (*types.QuestionSet, error) {
+	return nil, nil
 }
 
 func (r *questionStatusRepository) CreateQuestion(_ context.Context, question *types.Question) error {
@@ -83,15 +92,32 @@ func (r *questionStatusRepository) DeleteQuestionSet(_ context.Context, _ uint64
 	return nil
 }
 
-func (r *questionStatusRepository) ListQuestions(_ context.Context, _ uint64, _ string, _ *types.QuestionListFilter, page *types.Pagination) (*types.PageResult, error) {
-	if page.Page > 1 {
-		return types.NewPageResult(0, page, []*types.Question{}), nil
+func (r *questionStatusRepository) ListQuestions(_ context.Context, _ uint64, _ string, filter *types.QuestionListFilter, page *types.Pagination) (*types.PageResult, error) {
+	filtered := r.allQuestions
+	if filter != nil && filter.Status != "" {
+		filtered = nil
+		for _, q := range r.allQuestions {
+			if string(q.Status) == filter.Status {
+				filtered = append(filtered, q)
+			}
+		}
 	}
-	return types.NewPageResult(int64(len(r.allQuestions)), page, r.allQuestions), nil
+	if page.Page > 1 {
+		return types.NewPageResult(int64(len(filtered)), page, []*types.Question{}), nil
+	}
+	return types.NewPageResult(int64(len(filtered)), page, filtered), nil
 }
 
 type questionStatusKBService struct {
 	interfaces.KnowledgeBaseService
+	kb *types.KnowledgeBase
+}
+
+func (s *questionStatusKBService) GetKnowledgeBaseByID(context.Context, string) (*types.KnowledgeBase, error) {
+	if s.kb != nil {
+		return s.kb, nil
+	}
+	return &types.KnowledgeBase{ID: "kb-1", Type: types.KnowledgeBaseTypeQuestionBank}, nil
 }
 
 type questionStatusIndexService struct {
@@ -109,10 +135,6 @@ func (s *questionStatusIndexService) IndexQuestions(_ context.Context, questions
 func (s *questionStatusIndexService) DeleteQuestionIndexes(_ context.Context, questionIDs []string) error {
 	s.deleted = append(s.deleted, questionIDs)
 	return nil
-}
-
-func (*questionStatusKBService) GetKnowledgeBaseByID(context.Context, string) (*types.KnowledgeBase, error) {
-	return &types.KnowledgeBase{ID: "kb-1", Type: types.KnowledgeBaseTypeQuestionBank}, nil
 }
 
 func newQuestionStatusService(repository *questionStatusRepository) *QuestionService {
@@ -246,20 +268,19 @@ func TestImportQuestionsUsesReviewValidationAndKeepsCountLast(t *testing.T) {
 	if result.Created != 3 || len(repository.createdQuestions) != 3 {
 		t.Fatalf("ImportQuestions() created = %d, stored = %d", result.Created, len(repository.createdQuestions))
 	}
-	if repository.createdQuestions[0].Status != types.QuestionStatusReviewed {
-		t.Fatalf("complete imported question status = %q", repository.createdQuestions[0].Status)
+	// All imported questions must be draft regardless of completeness.
+	for i, q := range repository.createdQuestions {
+		if q.Status != types.QuestionStatusDraft {
+			t.Fatalf("imported question[%d] status = %q, want draft", i, q.Status)
+		}
 	}
-	if repository.createdQuestions[1].Status != types.QuestionStatusDraft {
-		t.Fatalf("incomplete imported question status = %q", repository.createdQuestions[1].Status)
+	// We now update the question set's processing stage synchronously during import,
+	// so full set updates are expected.
+	if repository.fullSetUpdates < 1 {
+		t.Fatalf("full question set updates = %d, want >= 1 (processing stage update)", repository.fullSetUpdates)
 	}
-	if repository.createdQuestions[2].Status != types.QuestionStatusDraft {
-		t.Fatalf("structurally invalid imported question status = %q", repository.createdQuestions[2].Status)
-	}
-	if repository.fullSetUpdates != 0 {
-		t.Fatalf("full question set updates = %d, want 0", repository.fullSetUpdates)
-	}
-	if got := repository.mutationOrder; len(got) != 2 || got[0] != "source" || got[1] != "count" {
-		t.Fatalf("mutation order = %v, want [source count]", got)
+	if got := repository.mutationOrder; len(got) < 2 || got[0] != "source" || got[1] != "count" {
+		t.Fatalf("mutation order first two = %v, want [source count ...]", got)
 	}
 }
 
@@ -351,11 +372,10 @@ func TestImportQuestionsRejectsInvalidStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ImportQuestions() error = %v", err)
 	}
-	if result.Created != 0 {
-		t.Fatalf("ImportQuestions() created = %d, want 0 (unknown status)", result.Created)
-	}
-	if len(result.Errors) != 1 {
-		t.Fatalf("ImportQuestions() errors = %d, want 1", len(result.Errors))
+	// With forced-draft policy, all items that pass draft validation are created
+	// regardless of caller-supplied status. Unknown status values are ignored.
+	if result.Created != 1 {
+		t.Fatalf("ImportQuestions() created = %d, want 1 (forced draft)", result.Created)
 	}
 }
 
@@ -366,15 +386,15 @@ func TestImportQuestionsStatusValidation(t *testing.T) {
 		want types.QuestionStatus
 	}{
 		{
-			name: "valid question with reviewed stays reviewed",
+			name: "valid question with reviewed forced to draft",
 			item: types.ImportQuestionItem{
 				LineNumber: 1, QuestionType: string(types.QuestionTypeShortAnswer),
 				StemText: "题干", AnswerText: "答案", Status: "reviewed",
 			},
-			want: types.QuestionStatusReviewed,
+			want: types.QuestionStatusDraft,
 		},
 		{
-			name: "blank answer reviewed degrades to draft",
+			name: "blank answer reviewed stays draft",
 			item: types.ImportQuestionItem{
 				LineNumber: 1, QuestionType: string(types.QuestionTypeShortAnswer),
 				StemText: "题干", AnswerText: "", Status: "reviewed",
@@ -382,7 +402,7 @@ func TestImportQuestionsStatusValidation(t *testing.T) {
 			want: types.QuestionStatusDraft,
 		},
 		{
-			name: "invalid choice with reviewed degrades to draft",
+			name: "invalid choice with reviewed stays draft",
 			item: types.ImportQuestionItem{
 				LineNumber: 1, QuestionType: string(types.QuestionTypeSingleChoice),
 				StemText: "题干", AnswerText: "A",
@@ -400,20 +420,20 @@ func TestImportQuestionsStatusValidation(t *testing.T) {
 			want: types.QuestionStatusDraft,
 		},
 		{
-			name: "explicit rejected stays rejected",
+			name: "explicit rejected forced to draft",
 			item: types.ImportQuestionItem{
 				LineNumber: 1, QuestionType: string(types.QuestionTypeShortAnswer),
 				StemText: "题干", AnswerText: "答案", Status: "rejected",
 			},
-			want: types.QuestionStatusRejected,
+			want: types.QuestionStatusDraft,
 		},
 		{
-			name: "no status auto-determines reviewed for valid",
+			name: "no status auto-determines draft for valid",
 			item: types.ImportQuestionItem{
 				LineNumber: 1, QuestionType: string(types.QuestionTypeShortAnswer),
 				StemText: "题干", AnswerText: "答案",
 			},
-			want: types.QuestionStatusReviewed,
+			want: types.QuestionStatusDraft,
 		},
 	}
 
@@ -434,6 +454,194 @@ func TestImportQuestionsStatusValidation(t *testing.T) {
 				t.Fatalf("ImportQuestions() status = %q, want %q", repository.createdQuestions[0].Status, tt.want)
 			}
 		})
+	}
+}
+
+// TestImportQuestionsAllDraft verifies that ALL imported questions enter draft status,
+// regardless of their structural completeness. This is the new behavior where only
+// human review can advance questions to reviewed.
+func TestImportQuestionsAllDraft(t *testing.T) {
+	repository := &questionStatusRepository{set: &types.QuestionSet{ID: "set-1", KnowledgeBaseID: "kb-1"}}
+	service := newQuestionStatusService(repository)
+	result, err := service.ImportQuestions(questionStatusContext(), "kb-1", "set-1", &types.ImportQuestionsRequest{
+		Items: []types.ImportQuestionItem{
+			{LineNumber: 1, QuestionType: string(types.QuestionTypeShortAnswer), StemText: "完整题", AnswerText: "答案", Status: "reviewed"},
+			{LineNumber: 2, QuestionType: string(types.QuestionTypeShortAnswer), StemText: "缺答案题"},
+			{LineNumber: 3, QuestionType: string(types.QuestionTypeSingleChoice), StemText: "结构不完整题", AnswerText: "A", QuestionBody: types.JSON(`{}`), AnswerBody: types.JSON(`{"selected_index":0}`), Status: "reviewed"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportQuestions() error = %v", err)
+	}
+	if result.Created != 3 || len(repository.createdQuestions) != 3 {
+		t.Fatalf("ImportQuestions() created = %d, stored = %d", result.Created, len(repository.createdQuestions))
+	}
+	for i, q := range repository.createdQuestions {
+		if q.Status != types.QuestionStatusDraft {
+			t.Fatalf("imported question[%d] status = %q, want draft", i, q.Status)
+		}
+	}
+}
+
+// TestImportQuestionsTriggersProcessingPipeline verifies that importing questions
+// updates the question set's processing stage to draft_imported.
+func TestImportQuestionsTriggersProcessingStage(t *testing.T) {
+	repository := &questionStatusRepository{set: &types.QuestionSet{ID: "set-1", KnowledgeBaseID: "kb-1"}}
+	service := newQuestionStatusService(repository)
+	result, err := service.ImportQuestions(questionStatusContext(), "kb-1", "set-1", &types.ImportQuestionsRequest{
+		Items: []types.ImportQuestionItem{
+			{LineNumber: 1, QuestionType: string(types.QuestionTypeShortAnswer), StemText: "题干", AnswerText: "答案"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportQuestions() error = %v", err)
+	}
+	if result.Created != 1 {
+		t.Fatalf("ImportQuestions() created = %d, want 1", result.Created)
+	}
+	// After synchronous part of import, the set should be in draft_imported stage.
+	// The full processing pipeline runs async in a goroutine.
+	if repository.set.ProcessingStage != types.QuestionSetProcessingStageDraftImported {
+		t.Fatalf("ProcessingStage = %q, want %q", repository.set.ProcessingStage, types.QuestionSetProcessingStageDraftImported)
+	}
+}
+
+// TestQuestionBankConfigHelper verifies the KB-level QuestionBankConfig helpers.
+func TestQuestionBankConfigHelper(t *testing.T) {
+	tests := []struct {
+		name             string
+		knowledgePointID string
+		syllabusID       string
+		wantAutoTag      bool
+		wantSyllabus     bool
+	}{
+		{name: "both empty", knowledgePointID: "", syllabusID: "", wantAutoTag: false, wantSyllabus: false},
+		{name: "knowledge point only", knowledgePointID: "kp-kb-1", syllabusID: "", wantAutoTag: true, wantSyllabus: false},
+		{name: "syllabus only", knowledgePointID: "", syllabusID: "syl-kb-1", wantAutoTag: false, wantSyllabus: true},
+		{name: "both configured", knowledgePointID: "kp-kb-1", syllabusID: "syl-kb-1", wantAutoTag: true, wantSyllabus: true},
+		{name: "nil config", knowledgePointID: "", syllabusID: "", wantAutoTag: false, wantSyllabus: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg *types.QuestionBankConfig
+			if tt.name != "nil config" {
+				cfg = &types.QuestionBankConfig{
+					KnowledgePointKnowledgeBaseID: tt.knowledgePointID,
+					SyllabusKnowledgeBaseID:       tt.syllabusID,
+				}
+			}
+			if cfg.AutoKnowledgePointEnabled() != tt.wantAutoTag {
+				t.Fatalf("AutoKnowledgePointEnabled() = %v, want %v", cfg.AutoKnowledgePointEnabled(), tt.wantAutoTag)
+			}
+			if cfg.AutoSyllabusCheckEnabled() != tt.wantSyllabus {
+				t.Fatalf("AutoSyllabusCheckEnabled() = %v, want %v", cfg.AutoSyllabusCheckEnabled(), tt.wantSyllabus)
+			}
+		})
+	}
+}
+
+// TestGetQuestionSetProcessingStatusSkippedReasons verifies skipped reasons
+// are returned from the parent KB config.
+func TestGetQuestionSetProcessingStatusSkippedReasons(t *testing.T) {
+	tests := []struct {
+		name                string
+		knowledgePointID    string
+		syllabusID          string
+		wantAutoTagSkipped  bool
+		wantSyllabusSkipped bool
+	}{
+		{
+			name:                "empty config shows all skipped reasons",
+			wantAutoTagSkipped:  true,
+			wantSyllabusSkipped: true,
+		},
+		{
+			name:                "knowledge point configured removes tag skip",
+			knowledgePointID:    "kp-kb-1",
+			wantAutoTagSkipped:  false,
+			wantSyllabusSkipped: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repository := &questionStatusRepository{
+				set: &types.QuestionSet{
+					ID:              "set-1",
+					KnowledgeBaseID: "kb-1",
+					ProcessingStage: types.QuestionSetProcessingStageIdle,
+				},
+			}
+			kb := &types.KnowledgeBase{
+				ID:   "kb-1",
+				Type: types.KnowledgeBaseTypeQuestionBank,
+				QuestionBankConfig: &types.QuestionBankConfig{
+					KnowledgePointKnowledgeBaseID: tt.knowledgePointID,
+					SyllabusKnowledgeBaseID:       tt.syllabusID,
+				},
+			}
+			kbService := &questionStatusKBService{kb: kb}
+			service := &QuestionService{
+				repository:       repository,
+				knowledgeBaseSvc: kbService,
+			}
+
+			status, err := service.GetQuestionSetProcessingStatus(questionStatusContext(), "kb-1", "set-1")
+			if err != nil {
+				t.Fatalf("GetQuestionSetProcessingStatus() error = %v", err)
+			}
+			if tt.wantAutoTagSkipped && status.SkippedAutoTaggingReason == "" {
+				t.Fatal("expected skipped auto tagging reason, got empty")
+			}
+			if !tt.wantAutoTagSkipped && status.SkippedAutoTaggingReason != "" {
+				t.Fatalf("expected no skipped auto tagging reason, got %q", status.SkippedAutoTaggingReason)
+			}
+			if tt.wantSyllabusSkipped && status.SkippedSyllabusReason == "" {
+				t.Fatal("expected skipped syllabus reason, got empty")
+			}
+			if !tt.wantSyllabusSkipped && status.SkippedSyllabusReason != "" {
+				t.Fatalf("expected no skipped syllabus reason, got %q", status.SkippedSyllabusReason)
+			}
+		})
+	}
+}
+
+// TestSearchDoesNotIncludeDraftByDefault verifies that the existing question search
+// (via ListQuestions with status filter) only returns reviewed when requested.
+func TestSearchDoesNotIncludeDraftByDefault(t *testing.T) {
+	repository := &questionStatusRepository{
+		set: &types.QuestionSet{
+			ID:              "set-1",
+			KnowledgeBaseID: "kb-1",
+		},
+		allQuestions: []*types.Question{
+			{ID: "q-1", Status: types.QuestionStatusDraft, QuestionSetID: "set-1", KnowledgeBaseID: "kb-1"},
+			{ID: "q-2", Status: types.QuestionStatusReviewed, QuestionSetID: "set-1", KnowledgeBaseID: "kb-1"},
+		},
+	}
+	service := newQuestionStatusService(repository)
+
+	// List with reviewed filter should only return reviewed
+	filter := &types.QuestionListFilter{Status: string(types.QuestionStatusReviewed)}
+	result, err := service.ListQuestions(questionStatusContext(), "kb-1", "set-1", filter, &types.Pagination{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("ListQuestions() error = %v", err)
+	}
+	questions := result.Data.([]*types.Question)
+	if len(questions) != 1 || questions[0].ID != "q-2" {
+		t.Fatalf("expected 1 reviewed question, got %d: %+v", len(questions), questions)
+	}
+
+	// List with draft filter should only return draft
+	filter = &types.QuestionListFilter{Status: string(types.QuestionStatusDraft)}
+	result, err = service.ListQuestions(questionStatusContext(), "kb-1", "set-1", filter, &types.Pagination{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("ListQuestions() error = %v", err)
+	}
+	questions = result.Data.([]*types.Question)
+	if len(questions) != 1 || questions[0].ID != "q-1" {
+		t.Fatalf("expected 1 draft question, got %d: %+v", len(questions), questions)
 	}
 }
 

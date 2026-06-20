@@ -48,6 +48,19 @@ func (r *questionRepository) GetQuestionSetByKB(ctx context.Context, tenantID ui
 	return &qs, nil
 }
 
+func (r *questionRepository) GetQuestionSetByName(ctx context.Context, tenantID uint64, kbID, name string) (*types.QuestionSet, error) {
+	var qs types.QuestionSet
+	if err := r.db.WithContext(ctx).Where(
+		"tenant_id = ? AND knowledge_base_id = ? AND name = ?", tenantID, kbID, name,
+	).First(&qs).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &qs, nil
+}
+
 func (r *questionRepository) ListQuestionSets(ctx context.Context, tenantID uint64, kbID string, page *types.Pagination) (*types.PageResult, error) {
 	var total int64
 	var sets []*types.QuestionSet

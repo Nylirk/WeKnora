@@ -91,6 +91,10 @@ type KnowledgeBase struct {
 	// IndexingStrategy controls which indexing pipelines are active for this knowledge base.
 	// Pipelines: vector search, keyword search, wiki generation, knowledge graph extraction.
 	IndexingStrategy IndexingStrategy `yaml:"indexing_strategy"       json:"indexing_strategy"       gorm:"column:indexing_strategy;type:json"`
+	// QuestionBankConfig stores auto-processing configuration for question_bank KBs.
+	// Includes optional knowledge point KB and syllabus KB references.
+	// Only meaningful when Type == KnowledgeBaseTypeQuestionBank.
+	QuestionBankConfig *QuestionBankConfig `yaml:"question_bank_config"    json:"question_bank_config,omitempty"    gorm:"column:question_bank_config;type:jsonb"`
 	// IsPinned and PinnedAt are computed per-caller from user_kb_pins
 	// (see migration 000050). They used to be stored on the row itself,
 	// which made pinning a tenant-wide ordering decision gated behind
@@ -512,7 +516,43 @@ func (e *ExtractConfig) Scan(value interface{}) error {
 	return json.Unmarshal(b, e)
 }
 
-// FAQConfig 存储 FAQ 知识库的特有配置
+// QuestionBankConfig 存储题库型知识库的自动处理配置。
+// 知识点知识库和考纲均为可选项；为空时对应的自动能力被跳过。
+type QuestionBankConfig struct {
+	// KnowledgePointKnowledgeBaseID 是用于自动知识点关联的知识库 ID。
+	// 可选；为空时自动知识点打标禁用。
+	KnowledgePointKnowledgeBaseID string `yaml:"knowledge_point_knowledge_base_id" json:"knowledge_point_knowledge_base_id"`
+	// SyllabusKnowledgeBaseID 是用于自动考纲筛选的知识库 ID。
+	// 可选；为空时自动考纲筛选禁用。
+	SyllabusKnowledgeBaseID string `yaml:"syllabus_knowledge_base_id" json:"syllabus_knowledge_base_id"`
+}
+
+// AutoKnowledgePointEnabled 当配置了知识点知识库时返回 true。
+func (c *QuestionBankConfig) AutoKnowledgePointEnabled() bool {
+	return c != nil && c.KnowledgePointKnowledgeBaseID != ""
+}
+
+// AutoSyllabusCheckEnabled 当配置了考纲时返回 true。
+func (c *QuestionBankConfig) AutoSyllabusCheckEnabled() bool {
+	return c != nil && c.SyllabusKnowledgeBaseID != ""
+}
+
+// Value implements driver.Valuer.
+func (c QuestionBankConfig) Value() (driver.Value, error) {
+	return json.Marshal(c)
+}
+
+// Scan implements sql.Scanner.
+func (c *QuestionBankConfig) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	return json.Unmarshal(b, c)
+}
 type FAQConfig struct {
 	IndexMode         FAQIndexMode         `yaml:"index_mode"          json:"index_mode"`
 	QuestionIndexMode FAQQuestionIndexMode `yaml:"question_index_mode" json:"question_index_mode"`
@@ -565,6 +605,11 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 		kb.FAQConfig = nil
 		kb.WikiConfig = nil
 		kb.ExtractConfig = nil
+		if kb.QuestionBankConfig == nil {
+			kb.QuestionBankConfig = &QuestionBankConfig{}
+		}
+	} else {
+		kb.QuestionBankConfig = nil
 	}
 	if kb.IndexingStrategy.IsZero() {
 		kb.IndexingStrategy = DefaultIndexingStrategy()

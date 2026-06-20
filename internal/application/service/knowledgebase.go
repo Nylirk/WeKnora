@@ -107,6 +107,22 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		kb.CreatorID = uid
 	}
 	kb.EnsureDefaults()
+	if strings.TrimSpace(kb.Name) == "" {
+		return nil, apperrors.NewBadRequestError("知识库名称不能为空")
+	}
+	if len([]rune(strings.TrimSpace(kb.Name))) > 80 {
+		return nil, apperrors.NewBadRequestError("知识库名称不能超过 80 个字符")
+	}
+	kb.Name = strings.TrimSpace(kb.Name)
+	// Check for duplicate name within the same tenant.
+	existing, err := s.repo.GetKnowledgeBaseByName(ctx, kb.TenantID, kb.Name)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, apperrors.NewBadRequestError("当前租户中已存在同名知识库")
+	}
+
 	validTypes := map[string]bool{
 		types.KnowledgeBaseTypeDocument:     true,
 		types.KnowledgeBaseTypeFAQ:          true,
@@ -117,6 +133,14 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		return nil, apperrors.NewBadRequestError("invalid knowledge base type: " + kb.Type)
 	}
 	applyTenantDefaultStorageProvider(ctx, kb)
+
+	// Validate question bank auto-processing config (reference KB types).
+	// kb.ID is still empty during create, so self-reference check is not needed here.
+	if kb.QuestionBankConfig != nil {
+		if err := s.validateQuestionBankReferenceConfig(ctx, kb.TenantID, "", kb.QuestionBankConfig); err != nil {
+			return nil, err
+		}
+	}
 
 	// Fold empty-string vector_store_id into nil so this path and the
 	// retrieve-engine factory's pre-condition share a single representation.
@@ -146,6 +170,54 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 
 	logger.Infof(ctx, "Knowledge base created successfully, ID: %s, name: %s", kb.ID, kb.Name)
 	return kb, nil
+}
+
+// allowedReferenceKBTypes defines which KB types can be referenced as
+// knowledge point KB or syllabus KB in QuestionBankConfig.
+var allowedReferenceKBTypes = map[string]bool{
+	types.KnowledgeBaseTypeDocument: true,
+	types.KnowledgeBaseTypeWiki:     true,
+}
+
+// validateQuestionBankReferenceConfig validates the QuestionBankConfig fields:
+// - Empty strings are allowed (means "disabled").
+// - Non-empty must reference an existing KB in the same tenant.
+// - Cannot reference self.
+// - Cannot reference a question_bank KB.
+func (s *knowledgeBaseService) validateQuestionBankReferenceConfig(
+	ctx context.Context,
+	tenantID uint64,
+	currentKBID string,
+	cfg *types.QuestionBankConfig,
+) error {
+	if cfg == nil {
+		return nil
+	}
+	if cfg.KnowledgePointKnowledgeBaseID != "" {
+		if cfg.KnowledgePointKnowledgeBaseID == currentKBID {
+			return apperrors.NewBadRequestError("题库不能关联自身作为知识点知识库")
+		}
+		target, err := s.repo.GetKnowledgeBaseByIDAndTenant(ctx, cfg.KnowledgePointKnowledgeBaseID, tenantID)
+		if err != nil {
+			return apperrors.NewBadRequestError("知识点知识库不存在或无权访问")
+		}
+		if !allowedReferenceKBTypes[target.Type] {
+			return apperrors.NewBadRequestError("知识点知识库不能选择题库型知识库")
+		}
+	}
+	if cfg.SyllabusKnowledgeBaseID != "" {
+		if cfg.SyllabusKnowledgeBaseID == currentKBID {
+			return apperrors.NewBadRequestError("题库不能关联自身作为考纲")
+		}
+		target, err := s.repo.GetKnowledgeBaseByIDAndTenant(ctx, cfg.SyllabusKnowledgeBaseID, tenantID)
+		if err != nil {
+			return apperrors.NewBadRequestError("考纲不存在或无权访问")
+		}
+		if !allowedReferenceKBTypes[target.Type] {
+			return apperrors.NewBadRequestError("考纲不能选择题库型知识库")
+		}
+	}
+	return nil
 }
 
 // applyTenantDefaultStorageProvider fills an empty KB storage provider from the
@@ -425,6 +497,7 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	name string,
 	description string,
 	config *types.KnowledgeBaseConfig,
+	questionBankConfig *types.QuestionBankConfig,
 ) (*types.KnowledgeBase, error) {
 	if id == "" {
 		logger.Error(ctx, "Knowledge base ID is empty")
@@ -440,6 +513,31 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 			"knowledge_base_id": id,
 		})
 		return nil, err
+	}
+
+	// Validate name
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, apperrors.NewBadRequestError("知识库名称不能为空")
+	}
+	if len([]rune(name)) > 80 {
+		return nil, apperrors.NewBadRequestError("知识库名称不能超过 80 个字符")
+	}
+	// Check duplicate name (allow same name for same KB)
+	if name != strings.TrimSpace(kb.Name) {
+		existing, nameErr := s.repo.GetKnowledgeBaseByName(ctx, kb.TenantID, name)
+		if nameErr != nil {
+			return nil, nameErr
+		}
+		if existing != nil {
+			return nil, apperrors.NewBadRequestError("当前租户中已存在同名知识库")
+		}
+	}
+	// Validate question bank auto-processing config (reference KB types + self-reference).
+	if questionBankConfig != nil && kb.IsQuestionBank() {
+		if err := s.validateQuestionBankReferenceConfig(ctx, kb.TenantID, id, questionBankConfig); err != nil {
+			return nil, err
+		}
 	}
 
 	// Update the knowledge base properties
@@ -472,6 +570,12 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 				kb.ExtractConfig = &types.ExtractConfig{Enabled: true}
 			}
 		}
+	}
+	// Update question bank auto-processing config when provided.
+	// Only applies to question_bank type KBs; EnsureDefaults() clears
+	// it for other types.
+	if questionBankConfig != nil {
+		kb.QuestionBankConfig = questionBankConfig
 	}
 	kb.UpdatedAt = time.Now()
 	kb.EnsureDefaults()
