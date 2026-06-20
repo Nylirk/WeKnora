@@ -203,13 +203,13 @@
                         <!-- Agent模式：统一提示词（使用 {{web_search_status}} 占位符动态控制行为） -->
                         <div v-if="isAgentMode" class="system-prompt-textarea-wrapper">
                           <t-textarea ref="promptTextareaRef" v-model="formData.config.system_prompt"
-                            :placeholder="systemPromptPlaceholder" :autosize="{ minRows: 10, maxRows: 25 }"
+                            :placeholder="systemPromptPlaceholder" :autosize="{ minRows: 10 }"
                             @input="handlePromptInput" class="system-prompt-textarea" />
                         </div>
                         <!-- 普通模式：单个提示词 -->
                         <div v-else class="system-prompt-textarea-wrapper">
                           <t-textarea ref="promptTextareaRef" v-model="formData.config.system_prompt"
-                            :placeholder="systemPromptPlaceholder" :autosize="{ minRows: 10, maxRows: 25 }"
+                            :placeholder="systemPromptPlaceholder" :autosize="{ minRows: 10 }"
                             @input="handlePromptInput" class="system-prompt-textarea" />
                         </div>
                         <!-- 占位符提示下拉框 -->
@@ -4269,6 +4269,11 @@ const handleSave = async () => {
 
   .system-prompt-textarea {
     width: 100%;
+
+    :deep(textarea) {
+      overflow-y: hidden;
+      resize: none;
+    }
   }
 }
 
