@@ -166,6 +166,10 @@ type KnowledgeBaseRepository interface {
 	//   - Possible errors such as record not existing or wrong tenant, database errors, etc.
 	GetKnowledgeBaseByIDAndTenant(ctx context.Context, id string, tenantID uint64) (*types.KnowledgeBase, error)
 
+	// GetKnowledgeBaseByName queries a knowledge base by name within a tenant
+	// for duplicate name detection. Returns nil if none found.
+	GetKnowledgeBaseByName(ctx context.Context, tenantID uint64, name string) (*types.KnowledgeBase, error)
+
 	// GetKnowledgeBaseByIDs queries knowledge bases by multiple IDs
 	// Parameters:
 	//   - ctx: Context information

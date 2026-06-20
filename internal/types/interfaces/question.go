@@ -10,6 +10,7 @@ import (
 type QuestionRepository interface {
 	CreateQuestionSet(context.Context, *types.QuestionSet) error
 	GetQuestionSet(context.Context, uint64, string) (*types.QuestionSet, error)
+	GetQuestionSetByName(context.Context, uint64, string, string) (*types.QuestionSet, error)
 	GetQuestionSetByKB(context.Context, uint64, string) (*types.QuestionSet, error)
 	ListQuestionSets(context.Context, uint64, string, *types.Pagination) (*types.PageResult, error)
 	UpdateQuestionSet(context.Context, *types.QuestionSet) error

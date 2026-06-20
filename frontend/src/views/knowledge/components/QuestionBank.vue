@@ -223,7 +223,16 @@ async function confirmCreateSet() {
   if (!props.enabled || !props.knowledgeBaseId || creatingInlineSetLoading.value) return
   const name = newInlineSetName.value.trim()
   if (!name) {
-    MessagePlugin.warning('请输入分类名称')
+    MessagePlugin.warning('分类名称不能为空')
+    return
+  }
+  if ([...name].length > 40) {
+    MessagePlugin.warning('分类名称不能超过 40 个字符')
+    return
+  }
+  // Check for duplicate name in current list
+  if (questionSets.value.some(s => s.name === name)) {
+    MessagePlugin.warning('当前题库中已存在同名分类')
     return
   }
   creatingInlineSetLoading.value = true
@@ -268,7 +277,11 @@ async function submitEditSet() {
   const name = editSetName.value.trim()
   if (!id || editingSetSubmitting.value) return
   if (!name) {
-    MessagePlugin.warning('请输入分类名称')
+    MessagePlugin.warning('分类名称不能为空')
+    return
+  }
+  if ([...name].length > 40) {
+    MessagePlugin.warning('分类名称不能超过 40 个字符')
     return
   }
   const target = questionSets.value.find(s => s.id === id)

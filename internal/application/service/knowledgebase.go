@@ -107,6 +107,22 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		kb.CreatorID = uid
 	}
 	kb.EnsureDefaults()
+	if strings.TrimSpace(kb.Name) == "" {
+		return nil, apperrors.NewBadRequestError("知识库名称不能为空")
+	}
+	if len([]rune(strings.TrimSpace(kb.Name))) > 80 {
+		return nil, apperrors.NewBadRequestError("知识库名称不能超过 80 个字符")
+	}
+	kb.Name = strings.TrimSpace(kb.Name)
+	// Check for duplicate name within the same tenant.
+	existing, err := s.repo.GetKnowledgeBaseByName(ctx, kb.TenantID, kb.Name)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, apperrors.NewBadRequestError("当前租户中已存在同名知识库")
+	}
+
 	validTypes := map[string]bool{
 		types.KnowledgeBaseTypeDocument:     true,
 		types.KnowledgeBaseTypeFAQ:          true,
@@ -441,6 +457,34 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 			"knowledge_base_id": id,
 		})
 		return nil, err
+	}
+
+	// Validate name
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, apperrors.NewBadRequestError("知识库名称不能为空")
+	}
+	if len([]rune(name)) > 80 {
+		return nil, apperrors.NewBadRequestError("知识库名称不能超过 80 个字符")
+	}
+	// Check duplicate name (allow same name for same KB)
+	if name != strings.TrimSpace(kb.Name) {
+		existing, nameErr := s.repo.GetKnowledgeBaseByName(ctx, kb.TenantID, name)
+		if nameErr != nil {
+			return nil, nameErr
+		}
+		if existing != nil {
+			return nil, apperrors.NewBadRequestError("当前租户中已存在同名知识库")
+		}
+	}
+	// Self-reference check for question_bank_config
+	if questionBankConfig != nil && kb.IsQuestionBank() {
+		if questionBankConfig.KnowledgePointKnowledgeBaseID == id {
+			return nil, apperrors.NewBadRequestError("题库不能关联自身作为知识点知识库")
+		}
+		if questionBankConfig.SyllabusKnowledgeBaseID == id {
+			return nil, apperrors.NewBadRequestError("题库不能关联自身作为考纲")
+		}
 	}
 
 	// Update the knowledge base properties

@@ -33,6 +33,10 @@ func (r *questionStatusRepository) GetQuestionSet(context.Context, uint64, strin
 	return r.set, nil
 }
 
+func (r *questionStatusRepository) GetQuestionSetByName(context.Context, uint64, string, string) (*types.QuestionSet, error) {
+	return nil, nil
+}
+
 func (r *questionStatusRepository) CreateQuestion(_ context.Context, question *types.Question) error {
 	r.createdQuestion = question
 	return nil

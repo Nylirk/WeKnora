@@ -67,14 +67,32 @@ func statusAfterStructuredEdit(current types.QuestionStatus, q *types.Question) 
 	return structuredQuestionStatus(q)
 }
 
+const maxQuestionSetNameLen = 40
+
 func (s *QuestionService) CreateQuestionSet(ctx context.Context, kbID string, req *types.CreateQuestionSetRequest) (*types.QuestionSet, error) {
 	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
 		return nil, err
 	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return nil, apperrors.NewBadRequestError("分类名称不能为空")
+	}
+	if len([]rune(name)) > maxQuestionSetNameLen {
+		return nil, apperrors.NewBadRequestError("分类名称不能超过 40 个字符")
+	}
+	// Check for duplicate name within the same knowledge base.
+	existing, err := s.repository.GetQuestionSetByName(ctx, tenantID(ctx), kbID, name)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return nil, apperrors.NewBadRequestError("当前题库中已存在同名分类")
+	}
+
 	qs := &types.QuestionSet{
 		TenantID:         tenantID(ctx),
 		KnowledgeBaseID:  kbID,
-		Name:             strings.TrimSpace(req.Name),
+		Name:             name,
 		Description:      strings.TrimSpace(req.Description),
 		SourceType:       types.QuestionSetSourceManual,
 		Status:           types.QuestionSetStatusActive,
@@ -132,7 +150,20 @@ func (s *QuestionService) UpdateQuestionSet(ctx context.Context, kbID, setID str
 	if req.Name != nil {
 		v := strings.TrimSpace(*req.Name)
 		if v == "" {
-			return nil, apperrors.NewBadRequestError("name is required")
+			return nil, apperrors.NewBadRequestError("分类名称不能为空")
+		}
+		if len([]rune(v)) > maxQuestionSetNameLen {
+			return nil, apperrors.NewBadRequestError("分类名称不能超过 40 个字符")
+		}
+		// Check for duplicate name (allow same name if unchanged)
+		if v != strings.TrimSpace(qs.Name) {
+			existing, lookupErr := s.repository.GetQuestionSetByName(ctx, tenantID(ctx), kbID, v)
+			if lookupErr != nil {
+				return nil, lookupErr
+			}
+			if existing != nil {
+				return nil, apperrors.NewBadRequestError("当前题库中已存在同名分类")
+			}
 		}
 		qs.Name = v
 	}

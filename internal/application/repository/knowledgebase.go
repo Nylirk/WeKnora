@@ -51,6 +51,18 @@ func (r *knowledgeBaseRepository) GetKnowledgeBaseByIDAndTenant(ctx context.Cont
 	return &kb, nil
 }
 
+// GetKnowledgeBaseByName queries a knowledge base by name within a tenant.
+func (r *knowledgeBaseRepository) GetKnowledgeBaseByName(ctx context.Context, tenantID uint64, name string) (*types.KnowledgeBase, error) {
+	var kb types.KnowledgeBase
+	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND name = ? AND deleted_at IS NULL", tenantID, name).First(&kb).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &kb, nil
+}
+
 // GetKnowledgeBaseByIDs gets knowledge bases by multiple ids
 func (r *knowledgeBaseRepository) GetKnowledgeBaseByIDs(ctx context.Context, ids []string) ([]*types.KnowledgeBase, error) {
 	if len(ids) == 0 {

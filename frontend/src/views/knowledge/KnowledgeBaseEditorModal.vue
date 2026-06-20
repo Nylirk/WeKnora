@@ -141,7 +141,7 @@
                         <t-input 
                           v-model="formData.name" 
                           :placeholder="$t('knowledgeEditor.basic.namePlaceholder')"
-                          :maxlength="50"
+                          :maxlength="80"
                         />
                       </div>
                       <div class="form-item">
@@ -778,7 +778,10 @@ const loadAvailableKbs = async () => {
     const response: any = await listKnowledgeBases()
     const data = response?.data ?? response
     const list = Array.isArray(data) ? data : (data?.data ?? [])
-    availableKbs.value = list.map((kb: any) => ({ id: kb.id, name: kb.name }))
+    // Exclude current KB from selectable options (self-reference prevention)
+    availableKbs.value = list
+      .filter((kb: any) => kb.id !== props.kbId)
+      .map((kb: any) => ({ id: kb.id, name: kb.name }))
   } catch {
     // silent
   } finally {
@@ -1068,8 +1071,14 @@ const handleNodeExtractUpdate = (config: any) => {
 const validateForm = (): boolean => {
   if (!formData.value) return false
 
-  if (!formData.value.name || !formData.value.name.trim()) {
-    MessagePlugin.warning(t('knowledgeEditor.messages.nameRequired'))
+  const name = formData.value.name?.trim() ?? ''
+  if (!name) {
+    MessagePlugin.warning('知识库名称不能为空')
+    currentSection.value = 'basic'
+    return false
+  }
+  if ([...name].length > 80) {
+    MessagePlugin.warning('知识库名称不能超过 80 个字符')
     currentSection.value = 'basic'
     return false
   }
