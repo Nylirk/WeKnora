@@ -201,13 +201,13 @@
                       </div>
                       <div class="setting-control setting-control-full" style="position: relative;">
                         <!-- Agent模式：统一提示词（使用 {{web_search_status}} 占位符动态控制行为） -->
-                        <div v-if="isAgentMode">
+                        <div v-if="isAgentMode" class="system-prompt-textarea-wrapper">
                           <t-textarea ref="promptTextareaRef" v-model="formData.config.system_prompt"
                             :placeholder="systemPromptPlaceholder" :autosize="{ minRows: 10, maxRows: 25 }"
                             @input="handlePromptInput" class="system-prompt-textarea" />
                         </div>
                         <!-- 普通模式：单个提示词 -->
-                        <div v-else>
+                        <div v-else class="system-prompt-textarea-wrapper">
                           <t-textarea ref="promptTextareaRef" v-model="formData.config.system_prompt"
                             :placeholder="systemPromptPlaceholder" :autosize="{ minRows: 10, maxRows: 25 }"
                             @input="handlePromptInput" class="system-prompt-textarea" />
@@ -4202,11 +4202,20 @@ const handleSave = async () => {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
+    width: 100%;
     margin-bottom: 4px;
 
     label {
+      flex: 1;
+      min-width: 0;
       margin-bottom: 0;
     }
+  }
+
+  .system-prompt-textarea-wrapper {
+    width: 100%;
+    min-width: 0;
   }
 
   label {
