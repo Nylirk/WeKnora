@@ -175,19 +175,53 @@
                           </p>
                         </div>
                         <div class="form-item">
-                          <label class="form-label">考纲</label>
-                          <t-select
-                            v-model="formData.questionBankConfig.syllabusKbId"
-                            clearable
-                            placeholder="选择考纲（可选）"
-                            :loading="loadingKbList"
-                            filterable
-                          >
-                            <t-option v-for="kb in availableKbs" :key="kb.id" :value="kb.id" :label="kb.name" />
-                          </t-select>
-                          <p v-if="!formData.questionBankConfig.syllabusKbId" class="form-tip kb-hint">
-                            未选择考纲，导入题目后不会启用自动考纲筛选。
-                          </p>
+                          <label class="form-label">考纲文档</label>
+                          <!-- No syllabus uploaded: show upload button -->
+                          <div v-if="!syllabusInfo && !syllabusUploading" class="syllabus-upload-area">
+                            <t-upload
+                              ref="syllabusUploadRef"
+                              :auto-upload="false"
+                              :show-upload-list="false"
+                              accept=".md,.markdown,.xlsx,.xls,.pdf,.doc,.docx,.txt,.csv"
+                              :disabled="!props.kbId"
+                              @change="onSyllabusFileChange"
+                            >
+                              <t-button theme="default" :disabled="!props.kbId || syllabusUploading" :loading="syllabusUploading">
+                                <template #icon><t-icon name="upload" /></template>
+                                上传考纲文档
+                              </t-button>
+                            </t-upload>
+                            <p class="form-tip kb-hint">
+                              未上传考纲文档，导入题目后不会启用自动考纲筛选。
+                            </p>
+                          </div>
+                          <!-- Syllabus uploaded: show status -->
+                          <div v-else-if="syllabusInfo" class="syllabus-status">
+                            <div class="syllabus-file-row">
+                              <t-icon name="file" />
+                              <span class="syllabus-file-name">{{ syllabusInfo.file_name || '考纲文档' }}</span>
+                              <t-tag
+                                :theme="syllabusParseStatusTheme"
+                                variant="light"
+                                size="small"
+                              >
+                                {{ syllabusParseStatusLabel }}
+                              </t-tag>
+                            </div>
+                            <div class="syllabus-actions">
+                              <t-button size="small" variant="text" theme="primary" @click="onReplaceSyllabus">
+                                重新上传
+                              </t-button>
+                              <t-button size="small" variant="text" theme="danger" @click="onDeleteSyllabus">
+                                删除考纲
+                              </t-button>
+                            </div>
+                          </div>
+                          <!-- Uploading indicator -->
+                          <div v-else class="syllabus-status">
+                            <t-loading size="small" />
+                            <span style="margin-left: 8px">正在上传并解析考纲...</span>
+                          </div>
                         </div>
                       </div>
 
@@ -435,6 +469,7 @@ import KbCreateContextualGuide from '@/components/KbCreateContextualGuide.vue'
 import { KB_EDITOR_FOCUS_SECTION_EVENT, markContextualGuideDone } from '@/config/contextualGuides'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { createKnowledgeBase, getKnowledgeBaseById, listKnowledgeFiles, listKnowledgeBases, updateKnowledgeBase, rebuildKBIndex } from '@/api/knowledge-base'
+import { uploadSyllabus, getSyllabus, deleteSyllabus } from '@/api/question'
 import { updateKBConfig, type KBModelConfigRequest } from '@/api/initialization'
 import { type ModelConfig } from '@/api/model'
 import { useChatResourcesStore } from '@/stores/chatResources'
@@ -528,6 +563,28 @@ const dsCount = ref(0)
 const kbCreatorId = ref<string>('')
 const availableKbs = ref<{ id: string; name: string }[]>([])
 const loadingKbList = ref(false)
+
+// Syllabus state
+const syllabusUploadRef = ref()
+const syllabusInfo = ref<any>(null)
+const syllabusUploading = ref(false)
+
+const syllabusParseStatusTheme = computed(() => {
+  const status = syllabusInfo.value?.parse_status
+  if (status === 'completed') return 'success'
+  if (status === 'processing') return 'warning'
+  if (status === 'failed') return 'danger'
+  return 'default'
+})
+
+const syllabusParseStatusLabel = computed(() => {
+  const status = syllabusInfo.value?.parse_status
+  if (status === 'completed') return '解析完成'
+  if (status === 'processing') return '解析中'
+  if (status === 'failed') return '解析失败'
+  if (status === 'empty') return '空知识库'
+  return status || '未知'
+})
 
 // Backend gate for /knowledge-bases/:id/shares (POST/PUT/DELETE) is
 // g.OwnedKBOrAdmin(): only the KB creator or tenant Admin+ may mutate
@@ -792,6 +849,51 @@ const loadAvailableKbs = async () => {
   }
 }
 
+// --- Syllabus management ---
+
+const fetchSyllabus = async () => {
+  if (!props.kbId) return
+  try {
+    const info = await getSyllabus(props.kbId)
+    syllabusInfo.value = info
+  } catch {
+    syllabusInfo.value = null
+  }
+}
+
+const onSyllabusFileChange = async (files: any) => {
+  const file = files?.[0]?.raw || files?.[0] || files
+  if (!file) return
+  syllabusUploading.value = true
+  try {
+    const result = await uploadSyllabus(props.kbId!, file)
+    if (result) {
+      MessagePlugin.success(result.message || '考纲文档上传成功')
+      await fetchSyllabus()
+    }
+  } catch (err: any) {
+    MessagePlugin.error(err?.message || '考纲文档上传失败')
+  } finally {
+    syllabusUploading.value = false
+  }
+}
+
+const onReplaceSyllabus = () => {
+  const input = document.querySelector('.syllabus-upload-area input[type="file"]') as HTMLInputElement
+  if (input) input.click()
+}
+
+const onDeleteSyllabus = async () => {
+  if (!props.kbId) return
+  try {
+    await deleteSyllabus(props.kbId)
+    syllabusInfo.value = null
+    MessagePlugin.success('考纲已删除')
+  } catch (err: any) {
+    MessagePlugin.error(err?.message || '删除考纲失败')
+  }
+}
+
 // 加载知识库数据（编辑模式）
 const loadKBData = async () => {
   if (props.mode !== 'edit' || !props.kbId) return
@@ -903,6 +1005,11 @@ const loadKBData = async () => {
     }
     initialStorageProvider.value = formData.value.storageProvider
     initialIndexingStrategy.value = { ...formData.value.indexingStrategy }
+
+    // Fetch syllabus info for question bank KBs (edit mode)
+    if (kb.type === 'question_bank') {
+      fetchSyllabus()
+    }
   } catch (error) {
     console.error('Failed to load knowledge base data:', error)
     MessagePlugin.error(t('knowledgeEditor.messages.loadDataFailed'))
@@ -1146,11 +1253,11 @@ const buildSubmitData = () => {
     const storageProvider = resolvedStorageProvider()
     data.storage_provider_config = { provider: storageProvider }
     data.storage_config = { provider: storageProvider }
-      // Include question bank auto-processing config
+      // Include question bank auto-processing config.
+      // syllabus_knowledge_base_id is managed by the syllabus upload API, not here.
       if (formData.value.questionBankConfig) {
         data.question_bank_config = {
           knowledge_point_knowledge_base_id: formData.value.questionBankConfig.knowledgePointKbId || "",
-          syllabus_knowledge_base_id: formData.value.questionBankConfig.syllabusKbId || "",
         }
       }
     return data
@@ -1302,9 +1409,9 @@ const doSubmit = async () => {
           description: data.description,
         }
         if (formData.value.questionBankConfig) {
+          // syllabus_knowledge_base_id is managed by the syllabus upload API, not here.
           qbUpdate.question_bank_config = {
             knowledge_point_knowledge_base_id: formData.value.questionBankConfig.knowledgePointKbId || '',
-            syllabus_knowledge_base_id: formData.value.questionBankConfig.syllabusKbId || '',
           }
         }
         await updateKnowledgeBase(props.kbId, qbUpdate)

@@ -33,7 +33,7 @@ func (s *QuestionService) PreviewImportBlocks(
 
 	// 2. Validate file extension
 	if !isValidImportFileExtension(fileName) {
-		return nil, apperrors.NewBadRequestError("仅支持 DOC、DOCX、PDF 文件。")
+		return nil, apperrors.NewBadRequestError("仅支持 DOC、DOCX、PDF、MD、Markdown、XLSX、XLS 文件。")
 	}
 
 	// 3. Validate strategy_preset

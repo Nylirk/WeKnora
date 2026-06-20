@@ -365,6 +365,9 @@ func (s *knowledgeBaseService) ListKnowledgeBases(ctx context.Context) ([]*types
 		return nil, err
 	}
 
+	// Filter out hidden and system-managed KBs from normal listings.
+	kbs = filterVisibleKBs(kbs)
+
 	// Query knowledge count and chunk count for each knowledge base
 	for _, kb := range kbs {
 		kb.EnsureDefaults()
@@ -575,7 +578,13 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	// Only applies to question_bank type KBs; EnsureDefaults() clears
 	// it for other types.
 	if questionBankConfig != nil {
-		kb.QuestionBankConfig = questionBankConfig
+		if kb.QuestionBankConfig == nil {
+			kb.QuestionBankConfig = &types.QuestionBankConfig{}
+		}
+		// KnowledgePointKnowledgeBaseID is updated via the KB update path.
+		// SyllabusKnowledgeBaseID is managed by the syllabus upload API
+		// and must NOT be overwritten here.
+		kb.QuestionBankConfig.KnowledgePointKnowledgeBaseID = questionBankConfig.KnowledgePointKnowledgeBaseID
 	}
 	kb.UpdatedAt = time.Now()
 	kb.EnsureDefaults()
@@ -741,6 +750,13 @@ func (s *knowledgeBaseService) DeleteKnowledgeBase(ctx context.Context, id strin
 	var vectorStoreIDSnapshot *string
 	if kb != nil {
 		vectorStoreIDSnapshot = kb.VectorStoreID
+	}
+
+	// Step 0: Clean up system-managed child KBs before deleting the parent.
+	// e.g., when deleting a question bank, its hidden syllabus KB must be
+	// soft-deleted to avoid orphans.
+	if err := s.deleteSystemManagedChildren(ctx, tenantID, id); err != nil {
+		logger.Warnf(ctx, "Failed to delete system-managed children of KB %s: %v", id, err)
 	}
 
 	// Step 1: Delete the knowledge base record first (mark as deleted)
@@ -1091,4 +1107,55 @@ func (s *knowledgeBaseService) CopyKnowledgeBase(ctx context.Context,
 		}
 	}
 	return sourceKB, targetKB, nil
+}
+
+// filterVisibleKBs removes hidden and system-managed KBs from a slice.
+// These KBs are auto-created by the system (e.g., hidden syllabus KBs)
+// and should not appear in normal user-facing listings.
+func filterVisibleKBs(kbs []*types.KnowledgeBase) []*types.KnowledgeBase {
+	if len(kbs) == 0 {
+		return kbs
+	}
+	filtered := make([]*types.KnowledgeBase, 0, len(kbs))
+	for _, kb := range kbs {
+		if kb == nil {
+			continue
+		}
+		if kb.ShouldHideFromListing() {
+			continue
+		}
+		filtered = append(filtered, kb)
+	}
+	return filtered
+}
+
+// deleteSystemManagedChildren soft-deletes all system-managed child KBs
+// belonging to the given parent. This prevents orphan hidden KBs when the
+// parent (e.g., a question bank) is deleted.
+func (s *knowledgeBaseService) deleteSystemManagedChildren(
+	ctx context.Context, tenantID uint64, parentID string,
+) error {
+	children, err := s.repo.ListKnowledgeBasesByParentID(ctx, tenantID, parentID)
+	if err != nil {
+		return err
+	}
+	for _, child := range children {
+		if child == nil || !child.SystemManaged {
+			continue
+		}
+		logger.Infof(ctx, "Soft-deleting system-managed child KB %s (purpose=%s) of parent %s",
+			child.ID, ptrToString(child.Purpose), parentID)
+		if delErr := s.repo.DeleteKnowledgeBase(ctx, child.ID); delErr != nil {
+			logger.Warnf(ctx, "Failed to soft-delete child KB %s: %v", child.ID, delErr)
+		}
+	}
+	return nil
+}
+
+// ptrToString safely dereferences a *string, returning "" for nil.
+func ptrToString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

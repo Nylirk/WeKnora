@@ -63,6 +63,47 @@ func (h *QuestionHandler) CreateQuestionSet(c *gin.Context) {
 	questionOK(c, result)
 }
 
+// --- Syllabus management handlers ---
+
+// UploadSyllabus handles POST /knowledge-bases/:id/question-bank/syllabus
+func (h *QuestionHandler) UploadSyllabus(c *gin.Context) {
+	kbID := c.Param("id")
+
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		questionBadRequest(c, apperrors.NewBadRequestError("需要上传考纲文件"))
+		return
+	}
+
+	result, err := h.questionService.UploadSyllabus(c.Request.Context(), kbID, fileHeader)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, result)
+}
+
+// GetSyllabus handles GET /knowledge-bases/:id/question-bank/syllabus
+func (h *QuestionHandler) GetSyllabus(c *gin.Context) {
+	kbID := c.Param("id")
+	result, err := h.questionService.GetSyllabus(c.Request.Context(), kbID)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, result)
+}
+
+// DeleteSyllabus handles DELETE /knowledge-bases/:id/question-bank/syllabus
+func (h *QuestionHandler) DeleteSyllabus(c *gin.Context) {
+	kbID := c.Param("id")
+	if err := h.questionService.DeleteSyllabus(c.Request.Context(), kbID); err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, gin.H{})
+}
+
 func (h *QuestionHandler) GetQuestionSet(c *gin.Context) {
 	kbID := c.Param("id")
 	setID := c.Param("set_id")

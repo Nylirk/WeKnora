@@ -948,6 +948,12 @@ func (r *realKBRepo) ListKnowledgeBasesByTenantID(_ context.Context, _ uint64) (
 func (r *realKBRepo) UpdateKnowledgeBase(_ context.Context, _ *types.KnowledgeBase) error {
 	return nil
 }
+func (r *realKBRepo) ListKnowledgeBasesByParentID(_ context.Context, _ uint64, _ string) ([]*types.KnowledgeBase, error) {
+	return nil, nil
+}
+func (r *realKBRepo) GetKnowledgeBaseByPurpose(_ context.Context, _ uint64, _ string, _ string) (*types.KnowledgeBase, error) {
+	return nil, nil
+}
 func (r *realKBRepo) DeleteKnowledgeBase(_ context.Context, _ string) error {
 	return nil
 }

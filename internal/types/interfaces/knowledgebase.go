@@ -196,6 +196,12 @@ type KnowledgeBaseRepository interface {
 	//   - Possible errors such as database errors, etc.
 	ListKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
 
+	// ListKnowledgeBasesByParentID lists all KBs that have the given parent KB ID.
+	ListKnowledgeBasesByParentID(ctx context.Context, tenantID uint64, parentID string) ([]*types.KnowledgeBase, error)
+
+	// GetKnowledgeBaseByPurpose returns the first KB matching a purpose (optionally scoped to parent).
+	GetKnowledgeBaseByPurpose(ctx context.Context, tenantID uint64, purpose string, parentKBID string) (*types.KnowledgeBase, error)
+
 	// UpdateKnowledgeBase updates a knowledge base record
 	// Parameters:
 	//   - ctx: Context information

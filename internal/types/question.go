@@ -288,3 +288,25 @@ type ImportFilePreviewResponse struct {
 	DebugExportPath string                 `json:"debug_export_path,omitempty"`
 	DebugManifest   []string               `json:"-"`
 }
+
+// SyllabusInfo describes the syllabus knowledge base bound to a question bank.
+type SyllabusInfo struct {
+	SyllabusKBID   string    `json:"syllabus_kb_id"`
+	FileName       string    `json:"file_name"`
+	FileSize       int64     `json:"file_size"`
+	ParseStatus    string    `json:"parse_status"`
+	KnowledgeCount int64     `json:"knowledge_count"`
+	ChunkCount     int64     `json:"chunk_count"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// SyllabusUploadResponse is returned after uploading a syllabus file.
+type SyllabusUploadResponse struct {
+	SyllabusKBID   string `json:"syllabus_kb_id"`
+	FileName       string `json:"file_name"`
+	ParseStatus    string `json:"parse_status"`
+	KnowledgeCount int64  `json:"knowledge_count"`
+	ChunkCount     int64  `json:"chunk_count"`
+	Message        string `json:"message"`
+}

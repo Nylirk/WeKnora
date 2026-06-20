@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"mime/multipart"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -62,4 +63,9 @@ type QuestionService interface {
 	ParseImportedBlocks(ctx context.Context, kbID, setID string, req *types.ParseBlocksRequest) (*types.ImportFilePreviewResponse, error)
 	ExportToEvaluationDataset(context.Context, string, string, *types.ExportToEvaluationRequest) (*types.EvaluationDataset, error)
 	GenerateQuestions(context.Context, string, *types.GenerateQuestionsRequest) (*types.QuestionSet, error)
+
+	// Syllabus management for question bank knowledge bases.
+	UploadSyllabus(ctx context.Context, kbID string, fileHeader *multipart.FileHeader) (*types.SyllabusUploadResponse, error)
+	GetSyllabus(ctx context.Context, kbID string) (*types.SyllabusInfo, error)
+	DeleteSyllabus(ctx context.Context, kbID string) error
 }
