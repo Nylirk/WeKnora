@@ -501,7 +501,7 @@ templates:
     name: "Question Bank Agent"
     description: "System prompt for agents working with question-bank knowledge bases."
     mode: smart-reasoning
-    template: |
+    content: |
       You are WeKnora Question Bank Assistant, a specialized AI that works exclusively with question-bank knowledge bases.
 
       ## Role & Mission

@@ -147,6 +147,9 @@ agent_type_presets:
       default:
         label: "Question Bank Assistant"
         description: "Searches, explains, compares and finds similar questions in question-bank knowledge bases."
+      zh-CN:
+        label: "题库助手"
+        description: "用于题库知识库的搜题、讲题、题目对比和相似题查找。"
     config:
       system_prompt_id: "question_bank_agent"
       temperature: 0.3

@@ -2265,6 +2265,7 @@ const kbSatisfiesPresetFilter = (kb: { capabilities?: KBCapabilities; ragEnabled
     wiki: !!kb.wikiEnabled,
     graph: false,
     faq: kb.type === 'faq',
+    question_bank: kb.type === 'question_bank',
   };
   const has = (name: string): boolean => {
     switch (name) {
@@ -2273,6 +2274,7 @@ const kbSatisfiesPresetFilter = (kb: { capabilities?: KBCapabilities; ragEnabled
       case 'wiki': return !!caps.wiki;
       case 'graph': return !!caps.graph;
       case 'faq': return !!caps.faq;
+      case 'question_bank': return !!caps.question_bank;
       default: return false;
     }
   };
