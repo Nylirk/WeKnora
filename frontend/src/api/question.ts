@@ -15,6 +15,17 @@ export interface TrueFalseAnswer { is_true: boolean; explanation?: string }
 export interface FillBlankAnswer { blank_answers: string[] }
 export interface ShortAnswerAnswer { keywords?: string[]; explanation?: string }
 
+export type QuestionSetProcessingStage = '' | 'draft_imported' | 'indexing' | 'auto_tagging' | 'syllabus_checking' | 'ready_for_review' | 'failed'
+
+export interface QuestionSetProcessingStatus {
+  stage: QuestionSetProcessingStage
+  error_message: string
+  skipped_auto_tagging_reason?: string
+  skipped_syllabus_reason?: string
+  auto_tagging_enabled: boolean
+  syllabus_check_enabled: boolean
+}
+
 export interface QuestionSet {
   id: string; tenant_id: number; knowledge_base_id: string
   name: string; description: string; source_type: QuestionSetSourceType

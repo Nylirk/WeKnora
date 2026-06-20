@@ -252,7 +252,7 @@ async function doImport() {
     backendErrors.value = Array.isArray(result?.errors) ? result.errors : []
     const created = result?.created || 0
     if (created > 0) {
-      MessagePlugin.success(`已导入 ${created} 道题目为草稿，正在启动后台处理...`)
+      MessagePlugin.success(`已导入 ${created} 道题目为草稿，系统正在进行自动处理。处理完成后请人工确认。`)
       const missingAnswerCount = items.filter(item => !item.answer_text.trim()).length
       if (missingAnswerCount) {
         MessagePlugin.warning(`${missingAnswerCount} 道题缺少答案，审核或导出前需要补全`)
@@ -268,6 +268,52 @@ async function doImport() {
     MessagePlugin.error(e?.message || '导入失败')
   } finally {
     importing.value = false
+  }
+}
+
+function stageLabel(stage: QuestionSetProcessingStage): string {
+  const map: Record<string, string> = {
+    '': '未开始',
+    draft_imported: '已导入为草稿',
+    indexing: '向量化中',
+    auto_tagging: '知识点匹配中',
+    syllabus_checking: '考纲筛选中',
+    ready_for_review: '待人工审核',
+    failed: '处理失败',
+  }
+  return map[stage] || stage
+}
+
+async function pollProcessingStatus() {
+  try {
+    const response: any = await getQuestionSetProcessingStatus(props.knowledgeBaseId, props.setId)
+    processingStatus.value = response?.data ?? response
+    if (processingStatus.value) {
+      const stage = processingStatus.value.stage
+      if (stage === 'ready_for_review' || stage === 'failed' || stage === '') {
+        stopPolling()
+        if (stage === 'ready_for_review') {
+          MessagePlugin.success('题目已导入为草稿，后台处理完成，可进入题库编辑页审核')
+        } else if (stage === 'failed') {
+          MessagePlugin.error(`后台处理失败：${processingStatus.value.error_message || '未知错误'}`)
+        }
+      }
+    }
+  } catch {
+    // polling is best-effort
+  }
+}
+
+function startPolling() {
+  stopPolling()
+  pollProcessingStatus()
+  pollingTimer.value = setInterval(pollProcessingStatus, 3000)
+}
+
+function stopPolling() {
+  if (pollingTimer.value !== null) {
+    clearInterval(pollingTimer.value)
+    pollingTimer.value = null
   }
 }
 

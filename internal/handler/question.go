@@ -156,6 +156,18 @@ func (h *QuestionHandler) DeleteQuestionSet(c *gin.Context) {
 	questionOK(c, gin.H{})
 }
 
+// GetQuestionSetProcessingStatus returns the background processing status for a question set.
+func (h *QuestionHandler) GetQuestionSetProcessingStatus(c *gin.Context) {
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	result, err := h.questionService.GetQuestionSetProcessingStatus(c.Request.Context(), kbID, setID)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, result)
+}
+
 func (h *QuestionHandler) CreateQuestion(c *gin.Context) {
 	var req types.CreateQuestionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -243,18 +255,6 @@ func (h *QuestionHandler) UpdateQuestionStatus(c *gin.Context) {
 	setID := c.Param("set_id")
 	questionID := c.Param("question_id")
 	result, err := h.questionService.UpdateQuestionStatus(c.Request.Context(), kbID, setID, questionID, &req)
-	if err != nil {
-		questionHandleError(c, err)
-		return
-	}
-	questionOK(c, result)
-}
-
-// GetQuestionSetProcessingStatus returns the background processing status for a question set.
-func (h *QuestionHandler) GetQuestionSetProcessingStatus(c *gin.Context) {
-	kbID := c.Param("id")
-	setID := c.Param("set_id")
-	result, err := h.questionService.GetQuestionSetProcessingStatus(c.Request.Context(), kbID, setID)
 	if err != nil {
 		questionHandleError(c, err)
 		return

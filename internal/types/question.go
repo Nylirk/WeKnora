@@ -164,6 +164,16 @@ const (
 	QuestionSetProcessingStageFailed           QuestionSetProcessingStage = "failed"
 )
 
+// QuestionSetProcessingStatus is the API response for question set processing status.
+type QuestionSetProcessingStatus struct {
+	Stage                    QuestionSetProcessingStage `json:"stage"`
+	ErrorMessage             string                     `json:"error_message"`
+	SkippedAutoTaggingReason string                     `json:"skipped_auto_tagging_reason,omitempty"`
+	SkippedSyllabusReason    string                     `json:"skipped_syllabus_reason,omitempty"`
+	AutoTaggingEnabled       bool                       `json:"auto_tagging_enabled"`
+	SyllabusCheckEnabled     bool                       `json:"syllabus_check_enabled"`
+}
+
 type CreateQuestionSetRequest struct {
 	Name        string `json:"name" binding:"required"`
 	Description string `json:"description"`
@@ -173,16 +183,6 @@ type UpdateQuestionSetRequest struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
 	Status      *string `json:"status"`
-}
-
-// QuestionSetProcessingStatus is the API response for question set processing status.
-type QuestionSetProcessingStatus struct {
-	Stage                    QuestionSetProcessingStage `json:"stage"`
-	ErrorMessage             string                     `json:"error_message"`
-	SkippedAutoTaggingReason string                     `json:"skipped_auto_tagging_reason,omitempty"`
-	SkippedSyllabusReason    string                     `json:"skipped_syllabus_reason,omitempty"`
-	AutoTaggingEnabled       bool                       `json:"auto_tagging_enabled"`
-	SyllabusCheckEnabled     bool                       `json:"syllabus_check_enabled"`
 }
 
 type CreateQuestionRequest struct {

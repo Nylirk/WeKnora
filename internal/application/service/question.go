@@ -981,69 +981,136 @@ func (s *QuestionService) startProcessingPipeline(
 	questions []*types.Question,
 	cfg *types.QuestionBankConfig,
 ) {
-	s.setProcessingStage(ctx, qs, types.QuestionSetProcessingStageDraftImported, "")
+	// Set initial stage synchronously so the API response reflects it.
+	if err := s.updateQuestionSetProcessingStage(
+		ctx, qs.ID,
+		types.QuestionSetProcessingStageDraftImported,
+		types.QuestionSetStatusActive,
+		"",
+	); err != nil {
+		logger.Errorf(ctx, "failed to set draft_imported stage for set %s: %v", qs.ID, err)
+		return
+	}
 
 	bgCtx := logger.CloneContext(ctx)
 	go func() {
-		// Stage 1: Indexing — the question index service handles this asynchronously.
-		// We poll the vector index status for all imported questions to know when
-		// indexing is complete.
-		s.setProcessingStage(bgCtx, qs, types.QuestionSetProcessingStageIndexing, "")
-		if err := s.waitForIndexing(bgCtx, questions); err != nil {
-			logger.Errorf(bgCtx, "question set %s indexing failed: %v", qs.ID, err)
-			s.setProcessingStage(bgCtx, qs, types.QuestionSetProcessingStageFailed, truncateError(err))
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf(bgCtx, "panic in processing pipeline for set %s: %v", qs.ID, r)
+				_ = s.updateQuestionSetProcessingStage(
+					bgCtx, qs.ID,
+					types.QuestionSetProcessingStageFailed,
+					types.QuestionSetStatusFailed,
+					fmt.Sprintf("panic: %v", r),
+				)
+			}
+		}()
+
+		// Stage 1: Indexing — draft questions are not added to the reviewed-only
+		// vector index. We record this as a deliberate skip.
+		if err := s.updateQuestionSetProcessingStage(
+			bgCtx, qs.ID,
+			types.QuestionSetProcessingStageIndexing,
+			"",
+			"",
+		); err != nil {
+			logger.Errorf(bgCtx, "failed to set indexing stage for set %s: %v", qs.ID, err)
+			_ = s.updateQuestionSetProcessingStage(
+				bgCtx, qs.ID,
+				types.QuestionSetProcessingStageFailed,
+				types.QuestionSetStatusFailed,
+				truncateError(err),
+			)
 			return
 		}
+		indexingMeta := map[string]any{
+			"status": "skipped",
+			"reason": "draft questions are not added to reviewed-only index",
+		}
+		s.writeAutoProcessingMetadataToQuestions(bgCtx, questions, "indexing", indexingMeta)
 
-		// Stage 2: Auto knowledge point tagging (stub — TODO in future phase).
+		// Stage 2: Auto knowledge point tagging (skeleton — real algorithm in future PR).
+		var autoTaggingMeta map[string]any
 		if cfg.AutoKnowledgePointEnabled() {
-			s.setProcessingStage(bgCtx, qs, types.QuestionSetProcessingStageAutoTagging, "")
-			// TODO: Implement auto knowledge point matching against the
-			// configured knowledge point KB. For now this is a no-op that
-			// preserves the extension point.
-			logger.Infof(bgCtx, "question set %s: auto knowledge point tagging is enabled (KB=%s) but algorithm is not yet implemented — skipping",
-				qs.ID, cfg.KnowledgePointKnowledgeBaseID)
+			if err := s.updateQuestionSetProcessingStage(
+				bgCtx, qs.ID,
+				types.QuestionSetProcessingStageAutoTagging,
+				"",
+				"",
+			); err != nil {
+				logger.Errorf(bgCtx, "failed to set auto_tagging stage for set %s: %v", qs.ID, err)
+				_ = s.updateQuestionSetProcessingStage(
+					bgCtx, qs.ID,
+					types.QuestionSetProcessingStageFailed,
+					types.QuestionSetStatusFailed,
+					truncateError(err),
+				)
+				return
+			}
+			autoTaggingMeta = map[string]any{
+				"status":                            "completed",
+				"mode":                              "skeleton",
+				"knowledge_point_knowledge_base_id": cfg.KnowledgePointKnowledgeBaseID,
+			}
+		} else {
+			autoTaggingMeta = map[string]any{
+				"status": "skipped",
+				"reason": "knowledge_point_knowledge_base_id is empty",
+			}
 		}
+		s.writeAutoProcessingMetadataToQuestions(bgCtx, questions, "auto_tagging", autoTaggingMeta)
 
-		// Stage 3: Auto syllabus screening (stub — TODO in future phase).
+		// Stage 3: Auto syllabus screening (skeleton — real algorithm in future PR).
+		var syllabusMeta map[string]any
 		if cfg.AutoSyllabusCheckEnabled() {
-			s.setProcessingStage(bgCtx, qs, types.QuestionSetProcessingStageSyllabusChecking, "")
-			// TODO: Implement auto syllabus screening against the configured
-			// syllabus KB. For now this is a no-op that preserves the extension point.
-			logger.Infof(bgCtx, "question set %s: auto syllabus check is enabled (KB=%s) but algorithm is not yet implemented — skipping",
-				qs.ID, cfg.SyllabusKnowledgeBaseID)
+			if err := s.updateQuestionSetProcessingStage(
+				bgCtx, qs.ID,
+				types.QuestionSetProcessingStageSyllabusChecking,
+				"",
+				"",
+			); err != nil {
+				logger.Errorf(bgCtx, "failed to set syllabus_checking stage for set %s: %v", qs.ID, err)
+				_ = s.updateQuestionSetProcessingStage(
+					bgCtx, qs.ID,
+					types.QuestionSetProcessingStageFailed,
+					types.QuestionSetStatusFailed,
+					truncateError(err),
+				)
+				return
+			}
+			syllabusMeta = map[string]any{
+				"status":                    "completed",
+				"mode":                      "skeleton",
+				"syllabus_knowledge_base_id": cfg.SyllabusKnowledgeBaseID,
+			}
+		} else {
+			syllabusMeta = map[string]any{
+				"status": "skipped",
+				"reason": "syllabus_knowledge_base_id is empty",
+			}
 		}
+		s.writeAutoProcessingMetadataToQuestions(bgCtx, questions, "syllabus_checking", syllabusMeta)
 
 		// Stage 4: Ready for human review.
-		s.setProcessingStage(bgCtx, qs, types.QuestionSetProcessingStageReadyForReview, "")
+		if err := s.updateQuestionSetProcessingStage(
+			bgCtx, qs.ID,
+			types.QuestionSetProcessingStageReadyForReview,
+			types.QuestionSetStatusActive,
+			"",
+		); err != nil {
+			logger.Errorf(bgCtx, "failed to set ready_for_review stage for set %s: %v", qs.ID, err)
+			_ = s.updateQuestionSetProcessingStage(
+				bgCtx, qs.ID,
+				types.QuestionSetProcessingStageFailed,
+				types.QuestionSetStatusFailed,
+				truncateError(err),
+			)
+			return
+		}
 	}()
 }
 
-// setProcessingStage updates the question set's processing stage and optionally the error message.
-func (s *QuestionService) setProcessingStage(ctx context.Context, qs *types.QuestionSet, stage types.QuestionSetProcessingStage, errMsg string) {
-	qs.ProcessingStage = stage
-	if errMsg != "" {
-		qs.ErrorMessage = errMsg
-	}
-	if err := s.repository.UpdateQuestionSet(ctx, qs); err != nil {
-		logger.Errorf(ctx, "failed to update question set processing stage to %s: %v", stage, err)
-	}
-}
-
-// waitForIndexing polls the question vector index status until all questions are
-// indexed or have failed. Returns nil on success (all indexed), or an error if any
-// question has permanently failed.
-func (s *QuestionService) waitForIndexing(ctx context.Context, questions []*types.Question) error {
-	if s.questionIndexService == nil {
-		return nil
-	}
-	// For the MVP, we trust the existing async indexing. The question index
-	// service already handles the full lifecycle (pending → indexing → indexed/failed).
-	// Future phases may add polling via QuestionVectorIndexRepository.
-	_ = questions
-	return nil
-}
-
+// truncateError limits an error string to a max length for storage.
 func truncateError(err error) string {
 	if err == nil {
 		return ""
