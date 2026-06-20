@@ -24,6 +24,11 @@ type questionStatusRepository struct {
 	allQuestions     []*types.Question
 }
 
+func (r *questionStatusRepository) CreateQuestionSet(_ context.Context, set *types.QuestionSet) error {
+	r.set = set
+	return nil
+}
+
 func (r *questionStatusRepository) GetQuestionSet(context.Context, uint64, string) (*types.QuestionSet, error) {
 	return r.set, nil
 }
@@ -83,11 +88,20 @@ func (r *questionStatusRepository) DeleteQuestionSet(_ context.Context, _ uint64
 	return nil
 }
 
-func (r *questionStatusRepository) ListQuestions(_ context.Context, _ uint64, _ string, _ *types.QuestionListFilter, page *types.Pagination) (*types.PageResult, error) {
-	if page.Page > 1 {
-		return types.NewPageResult(0, page, []*types.Question{}), nil
+func (r *questionStatusRepository) ListQuestions(_ context.Context, _ uint64, _ string, filter *types.QuestionListFilter, page *types.Pagination) (*types.PageResult, error) {
+	filtered := r.allQuestions
+	if filter != nil && filter.Status != "" {
+		filtered = nil
+		for _, q := range r.allQuestions {
+			if string(q.Status) == filter.Status {
+				filtered = append(filtered, q)
+			}
+		}
 	}
-	return types.NewPageResult(int64(len(r.allQuestions)), page, r.allQuestions), nil
+	if page.Page > 1 {
+		return types.NewPageResult(int64(len(filtered)), page, []*types.Question{}), nil
+	}
+	return types.NewPageResult(int64(len(filtered)), page, filtered), nil
 }
 
 type questionStatusKBService struct {
@@ -350,11 +364,10 @@ func TestImportQuestionsRejectsInvalidStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ImportQuestions() error = %v", err)
 	}
-	if result.Created != 0 {
-		t.Fatalf("ImportQuestions() created = %d, want 0 (unknown status)", result.Created)
-	}
-	if len(result.Errors) != 1 {
-		t.Fatalf("ImportQuestions() errors = %d, want 1", len(result.Errors))
+	// With forced-draft policy, all items that pass draft validation are created
+	// regardless of caller-supplied status. Unknown status values are ignored.
+	if result.Created != 1 {
+		t.Fatalf("ImportQuestions() created = %d, want 1 (forced draft)", result.Created)
 	}
 }
 
@@ -399,12 +412,12 @@ func TestImportQuestionsStatusValidation(t *testing.T) {
 			want: types.QuestionStatusDraft,
 		},
 		{
-			name: "explicit rejected stays rejected",
+			name: "explicit rejected forced to draft",
 			item: types.ImportQuestionItem{
 				LineNumber: 1, QuestionType: string(types.QuestionTypeShortAnswer),
 				StemText: "题干", AnswerText: "答案", Status: "rejected",
 			},
-			want: types.QuestionStatusRejected,
+			want: types.QuestionStatusDraft,
 		},
 		{
 			name: "no status auto-determines draft for valid",
