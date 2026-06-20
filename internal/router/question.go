@@ -16,6 +16,7 @@ func RegisterQuestionRoutes(r *gin.RouterGroup, h *handler.QuestionHandler, g *r
 			qs.GET("/:set_id", g.Viewer(), g.KBAccessRead("id"), h.GetQuestionSet)
 			qs.PUT("/:set_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.UpdateQuestionSet)
 			qs.DELETE("/:set_id", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.DeleteQuestionSet)
+			qs.GET("/:set_id/processing-status", g.Viewer(), g.KBAccessRead("id"), h.GetQuestionSetProcessingStatus)
 
 			questions := qs.Group("/:set_id/questions")
 			{

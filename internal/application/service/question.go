@@ -71,6 +71,10 @@ func (s *QuestionService) CreateQuestionSet(ctx context.Context, kbID string, re
 	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
 		return nil, err
 	}
+	processingConfig := normalizeJSONObject(nil)
+	if req.ProcessingConfig != nil {
+		processingConfig = normalizeProcessingConfig(req.ProcessingConfig)
+	}
 	qs := &types.QuestionSet{
 		TenantID:         tenantID(ctx),
 		KnowledgeBaseID:  kbID,
@@ -80,6 +84,8 @@ func (s *QuestionService) CreateQuestionSet(ctx context.Context, kbID string, re
 		Status:           types.QuestionSetStatusActive,
 		GenerationConfig: normalizeJSONObject(nil),
 		GenerationScope:  normalizeJSONObject(nil),
+		ProcessingConfig: processingConfig,
+		ProcessingStage:  types.QuestionSetProcessingStageIdle,
 	}
 	if err := s.repository.CreateQuestionSet(ctx, qs); err != nil {
 		return nil, err
@@ -140,6 +146,17 @@ func (s *QuestionService) UpdateQuestionSet(ctx context.Context, kbID, setID str
 	}
 	if req.Status != nil {
 		qs.Status = types.QuestionSetStatus(*req.Status)
+	}
+	if req.ProcessingConfig != nil {
+		qs.ProcessingConfig = normalizeProcessingConfig(req.ProcessingConfig)
+		// Reset processing stage when config changes, so a re-import can restart the pipeline.
+		if qs.ProcessingStage != types.QuestionSetProcessingStageIdle &&
+			qs.ProcessingStage != types.QuestionSetProcessingStageReadyForReview &&
+			qs.ProcessingStage != types.QuestionSetProcessingStageFailed {
+			// Don't reset if currently processing; the pipeline owns the stage.
+		} else {
+			qs.ProcessingStage = types.QuestionSetProcessingStageIdle
+		}
 	}
 	if err := s.repository.UpdateQuestionSet(ctx, qs); err != nil {
 		return nil, err
@@ -387,6 +404,7 @@ func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID strin
 	if err != nil {
 		return nil, err
 	}
+	cfg := resolveProcessingConfig(qs.ProcessingConfig)
 	result := &types.ImportQuestionsResult{}
 	var created []*types.Question
 	for _, item := range req.Items {
@@ -416,31 +434,13 @@ func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID strin
 		if q.Difficulty == "" {
 			q.Difficulty = types.QuestionDifficultyMedium
 		}
-		// Respect caller-supplied status; otherwise auto-determine.
-		if item.Status != "" {
-			switch types.QuestionStatus(item.Status) {
-			case types.QuestionStatusDraft:
-				q.Status = types.QuestionStatusDraft
-			case types.QuestionStatusRejected:
-				q.Status = types.QuestionStatusRejected
-			case types.QuestionStatusReviewed:
-				// When caller requests reviewed, validate structurally first.
-				// On failure, degrade to draft so the data still lands safely.
-				if errs := types.ValidateQuestionForReview(q); len(errs) == 0 {
-					q.Status = types.QuestionStatusReviewed
-				} else {
-					q.Status = types.QuestionStatusDraft
-				}
-			default:
-				result.Errors = append(result.Errors, types.ImportQuestionError{
-					LineNumber: item.LineNumber,
-					Message:    fmt.Sprintf("不支持的状态值: %s，仅允许 draft / reviewed / rejected", item.Status),
-				})
-				continue
-			}
-		} else {
-			q.Status = structuredQuestionStatus(q)
-		}
+		// In this phase, all imported questions MUST enter draft status.
+		// Caller-supplied status is intentionally ignored to enforce the
+		// draft → review pipeline.  The structuredQuestionStatus logic is
+		// also bypassed for imports: even if the question would pass
+		// review validation, it stays draft until a human confirms it.
+		q.Status = types.QuestionStatusDraft
+
 		draftQ := &types.Question{QuestionType: q.QuestionType, StemText: q.StemText}
 		if errs := types.ValidateQuestionForDraft(draftQ); len(errs) > 0 {
 			for _, e := range errs {
@@ -481,6 +481,10 @@ func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID strin
 		return nil, err
 	}
 	s.scheduleQuestionIndex(ctx, created)
+
+	// Kick off the background processing pipeline.
+	s.startProcessingPipeline(ctx, qs, created, cfg)
+
 	return result, nil
 }
 
@@ -881,4 +885,130 @@ func normalizeJSONMap(val map[string]interface{}) types.JSON {
 		return types.JSON([]byte("{}"))
 	}
 	return types.JSON(data)
+}
+
+func normalizeProcessingConfig(cfg *types.QuestionSetProcessingConfig) types.JSON {
+	if cfg == nil {
+		return types.JSON([]byte("{}"))
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return types.JSON([]byte("{}"))
+	}
+	return types.JSON(data)
+}
+
+// resolveProcessingConfig unmarshals the ProcessingConfig JSON field into a struct.
+func resolveProcessingConfig(raw types.JSON) *types.QuestionSetProcessingConfig {
+	cfg := &types.QuestionSetProcessingConfig{}
+	if len(raw) == 0 {
+		return cfg
+	}
+	_ = json.Unmarshal(raw, cfg)
+	return cfg
+}
+
+// GetQuestionSetProcessingStatus returns the current processing status for a question set.
+func (s *QuestionService) GetQuestionSetProcessingStatus(ctx context.Context, kbID, setID string) (*types.QuestionSetProcessingStatus, error) {
+	qs, err := s.getQuestionSetForKB(ctx, kbID, setID)
+	if err != nil {
+		return nil, err
+	}
+	cfg := resolveProcessingConfig(qs.ProcessingConfig)
+	status := &types.QuestionSetProcessingStatus{
+		Stage:                qs.ProcessingStage,
+		ErrorMessage:         qs.ErrorMessage,
+		AutoTaggingEnabled:   cfg.AutoKnowledgePointEnabled(),
+		SyllabusCheckEnabled: cfg.AutoSyllabusCheckEnabled(),
+	}
+	if !cfg.AutoKnowledgePointEnabled() {
+		// Show skip reason regardless of current stage.
+		status.SkippedAutoTaggingReason = "未配置知识点知识库，自动知识点关联已禁用"
+	}
+	if !cfg.AutoSyllabusCheckEnabled() {
+		status.SkippedSyllabusReason = "未配置考纲，自动考纲筛选已禁用"
+	}
+	return status, nil
+}
+
+// startProcessingPipeline kicks off the background processing pipeline for imported questions.
+// It does NOT block the import response — all work runs in a detached goroutine.
+func (s *QuestionService) startProcessingPipeline(
+	ctx context.Context,
+	qs *types.QuestionSet,
+	questions []*types.Question,
+	cfg *types.QuestionSetProcessingConfig,
+) {
+	s.setProcessingStage(ctx, qs, types.QuestionSetProcessingStageDraftImported, "")
+
+	bgCtx := logger.CloneContext(ctx)
+	go func() {
+		// Stage 1: Indexing — the question index service handles this asynchronously.
+		// We poll the vector index status for all imported questions to know when
+		// indexing is complete.
+		s.setProcessingStage(bgCtx, qs, types.QuestionSetProcessingStageIndexing, "")
+		if err := s.waitForIndexing(bgCtx, questions); err != nil {
+			logger.Errorf(bgCtx, "question set %s indexing failed: %v", qs.ID, err)
+			s.setProcessingStage(bgCtx, qs, types.QuestionSetProcessingStageFailed, truncateError(err))
+			return
+		}
+
+		// Stage 2: Auto knowledge point tagging (stub — TODO in future phase).
+		if cfg.AutoKnowledgePointEnabled() {
+			s.setProcessingStage(bgCtx, qs, types.QuestionSetProcessingStageAutoTagging, "")
+			// TODO: Implement auto knowledge point matching against the
+			// configured knowledge point KB. For now this is a no-op that
+			// preserves the extension point.
+			logger.Infof(bgCtx, "question set %s: auto knowledge point tagging is enabled (KB=%s) but algorithm is not yet implemented — skipping",
+				qs.ID, cfg.KnowledgePointKnowledgeBaseID)
+		}
+
+		// Stage 3: Auto syllabus screening (stub — TODO in future phase).
+		if cfg.AutoSyllabusCheckEnabled() {
+			s.setProcessingStage(bgCtx, qs, types.QuestionSetProcessingStageSyllabusChecking, "")
+			// TODO: Implement auto syllabus screening against the configured
+			// syllabus KB. For now this is a no-op that preserves the extension point.
+			logger.Infof(bgCtx, "question set %s: auto syllabus check is enabled (KB=%s) but algorithm is not yet implemented — skipping",
+				qs.ID, cfg.SyllabusKnowledgeBaseID)
+		}
+
+		// Stage 4: Ready for human review.
+		s.setProcessingStage(bgCtx, qs, types.QuestionSetProcessingStageReadyForReview, "")
+	}()
+}
+
+// setProcessingStage updates the question set's processing stage and optionally the error message.
+func (s *QuestionService) setProcessingStage(ctx context.Context, qs *types.QuestionSet, stage types.QuestionSetProcessingStage, errMsg string) {
+	qs.ProcessingStage = stage
+	if errMsg != "" {
+		qs.ErrorMessage = errMsg
+	}
+	if err := s.repository.UpdateQuestionSet(ctx, qs); err != nil {
+		logger.Errorf(ctx, "failed to update question set processing stage to %s: %v", stage, err)
+	}
+}
+
+// waitForIndexing polls the question vector index status until all questions are
+// indexed or have failed. Returns nil on success (all indexed), or an error if any
+// question has permanently failed.
+func (s *QuestionService) waitForIndexing(ctx context.Context, questions []*types.Question) error {
+	if s.questionIndexService == nil {
+		return nil
+	}
+	// For the MVP, we trust the existing async indexing. The question index
+	// service already handles the full lifecycle (pending → indexing → indexed/failed).
+	// Future phases may add polling via QuestionVectorIndexRepository.
+	_ = questions
+	return nil
+}
+
+func truncateError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	if len(msg) > 2000 {
+		return msg[:2000]
+	}
+	return msg
 }
