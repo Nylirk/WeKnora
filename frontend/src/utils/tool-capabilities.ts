@@ -75,6 +75,7 @@ export const TOOL_CAPABILITY_REQUIREMENTS: Record<string, ToolRequirement> = {
 
   // ---- Question bank (searches structured questions in question_bank KBs) ----
   question_bank_search: { anyOf: ['question_bank'] },
+  similar_question_search: { anyOf: ['question_bank'] },
 };
 
 /**

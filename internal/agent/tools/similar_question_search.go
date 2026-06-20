@@ -155,7 +155,10 @@ func (t *SimilarQuestionSearchTool) Execute(ctx context.Context, args json.RawMe
 	if input.Limit > 50 {
 		input.Limit = 50
 	}
-	validStatuses := map[string]bool{"": true, "draft": true, "reviewed": true, "rejected": true}
+	if input.Status == "" {
+		input.Status = "reviewed"
+	}
+	validStatuses := map[string]bool{"draft": true, "reviewed": true, "rejected": true}
 	if !validStatuses[input.Status] {
 		return &types.ToolResult{
 			Success: false,
@@ -240,17 +243,18 @@ func (t *SimilarQuestionSearchTool) Execute(ctx context.Context, args json.RawMe
 		topK = semanticMaxTopK
 	}
 
-	// Determine which KB IDs to search.
-	searchKBIDs := []string{sourceQuestion.KnowledgeBaseID}
-	if input.KnowledgeBaseID != "" {
-		if !t.searchTargets.ContainsKB(input.KnowledgeBaseID) {
-			return &types.ToolResult{
-				Success: false,
-				Error:   "Requested knowledge_base_id is not in the current search scope.",
-			}, fmt.Errorf("knowledge_base_id not in scope")
-		}
-		searchKBIDs = []string{input.KnowledgeBaseID}
+	// Cross-KB similar question search is not supported in this version.
+	// The resolved engine belongs to the source question's KB; using it
+	// to query a different KB's vector store produces incorrect results.
+	if input.KnowledgeBaseID != "" && input.KnowledgeBaseID != sourceQuestion.KnowledgeBaseID {
+		return &types.ToolResult{
+			Success: false,
+			Error:   "Cross-KB similar question search is not supported in this version.",
+		}, fmt.Errorf("cross-KB similar search not supported")
 	}
+
+	// Determine which KB IDs to search (always use the source question's KB).
+	searchKBIDs := []string{sourceQuestion.KnowledgeBaseID}
 
 	params := types.RetrieveParams{
 		Query:            content,

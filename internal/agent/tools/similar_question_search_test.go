@@ -172,6 +172,44 @@ func TestSimilarQuestionSearch_VectorOrderPreserved(t *testing.T) {
 	}
 }
 
+func TestSimilarQuestionSearch_CrossKB_Rejected(t *testing.T) {
+	db := setupSemanticQuestionBankTestDB(t)
+	seedSemanticQuestions(t, db)
+
+	engine := &stubRetrieveEngine{
+		sourceIDs: []string{"q1"},
+		kbID:      "qb1",
+	}
+	kbService := &stubKBService{
+		kbs: map[string]*types.KnowledgeBase{
+			"qb1": {ID: "qb1", TenantID: 1, Type: "question_bank", EmbeddingModelID: "emb1", VectorStoreID: strPtr("vs1")},
+		},
+	}
+	modelService := &stubModelService{embedder: &stubEmbedder{dimensions: 768, modelName: "test", modelID: "emb1"}}
+	registry := &stubEngineRegistry{engine: engine}
+
+	targets := searchTargetsWithKBs([]string{"qb1"})
+	tool := NewSimilarQuestionSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
+
+	// Request a different KB than the source question's KB.
+	args, _ := json.Marshal(map[string]interface{}{
+		"question_id":       "q1",
+		"knowledge_base_id": "qb2",
+		"limit":             10,
+	})
+	result, err := tool.Execute(context.Background(), args)
+	if err == nil {
+		t.Error("expected error for cross-KB similar search")
+	}
+	if result.Success {
+		t.Error("expected failure")
+	}
+	// The engine must not have been called.
+	if len(engine.lastKBIDs) > 0 {
+		t.Error("engine should not be called for cross-KB request")
+	}
+}
+
 func TestSimilarQuestionSearch_Filters(t *testing.T) {
 	db := setupSemanticQuestionBankTestDB(t)
 	seedSemanticQuestions(t, db)
@@ -260,7 +298,7 @@ func TestSimilarQuestionSearch_IncludeSameQuestionSet(t *testing.T) {
 	seedSemanticQuestions(t, db)
 
 	engine := &stubRetrieveEngine{
-		sourceIDs: []string{"q1", "q3"},
+		sourceIDs: []string{"q1", "q2"},
 		kbID:      "qb1",
 	}
 	kbService := &stubKBService{
@@ -282,15 +320,15 @@ func TestSimilarQuestionSearch_IncludeSameQuestionSet(t *testing.T) {
 		})
 		result, _ := tool.Execute(context.Background(), args)
 		results, _ := result.Data["results"].([]QuestionBankSearchResult)
-		// q3 is in same set (qs1) as q1
-		foundQ3 := false
+		// q2 is in same set (qs1) as q1, both reviewed.
+		found := false
 		for _, r := range results {
-			if r.ID == "q3" {
-				foundQ3 = true
+			if r.ID == "q2" {
+				found = true
 			}
 		}
-		if !foundQ3 {
-			t.Error("q3 should be included (same question set allowed)")
+		if !found {
+			t.Error("q2 should be included (same question set allowed, both reviewed)")
 		}
 	})
 
@@ -378,3 +416,36 @@ var (
 	_ interfaces.KnowledgeBaseService   = (*stubKBService)(nil)
 	_ interfaces.RetrieveEngineRegistry = (*stubEngineRegistry)(nil)
 )
+
+func TestSimilarQuestionSearch_DefaultStatusReviewed(t *testing.T) {
+	db := setupSemanticQuestionBankTestDB(t)
+	seedSemanticQuestions(t, db)
+
+	engine := &stubRetrieveEngine{
+		sourceIDs: []string{"q1", "q2", "q3", "q6"},
+		kbID:      "qb1",
+	}
+	kbService := &stubKBService{
+		kbs: map[string]*types.KnowledgeBase{
+			"qb1": {ID: "qb1", TenantID: 1, Type: "question_bank", EmbeddingModelID: "emb1", VectorStoreID: strPtr("vs1")},
+		},
+	}
+	modelService := &stubModelService{embedder: &stubEmbedder{dimensions: 768, modelName: "test", modelID: "emb1"}}
+	registry := &stubEngineRegistry{engine: engine}
+
+	targets := searchTargetsWithKBs([]string{"qb1"})
+	tool := NewSimilarQuestionSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
+
+	// No status param → defaults to reviewed. q3 is draft, q6 is rejected.
+	args, _ := json.Marshal(map[string]interface{}{
+		"question_id": "q1",
+		"limit":       10,
+	})
+	result, _ := tool.Execute(context.Background(), args)
+	results, _ := result.Data["results"].([]QuestionBankSearchResult)
+	for _, r := range results {
+		if r.Status != "reviewed" {
+			t.Errorf("default status=reviewed should exclude %s with status=%q", r.ID, r.Status)
+		}
+	}
+}

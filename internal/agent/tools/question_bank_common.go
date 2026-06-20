@@ -2,12 +2,9 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"html"
-	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -342,103 +339,7 @@ func formatQuestionBankSearchResults(results []QuestionBankSearchResult, query s
 
 const questionIndexMaxChars = 20000
 
-// buildQuestionIndexContent builds the embedding input from a question.
-// Mirrors service.BuildQuestionIndexContent but lives in the tools package
-// to avoid an import cycle (tools cannot import service).
+// buildQuestionIndexContent delegates to the canonical implementation in types.
 func buildQuestionIndexContent(q *types.Question) string {
-	if q == nil {
-		return ""
-	}
-	fields := []struct {
-		name  string
-		value string
-	}{
-		{name: "question_type", value: strings.TrimSpace(q.QuestionType)},
-		{name: "difficulty", value: strings.TrimSpace(string(q.Difficulty))},
-		{name: "stem_text", value: strings.TrimSpace(q.StemText)},
-		{name: "question_body", value: readableJSON(q.QuestionBody)},
-		{name: "knowledge_points", value: readableJSON(q.KnowledgePoints)},
-		{name: "tags", value: readableJSON(q.Tags)},
-	}
-
-	var builder strings.Builder
-	for _, field := range fields {
-		if field.value == "" || field.value == "{}" || field.value == "[]" {
-			continue
-		}
-		if builder.Len() > 0 {
-			builder.WriteByte('\n')
-		}
-		builder.WriteString(field.name)
-		builder.WriteString(": ")
-		builder.WriteString(field.value)
-	}
-
-	content := builder.String()
-	if utf8.RuneCountInString(content) <= questionIndexMaxChars {
-		return content
-	}
-	return string([]rune(content)[:questionIndexMaxChars])
-}
-
-func readableJSON(raw types.JSON) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var value interface{}
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return strings.TrimSpace(string(raw))
-	}
-	return formatJSONValue(value)
-}
-
-func formatJSONValue(value interface{}) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return strings.TrimSpace(typed)
-	case bool, float64:
-		return fmt.Sprint(typed)
-	case []interface{}:
-		parts := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if formatted := formatJSONValue(item); formatted != "" {
-				parts = append(parts, formatted)
-			}
-		}
-		if len(parts) == 0 {
-			return "[]"
-		}
-		return "[" + strings.Join(parts, "; ") + "]"
-	case map[string]interface{}:
-		keys := make([]string, 0, len(typed))
-		for key := range typed {
-			if !isForbiddenKey(key) {
-				keys = append(keys, key)
-			}
-		}
-		sort.Strings(keys)
-		parts := make([]string, 0, len(keys))
-		for _, key := range keys {
-			if formatted := formatJSONValue(typed[key]); formatted != "" {
-				parts = append(parts, key+": "+formatted)
-			}
-		}
-		if len(parts) == 0 {
-			return "{}"
-		}
-		return "{" + strings.Join(parts, "; ") + "}"
-	default:
-		return fmt.Sprint(typed)
-	}
-}
-
-func isForbiddenKey(key string) bool {
-	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), "-", "_"))
-	return strings.Contains(normalized, "answer") ||
-		strings.Contains(normalized, "analysis") ||
-		strings.Contains(normalized, "explanation") ||
-		strings.Contains(normalized, "solution") ||
-		strings.Contains(normalized, "rubric")
+	return types.BuildQuestionIndexContent(q)
 }
