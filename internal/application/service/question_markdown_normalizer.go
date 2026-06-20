@@ -65,8 +65,8 @@ func normalizeMarkdownQuestions(markdownText string) ([]types.ImportQuestionItem
 		}
 		if strings.TrimSpace(strings.Join(cur.stemLines, "")) == "" {
 			errors = append(errors, types.ImportQuestionError{
-				Line:    cur.startLine,
-				Message: fmt.Sprintf("第 %d 题题干为空", cur.number),
+				LineNumber: cur.startLine,
+				Message:    fmt.Sprintf("第 %d 题题干为空", cur.number),
 			})
 			cur = nil
 			return

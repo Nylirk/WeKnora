@@ -601,6 +601,33 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	return kb, nil
 }
 
+// UpdateQuestionBankSyllabusKnowledgeBaseID updates only the
+// syllabus_knowledge_base_id field for a question bank KB's
+// question_bank_config. It preserves knowledge_point_knowledge_base_id
+// and all other config fields.
+// Used exclusively by the syllabus upload/delete APIs.
+func (s *knowledgeBaseService) UpdateQuestionBankSyllabusKnowledgeBaseID(
+	ctx context.Context, kbID string, syllabusKBID string,
+) error {
+	kb, err := s.repo.GetKnowledgeBaseByID(ctx, kbID)
+	if err != nil {
+		return err
+	}
+	if !kb.IsQuestionBank() {
+		return apperrors.NewBadRequestError("仅题库型知识库支持考纲管理")
+	}
+	if kb.QuestionBankConfig == nil {
+		kb.QuestionBankConfig = &types.QuestionBankConfig{}
+	}
+	kb.QuestionBankConfig.SyllabusKnowledgeBaseID = syllabusKBID
+	kb.EnsureDefaults()
+	if err := s.repo.UpdateKnowledgeBase(ctx, kb); err != nil {
+		return err
+	}
+	logger.Infof(ctx, "Updated syllabus_knowledge_base_id for KB %s: %s", kbID, syllabusKBID)
+	return nil
+}
+
 // TogglePinKnowledgeBase toggles whether the calling user has pinned
 // this knowledge base. Pin state is per-(user, kb) as of migration
 // 000050; previously this method flipped a tenant-wide column on the

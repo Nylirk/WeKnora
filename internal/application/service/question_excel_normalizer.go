@@ -36,8 +36,8 @@ func normalizeExcelQuestions(tableText string) ([]types.ImportQuestionItem, []ty
 	headers := parseExcelRow(lines[0])
 	if len(headers) == 0 {
 		return nil, []types.ImportQuestionError{{
-			Line:    1,
-			Message: "无法解析表头",
+			LineNumber: 1,
+			Message:    "无法解析表头",
 		}}
 	}
 
@@ -58,8 +58,8 @@ func normalizeExcelQuestions(tableText string) ([]types.ImportQuestionItem, []ty
 		stemText := getColValue(values, colIndex, "stem_text")
 		if stemText == "" {
 			errors = append(errors, types.ImportQuestionError{
-				Line:    lineNum,
-				Message: fmt.Sprintf("第 %d 行题干为空", i),
+				LineNumber: lineNum,
+				Message:    fmt.Sprintf("第 %d 行题干为空", i),
 			})
 			continue
 		}

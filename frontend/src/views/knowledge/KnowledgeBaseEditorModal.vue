@@ -176,21 +176,28 @@
                         </div>
                         <div class="form-item">
                           <label class="form-label">考纲文档</label>
+                          <!-- Always-rendered hidden file input so re-upload works even when syllabus exists.
+                               In create mode, selection is deferred; in edit mode, upload fires immediately. -->
+                          <t-upload
+                            ref="syllabusUploadRef"
+                            :auto-upload="false"
+                            :show-upload-list="false"
+                            accept=".md,.markdown,.xlsx,.xls,.pdf,.doc,.docx,.txt,.csv"
+                            style="display:none"
+                            @change="onSyllabusFileChange"
+                          >
+                            <span />
+                          </t-upload>
                           <!-- No syllabus uploaded: show upload button -->
                           <div v-if="!syllabusInfo && !syllabusUploading" class="syllabus-upload-area">
-                            <t-upload
-                              ref="syllabusUploadRef"
-                              :auto-upload="false"
-                              :show-upload-list="false"
-                              accept=".md,.markdown,.xlsx,.xls,.pdf,.doc,.docx,.txt,.csv"
-                              :disabled="!props.kbId"
-                              @change="onSyllabusFileChange"
+                            <t-button
+                              theme="default"
+                              :loading="syllabusUploading"
+                              @click="triggerSyllabusFileInput"
                             >
-                              <t-button theme="default" :disabled="!props.kbId || syllabusUploading" :loading="syllabusUploading">
-                                <template #icon><t-icon name="upload" /></template>
-                                上传考纲文档
-                              </t-button>
-                            </t-upload>
+                              <template #icon><t-icon name="upload" /></template>
+                              {{ pendingSyllabusFile && props.mode === 'create' ? '已选择：' + pendingSyllabusFile.name : '上传考纲文档' }}
+                            </t-button>
                             <p class="form-tip kb-hint">
                               未上传考纲文档，导入题目后不会启用自动考纲筛选。
                             </p>
@@ -209,7 +216,7 @@
                               </t-tag>
                             </div>
                             <div class="syllabus-actions">
-                              <t-button size="small" variant="text" theme="primary" @click="onReplaceSyllabus">
+                              <t-button size="small" variant="text" theme="primary" @click="triggerSyllabusFileInput">
                                 重新上传
                               </t-button>
                               <t-button size="small" variant="text" theme="danger" @click="onDeleteSyllabus">
@@ -568,6 +575,7 @@ const loadingKbList = ref(false)
 const syllabusUploadRef = ref()
 const syllabusInfo = ref<any>(null)
 const syllabusUploading = ref(false)
+const pendingSyllabusFile = ref<File | null>(null)
 
 const syllabusParseStatusTheme = computed(() => {
   const status = syllabusInfo.value?.parse_status
@@ -861,38 +869,51 @@ const fetchSyllabus = async () => {
   }
 }
 
-const onSyllabusFileChange = async (files: any) => {
-  const file = files?.[0]?.raw || files?.[0] || files
-  if (!file) return
-  syllabusUploading.value = true
-  try {
-    const result = await uploadSyllabus(props.kbId!, file)
-    if (result) {
-      MessagePlugin.success(result.message || '考纲文档上传成功')
-      await fetchSyllabus()
-    }
-  } catch (err: any) {
-    MessagePlugin.error(err?.message || '考纲文档上传失败')
-  } finally {
-    syllabusUploading.value = false
-  }
-}
+	const triggerSyllabusFileInput = () => {
+	  const uploadComp = syllabusUploadRef.value
+	  if (uploadComp) {
+	    if (typeof uploadComp.triggerUpload === 'function') {
+	      uploadComp.triggerUpload()
+	    } else {
+	      const el = uploadComp.$el as HTMLElement
+	      const input = el?.querySelector?.('input[type="file"]') as HTMLInputElement
+	      if (input) input.click()
+	    }
+	  }
+	}
 
-const onReplaceSyllabus = () => {
-  const input = document.querySelector('.syllabus-upload-area input[type="file"]') as HTMLInputElement
-  if (input) input.click()
-}
+	const onSyllabusFileChange = async (files: any) => {
+	  const file = files?.[0]?.raw || files?.[0] || files
+	  if (!file) return
+	  if (props.mode === 'create') {
+	    pendingSyllabusFile.value = file
+	    return
+	  }
+	  syllabusUploading.value = true
+	  try {
+	    const result = await uploadSyllabus(props.kbId!, file)
+	    if (result) {
+	      MessagePlugin.success(result.message || '考纲文档上传成功')
+	      await fetchSyllabus()
+	    }
+	  } catch (err: any) {
+	    MessagePlugin.error(err?.message || '考纲文档上传失败')
+	  } finally {
+	    syllabusUploading.value = false
+	  }
+	}
 
-const onDeleteSyllabus = async () => {
-  if (!props.kbId) return
-  try {
-    await deleteSyllabus(props.kbId)
-    syllabusInfo.value = null
-    MessagePlugin.success('考纲已删除')
-  } catch (err: any) {
-    MessagePlugin.error(err?.message || '删除考纲失败')
-  }
-}
+	const onDeleteSyllabus = async () => {
+	  if (!props.kbId) return
+	  try {
+	    await deleteSyllabus(props.kbId)
+	    syllabusInfo.value = null
+	    pendingSyllabusFile.value = null
+	    MessagePlugin.success('考纲已删除')
+	  } catch (err: any) {
+	    MessagePlugin.error(err?.message || '删除考纲失败')
+	  }
+	}
 
 // 加载知识库数据（编辑模式）
 const loadKBData = async () => {
@@ -1396,6 +1417,21 @@ const doSubmit = async () => {
       }
       MessagePlugin.success(t('knowledgeEditor.messages.createSuccess'))
       markContextualGuideDone('kbCreate')
+      // If user selected a syllabus file in create mode, upload it now.
+      if (pendingSyllabusFile.value && result.data.id) {
+        syllabusUploading.value = true
+        try {
+          const uploadResult = await uploadSyllabus(result.data.id, pendingSyllabusFile.value)
+          if (uploadResult) {
+            MessagePlugin.success(uploadResult.message || '考纲文档上传成功')
+          }
+        } catch (err: any) {
+          MessagePlugin.warning(err?.message || '考纲文档上传失败，可稍后在题库设置中重新上传')
+        } finally {
+          syllabusUploading.value = false
+          pendingSyllabusFile.value = null
+        }
+      }
       emit('success', result.data.id)
     } else {
       // 编辑模式：分别更新基本信息和配置

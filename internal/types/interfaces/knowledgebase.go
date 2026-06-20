@@ -75,6 +75,12 @@ type KnowledgeBaseService interface {
 		questionBankConfig *types.QuestionBankConfig,
 	) (*types.KnowledgeBase, error)
 
+	// UpdateQuestionBankSyllabusKnowledgeBaseID updates only the
+	// syllabus_knowledge_base_id field in a question bank KB's
+	// question_bank_config. It preserves all other config fields.
+	// Used exclusively by the syllabus upload/delete APIs.
+	UpdateQuestionBankSyllabusKnowledgeBaseID(ctx context.Context, kbID string, syllabusKBID string) error
+
 	// DeleteKnowledgeBase deletes a knowledge base
 	// Parameters:
 	//   - ctx: Context information

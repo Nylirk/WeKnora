@@ -44,18 +44,13 @@ func (s *QuestionService) UploadSyllabus(
 		)
 	}
 
-	// 4. Ensure parent KB's question_bank_config.syllabus_knowledge_base_id is set.
-	if kb.QuestionBankConfig == nil {
-		kb.QuestionBankConfig = &types.QuestionBankConfig{}
-	}
-	if kb.QuestionBankConfig.SyllabusKnowledgeBaseID != syllabusKB.ID {
-		kb.QuestionBankConfig.SyllabusKnowledgeBaseID = syllabusKB.ID
-		_, err = s.knowledgeBaseSvc.UpdateKnowledgeBase(
-			ctx, kbID, kb.Name, kb.Description, nil, kb.QuestionBankConfig,
-		)
-		if err != nil {
-			logger.Warnf(ctx, "Failed to update syllabus_knowledge_base_id on parent KB %s: %v", kbID, err)
-		}
+	// 4. Persist syllabus KB binding via dedicated update path.
+	// This must NOT go through UpdateKnowledgeBase, which explicitly
+	// protects SyllabusKnowledgeBaseID from being overwritten.
+	if err := s.knowledgeBaseSvc.UpdateQuestionBankSyllabusKnowledgeBaseID(
+		ctx, kbID, syllabusKB.ID,
+	); err != nil {
+		logger.Warnf(ctx, "Failed to update syllabus_knowledge_base_id on parent KB %s: %v", kbID, err)
 	}
 
 	logger.Infof(ctx, "Syllabus uploaded for KB %s: file=%s, syllabusKB=%s, knowledge=%s",
@@ -102,7 +97,7 @@ func (s *QuestionService) GetSyllabus(
 		logger.Warnf(ctx, "Failed to fill counts for syllabus KB %s: %v", syllabusKBID, err)
 	}
 
-	// Find the most recent knowledge entry for file info.
+	// Look up the most recent knowledge entry to get real file info.
 	info := &types.SyllabusInfo{
 		SyllabusKBID:   syllabusKB.ID,
 		KnowledgeCount: syllabusKB.KnowledgeCount,
@@ -112,11 +107,35 @@ func (s *QuestionService) GetSyllabus(
 		UpdatedAt:      syllabusKB.UpdatedAt,
 	}
 
-	if syllabusKB.ProcessingCount > 0 {
-		info.ParseStatus = "processing"
+	knowledgeList, kErr := s.knowledgeService.ListKnowledgeByKnowledgeBaseID(ctx, syllabusKBID)
+	if kErr != nil {
+		logger.Warnf(ctx, "Failed to list knowledge for syllabus KB %s: %v", syllabusKBID, kErr)
+	} else {
+		// Pick the most recently updated knowledge entry that has a file.
+		var latest *types.Knowledge
+		for _, k := range knowledgeList {
+			if k == nil || k.FileName == "" {
+				continue
+			}
+			if latest == nil || k.UpdatedAt.After(latest.UpdatedAt) {
+				latest = k
+			}
+		}
+		if latest != nil {
+			info.FileName = latest.FileName
+			info.FileSize = latest.FileSize
+			info.ParseStatus = latest.ParseStatus
+			info.UpdatedAt = latest.UpdatedAt
+		}
 	}
-	if syllabusKB.KnowledgeCount == 0 && syllabusKB.ProcessingCount == 0 {
-		info.ParseStatus = "empty"
+
+	if info.FileName == "" {
+		if syllabusKB.ProcessingCount > 0 {
+			info.ParseStatus = "processing"
+		}
+		if syllabusKB.KnowledgeCount == 0 && syllabusKB.ProcessingCount == 0 {
+			info.ParseStatus = "empty"
+		}
 	}
 
 	return info, nil
@@ -142,17 +161,13 @@ func (s *QuestionService) DeleteSyllabus(
 		return nil // Nothing to delete.
 	}
 
-	// Clear the binding on the parent KB first.
-	if kb.QuestionBankConfig != nil {
-		kb.QuestionBankConfig.SyllabusKnowledgeBaseID = ""
-		_, err = s.knowledgeBaseSvc.UpdateKnowledgeBase(
-			ctx, kbID, kb.Name, kb.Description, nil, kb.QuestionBankConfig,
+	// Clear the binding on the parent KB via the dedicated update path.
+	if err := s.knowledgeBaseSvc.UpdateQuestionBankSyllabusKnowledgeBaseID(
+		ctx, kbID, "",
+	); err != nil {
+		return apperrors.NewInternalServerError(
+			fmt.Sprintf("解除考纲绑定失败: %v", err),
 		)
-		if err != nil {
-			return apperrors.NewInternalServerError(
-				fmt.Sprintf("解除考纲绑定失败: %v", err),
-			)
-		}
 	}
 
 	// Soft-delete the hidden syllabus KB.
