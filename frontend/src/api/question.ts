@@ -20,7 +20,25 @@ export interface QuestionSet {
   name: string; description: string; source_type: QuestionSetSourceType
   status: QuestionSetStatus; question_count: number
   generation_config: Record<string, unknown>; generation_scope: Record<string, unknown>
+  processing_config: QuestionSetProcessingConfig
+  processing_stage: QuestionSetProcessingStage
   error_message: string; created_at: string; updated_at: string
+}
+
+export interface QuestionSetProcessingConfig {
+  knowledge_point_knowledge_base_id: string
+  syllabus_knowledge_base_id: string
+}
+
+export type QuestionSetProcessingStage = '' | 'draft_imported' | 'indexing' | 'auto_tagging' | 'syllabus_checking' | 'ready_for_review' | 'failed'
+
+export interface QuestionSetProcessingStatus {
+  stage: QuestionSetProcessingStage
+  error_message: string
+  skipped_auto_tagging_reason?: string
+  skipped_syllabus_reason?: string
+  auto_tagging_enabled: boolean
+  syllabus_check_enabled: boolean
 }
 
 export interface Question {
@@ -61,13 +79,13 @@ const unwrap = <T>(response: any): T => response.data as T
 export const listQuestionSets = (kbId: string, page = 1, pageSize = 50) =>
   get(`/api/v1/knowledge-bases/${kbId}/question-sets?page=${page}&page_size=${pageSize}`).then(unwrap<PageResult<QuestionSet>>)
 
-export const createQuestionSet = (kbId: string, data: { name: string; description?: string }) =>
+export const createQuestionSet = (kbId: string, data: { name: string; description?: string; processing_config?: QuestionSetProcessingConfig }) =>
   post(`/api/v1/knowledge-bases/${kbId}/question-sets`, data).then(unwrap<QuestionSet>)
 
 export const getQuestionSet = (kbId: string, setId: string) =>
   get(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}`).then(unwrap<QuestionSet>)
 
-export const updateQuestionSet = (kbId: string, setId: string, data: Partial<{ name: string; description: string; status: string }>) =>
+export const updateQuestionSet = (kbId: string, setId: string, data: Partial<{ name: string; description: string; status: string; processing_config: QuestionSetProcessingConfig }>) =>
   put(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}`, data).then(unwrap<QuestionSet>)
 
 export const deleteQuestionSet = (kbId: string, setId: string) =>
@@ -106,6 +124,9 @@ export const updateQuestionStatus = (kbId: string, setId: string, questionId: st
 
 export const importQuestions = (kbId: string, setId: string, data: ImportQuestionsRequest) =>
   post(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/import`, data).then(unwrap<ImportQuestionsResult>)
+
+export const getQuestionSetProcessingStatus = (kbId: string, setId: string) =>
+  get(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/processing-status`).then(unwrap<QuestionSetProcessingStatus>)
 
 export const exportToEvaluationDataset = (kbId: string, setId: string, data: { name: string; description?: string }) =>
   post(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/export`, data).then(unwrap<any>)

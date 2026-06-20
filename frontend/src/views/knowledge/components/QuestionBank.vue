@@ -88,17 +88,54 @@
     <t-dialog
       v-model:visible="createSetVisible"
       :header="$t('questionBank.createSet')"
+      :width="560"
       :confirm-btn="{ content: $t('common.confirm'), loading: creatingSet }"
       :cancel-btn="{ content: $t('common.cancel'), disabled: creatingSet }"
       @confirm="createSet"
     >
-      <t-form>
+      <t-form label-align="top">
         <t-form-item :label="$t('questionBank.setName')">
           <t-input v-model="newSetName" :placeholder="$t('questionBank.setNamePlaceholder')" />
         </t-form-item>
         <t-form-item :label="$t('questionBank.description')">
           <t-textarea v-model="newSetDescription" :placeholder="$t('questionBank.descPlaceholder')" />
         </t-form-item>
+        <t-form-item :label="$t('questionBank.knowledgePointKb', '知识点知识库')">
+          <t-select
+            v-model="newKnowledgePointKbId"
+            clearable
+            :placeholder="$t('questionBank.knowledgePointKbPlaceholder', '选择知识点知识库（可选）')"
+            :loading="loadingKbList"
+            filterable
+          >
+            <t-option v-for="kb in availableKbs" :key="kb.id" :value="kb.id" :label="kb.name" />
+          </t-select>
+          <p v-if="!newKnowledgePointKbId" class="kb-hint">
+            {{ $t('questionBank.knowledgePointKbHint', '未选择知识点知识库，不会启用自动知识点关联') }}
+          </p>
+        </t-form-item>
+        <t-form-item :label="$t('questionBank.syllabusKb', '考纲')">
+          <t-select
+            v-model="newSyllabusKbId"
+            clearable
+            :placeholder="$t('questionBank.syllabusKbPlaceholder', '选择考纲（可选）')"
+            :loading="loadingKbList"
+            filterable
+          >
+            <t-option v-for="kb in availableKbs" :key="kb.id" :value="kb.id" :label="kb.name" />
+          </t-select>
+          <p v-if="!newSyllabusKbId" class="kb-hint">
+            {{ $t('questionBank.syllabusKbHint', '未选择考纲，不会启用自动考纲筛选') }}
+          </p>
+        </t-form-item>
+        <t-alert
+          v-if="!newKnowledgePointKbId && !newSyllabusKbId"
+          theme="info"
+          :close-btn="false"
+          style="margin-top: 8px"
+        >
+          {{ $t('questionBank.noAutoProcessingHint', '题目仍可导入，但只会创建草稿题目，不启用自动关联和考纲筛选') }}
+        </t-alert>
       </t-form>
     </t-dialog>
 
@@ -119,7 +156,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 import {
   createQuestionSet as apiCreateSet,
@@ -127,7 +164,9 @@ import {
   listQuestionSets,
   updateQuestionSet as apiUpdateSet,
   type QuestionSet,
+  type QuestionSetProcessingConfig,
 } from '@/api/question'
+import { listKnowledgeBases } from '@/api/knowledge-base'
 import QuestionSetDetail from './QuestionSetDetail.vue'
 
 const props = defineProps<{
@@ -143,6 +182,10 @@ const createSetVisible = ref(false)
 const creatingSet = ref(false)
 const newSetName = ref('')
 const newSetDescription = ref('')
+const newKnowledgePointKbId = ref('')
+const newSyllabusKbId = ref('')
+const availableKbs = ref<{ id: string; name: string }[]>([])
+const loadingKbList = ref(false)
 const renameVisible = ref(false)
 const renamingSet = ref(false)
 const renameTarget = ref<QuestionSet | null>(null)
@@ -178,9 +221,26 @@ async function loadSets() {
   }
 }
 
+async function loadAvailableKbs() {
+  loadingKbList.value = true
+  try {
+    const response: any = await listKnowledgeBases()
+    const data = response?.data ?? response
+    const list = Array.isArray(data) ? data : (data?.data ?? [])
+    availableKbs.value = list.map((kb: any) => ({ id: kb.id, name: kb.name }))
+  } catch {
+    // silent — KB list is non-critical
+  } finally {
+    loadingKbList.value = false
+  }
+}
+
 function openCreateSetDialog() {
   newSetName.value = ''
   newSetDescription.value = ''
+  newKnowledgePointKbId.value = ''
+  newSyllabusKbId.value = ''
+  loadAvailableKbs()
   createSetVisible.value = true
 }
 
@@ -192,9 +252,14 @@ async function createSet() {
   }
   creatingSet.value = true
   try {
+    const processingConfig: QuestionSetProcessingConfig = {
+      knowledge_point_knowledge_base_id: newKnowledgePointKbId.value,
+      syllabus_knowledge_base_id: newSyllabusKbId.value,
+    }
     const result: any = await apiCreateSet(props.knowledgeBaseId, {
       name: newSetName.value.trim(),
       description: newSetDescription.value.trim(),
+      processing_config: processingConfig,
     })
     const created: QuestionSet = result?.data ?? result
     createSetVisible.value = false
@@ -336,4 +401,5 @@ watch(
 .set-menu-item.danger { color: var(--td-error-color); }
 .question-content { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 16px 0 0 20px; }
 .question-bank-empty { height: 100%; min-height: 240px; display: flex; align-items: center; justify-content: center; color: var(--td-text-color-placeholder); }
+.kb-hint { margin: 4px 0 0; color: var(--td-text-color-placeholder); font-size: 12px; }
 </style>
