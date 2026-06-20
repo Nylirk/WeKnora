@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"sort"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -151,6 +151,7 @@ type QuestionBankSearchTool struct {
 	knowledgeBaseService interfaces.KnowledgeBaseService
 	modelService         interfaces.ModelService
 	engineRegistry       interfaces.RetrieveEngineRegistry
+	ownership            retriever.TenantStoreOwnership
 }
 
 // NewQuestionBankSearchTool creates a new question bank search tool.
@@ -160,6 +161,7 @@ func NewQuestionBankSearchTool(
 	knowledgeBaseService interfaces.KnowledgeBaseService,
 	modelService interfaces.ModelService,
 	engineRegistry interfaces.RetrieveEngineRegistry,
+	ownership retriever.TenantStoreOwnership,
 ) *QuestionBankSearchTool {
 	return &QuestionBankSearchTool{
 		BaseTool:             questionBankSearchTool,
@@ -168,6 +170,7 @@ func NewQuestionBankSearchTool(
 		knowledgeBaseService: knowledgeBaseService,
 		modelService:         modelService,
 		engineRegistry:       engineRegistry,
+		ownership:            ownership,
 	}
 }
 
@@ -305,7 +308,7 @@ func (t *QuestionBankSearchTool) executeKeywordSearch(
 	}
 
 	// Structured filter clauses for keyword mode.
-	structFilter, structArgs := buildQuestionStructFilter(input)
+	structFilter, structArgs := buildQuestionStructFilter(input, dialect)
 
 	// Build and execute the query.
 	baseSQL := `SELECT
@@ -414,19 +417,13 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		}, nil
 	}
 
-	// 2. For each KB, resolve embedding + engine, generate embedding, retrieve.
-	// Group retrievals by (embedding model ID, engine type) to dedup embedding calls.
-	type retrievalGroup struct {
-		embeddingModelID string
-		engine           interfaces.RetrieveEngine
-		kbIDs            []string
-	}
+	// 2. For each KB, resolve embedding + engine via retriever factory,
+	//    generate embedding, retrieve.
 	type kbRetrieval struct {
-		kbID              string
-		tenantID          uint64
-		embeddingModelID  string
-		engine            interfaces.RetrieveEngine
-		questionSetIDInKB string // question_set_id restricted to this KB (if input.QuestionSetID is set)
+		kbID             string
+		tenantID         uint64
+		embeddingModelID string
+		engine           *retriever.CompositeRetrieveEngine
 	}
 	var retrievals []kbRetrieval
 	for _, kbt := range kbTargets {
@@ -435,7 +432,9 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 			logger.Warnf(ctx, "Semantic question search: KB %s has no embedding model configured", kb.ID)
 			continue
 		}
-		engine, err := resolveKBRetrieveEngine(ctx, kb, t.engineRegistry)
+		engine, err := retriever.CreateRetrieveEngineForKB(
+			ctx, t.engineRegistry, t.ownership, kbt.tenantID, kb.VectorStoreID,
+		)
 		if err != nil {
 			logger.Warnf(ctx, "Semantic question search: cannot resolve engine for KB %s: %v", kb.ID, err)
 			continue
@@ -444,12 +443,16 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 			logger.Warnf(ctx, "Semantic question search: KB %s has no vector retriever available", kb.ID)
 			continue
 		}
+		// Check that the engine supports vector retrieval.
+		if !compositeSupportsVector(engine) {
+			logger.Warnf(ctx, "Semantic question search: KB %s engine does not support vector retrieval", kb.ID)
+			continue
+		}
 		retrievals = append(retrievals, kbRetrieval{
-			kbID:              kb.ID,
-			tenantID:          kbt.tenantID,
-			embeddingModelID:  kb.EmbeddingModelID,
-			engine:            engine,
-			questionSetIDInKB: input.QuestionSetID,
+			kbID:             kb.ID,
+			tenantID:         kbt.tenantID,
+			embeddingModelID: kb.EmbeddingModelID,
+			engine:           engine,
 		})
 	}
 	if len(retrievals) == 0 {
@@ -463,12 +466,17 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 	type embedKey struct {
 		modelID string
 	}
-	groups := make(map[embedKey]*retrievalGroup)
+	type retrieveGroup struct {
+		embeddingModelID string
+		engine           *retriever.CompositeRetrieveEngine
+		kbIDs            []string
+	}
+	groups := make(map[embedKey]*retrieveGroup)
 	for _, r := range retrievals {
 		key := embedKey{modelID: r.embeddingModelID}
 		g := groups[key]
 		if g == nil {
-			g = &retrievalGroup{embeddingModelID: r.embeddingModelID, engine: r.engine}
+			g = &retrieveGroup{embeddingModelID: r.embeddingModelID, engine: r.engine}
 			groups[key] = g
 		}
 		g.kbIDs = append(g.kbIDs, r.kbID)
@@ -518,7 +526,8 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		if input.QuestionSetID != "" {
 			params.KnowledgeIDs = []string{input.QuestionSetID}
 		}
-		results, err := g.engine.Retrieve(ctx, params)
+		// CompositeRetrieveEngine.Retrieve takes a slice of params.
+		results, err := g.engine.Retrieve(ctx, []types.RetrieveParams{params})
 		if err != nil {
 			logger.Warnf(ctx, "Semantic question search: retrieve failed: %v", err)
 			continue
@@ -553,11 +562,6 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 	// 5. SQL backfill: fetch questions for the retrieved IDs, scoped to the correct tenants.
 	// Group IDs by tenant for proper isolation.
 	tenantIDToIDs := make(map[uint64][]string)
-	idToTenant := make(map[string]uint64)
-	for _, kbt := range kbTargets {
-		tenantIDToIDs[kbt.tenantID] = nil
-	}
-	// Assign each retrieved ID to its KB's tenant.
 	for _, id := range orderedIDs {
 		kbID := idToKB[id]
 		if kbID == "" {
@@ -568,7 +572,6 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 			continue
 		}
 		tenantIDToIDs[tid] = append(tenantIDToIDs[tid], id)
-		idToTenant[id] = tid
 	}
 
 	var allQuestions []*types.Question
@@ -593,17 +596,18 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 	}
 
 	// 6. Apply structured filters and build results in vector rank order.
+	//    Results preserve the original vector retrieval order — no cross-engine
+	//    score-based reordering.
 	excludeSet := make(map[string]bool)
 	for _, eid := range input.ExcludeQuestionIDs {
 		excludeSet[eid] = true
 	}
 
-	type scoredResult struct {
-		result QuestionBankSearchResult
-		score  float64
-	}
-	var scored []scoredResult
+	var results []QuestionBankSearchResult
 	for _, id := range orderedIDs {
+		if len(results) >= limit {
+			break
+		}
 		if excludeSet[id] {
 			continue
 		}
@@ -633,56 +637,41 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 			continue
 		}
 
-		scored = append(scored, scoredResult{
-			result: QuestionBankSearchResult{
-				ID:              q.ID,
-				QuestionSetID:   q.QuestionSetID,
-				KnowledgeBaseID: q.KnowledgeBaseID,
-				QuestionType:    q.QuestionType,
-				StemText:        q.StemText,
-				QuestionBody:    q.QuestionBody,
-				AnswerText:      q.AnswerText,
-				AnswerBody:      q.AnswerBody,
-				AnalysisText:    q.AnalysisText,
-				Difficulty:      string(q.Difficulty),
-				KnowledgePoints: q.KnowledgePoints,
-				Tags:            q.Tags,
-				Status:          string(q.Status),
-				MatchType:       "semantic",
-				Score:           idToScore[id],
-			},
-			score: idToScore[id],
+		results = append(results, QuestionBankSearchResult{
+			ID:              q.ID,
+			QuestionSetID:   q.QuestionSetID,
+			KnowledgeBaseID: q.KnowledgeBaseID,
+			QuestionType:    q.QuestionType,
+			StemText:        q.StemText,
+			QuestionBody:    q.QuestionBody,
+			AnswerText:      q.AnswerText,
+			AnswerBody:      q.AnswerBody,
+			AnalysisText:    q.AnalysisText,
+			Difficulty:      string(q.Difficulty),
+			KnowledgePoints: q.KnowledgePoints,
+			Tags:            q.Tags,
+			Status:          string(q.Status),
+			MatchType:       "semantic",
+			Score:           idToScore[id],
 		})
-		// Enforce limit.
-		if len(scored) >= limit {
-			break
-		}
 	}
 
-	// Sort by score descending to preserve vector rank order (retrieval results
-	// are already ordered, but cross-engine ordering is best-effort by score).
-	sort.SliceStable(scored, func(i, j int) bool {
-		return scored[i].score > scored[j].score
-	})
-
 	// Batch-fetch question set names.
-	setIDs := make([]string, 0, len(scored))
+	setIDs := make([]string, 0, len(results))
 	seenSets := make(map[string]bool)
-	for _, sr := range scored {
-		if !seenSets[sr.result.QuestionSetID] {
-			seenSets[sr.result.QuestionSetID] = true
-			setIDs = append(setIDs, sr.result.QuestionSetID)
+	for _, r := range results {
+		if !seenSets[r.QuestionSetID] {
+			seenSets[r.QuestionSetID] = true
+			setIDs = append(setIDs, r.QuestionSetID)
 		}
 	}
 	setNameMap := t.batchGetQuestionSetNames(ctx, setIDs)
 
-	results := make([]QuestionBankSearchResult, 0, len(scored))
-	for i, sr := range scored {
-		sr.result.Rank = i + 1
-		if name, ok := setNameMap[sr.result.QuestionSetID]; ok {
-			sr.result.QuestionSetName = name
+	for i := range results {
+		results[i].Rank = i + 1
+		if name, ok := setNameMap[results[i].QuestionSetID]; ok {
+			results[i].QuestionSetName = name
 		}
-		results = append(results, sr.result)
 	}
 	if results == nil {
 		results = []QuestionBankSearchResult{}
@@ -700,6 +689,15 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 			"mode":         questionBankSearchModeSemantic,
 		},
 	}, nil
+}
+
+// compositeSupportsVector checks whether a CompositeRetrieveEngine supports
+// vector retrieval across any of its internal engines.
+func compositeSupportsVector(engine *retriever.CompositeRetrieveEngine) bool {
+	if engine == nil {
+		return false
+	}
+	return engine.SupportRetriever(types.VectorRetrieverType)
 }
 
 // listQuestionsByIDs fetches questions scoped to a tenant. Uses explicit
@@ -747,7 +745,7 @@ func (t *QuestionBankSearchTool) batchGetQuestionSetNames(ctx context.Context, s
 // buildQuestionStructFilter builds SQL filter clauses for structured fields
 // (question_set_id, question_type, difficulty, knowledge_points, tags,
 // exclude_question_ids) applicable to keyword mode.
-func buildQuestionStructFilter(input QuestionBankSearchInput) (string, []interface{}) {
+func buildQuestionStructFilter(input QuestionBankSearchInput, dialect string) (string, []interface{}) {
 	var clauses []string
 	var args []interface{}
 
@@ -763,19 +761,20 @@ func buildQuestionStructFilter(input QuestionBankSearchInput) (string, []interfa
 		clauses = append(clauses, "questions.difficulty = ?")
 		args = append(args, input.Difficulty)
 	}
-	if len(input.KnowledgePoints) > 0 {
-		for _, kp := range input.KnowledgePoints {
-			b, _ := json.Marshal([]string{kp})
-			clauses = append(clauses, "questions.knowledge_points::text ILIKE ?")
-			args = append(args, "%"+kp+"%")
-			_ = b
-		}
+	// Knowledge points: for each target KP, check if it appears in the JSON array.
+	// Use LIKE with escaped wildcards; dialect-aware operator selection.
+	for _, kp := range input.KnowledgePoints {
+		escaped := escapeLike(kp)
+		pattern := "%" + escaped + "%"
+		clauses = append(clauses, kpLikeClause("questions.knowledge_points", dialect))
+		args = append(args, pattern)
 	}
-	if len(input.Tags) > 0 {
-		for _, tag := range input.Tags {
-			clauses = append(clauses, "questions.tags::text ILIKE ?")
-			args = append(args, "%"+tag+"%")
-		}
+	// Tags: same approach as knowledge points.
+	for _, tag := range input.Tags {
+		escaped := escapeLike(tag)
+		pattern := "%" + escaped + "%"
+		clauses = append(clauses, kpLikeClause("questions.tags", dialect))
+		args = append(args, pattern)
 	}
 	if len(input.ExcludeQuestionIDs) > 0 {
 		clauses = append(clauses, "questions.id NOT IN ?")
@@ -788,6 +787,24 @@ func buildQuestionStructFilter(input QuestionBankSearchInput) (string, []interfa
 	return " AND " + strings.Join(clauses, " AND "), args
 }
 
+// kpLikeClause returns a dialect-appropriate LIKE clause for a JSON column.
+func kpLikeClause(column, dialect string) string {
+	switch {
+	case dialect == "postgres" || dialect == "postgresql":
+		return column + `::text ILIKE ? ESCAPE '\'`
+	default:
+		return `LOWER(CAST(` + column + ` AS TEXT)) LIKE LOWER(?) ESCAPE '\'`
+	}
+}
+
+// escapeLike escapes %, _, and \ for a LIKE pattern.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return s
+}
+
 // questionMatchesFilters checks a question against the structured filters
 // (used in semantic mode where filtering happens post-retrieval in Go).
 func questionMatchesFilters(q *types.Question, input QuestionBankSearchInput) bool {
@@ -797,8 +814,6 @@ func questionMatchesFilters(q *types.Question, input QuestionBankSearchInput) bo
 	if input.Status != "" && string(q.Status) != input.Status {
 		return false
 	}
-	// question_set_id, question_type, difficulty are already handled upstream
-	// or can be checked here for safety.
 	if input.QuestionType != "" && q.QuestionType != input.QuestionType {
 		return false
 	}
@@ -828,61 +843,6 @@ func anyJSONContains(jsonStr string, targets []string) bool {
 	}
 	for _, t := range targets {
 		if strings.Contains(strings.ToLower(jsonStr), strings.ToLower(t)) {
-			return true
-		}
-	}
-	return false
-}
-
-// resolveKBRetrieveEngine resolves the vector retriever engine for a KB.
-// Returns nil if no vector engine is available (not an error).
-func resolveKBRetrieveEngine(
-	ctx context.Context,
-	kb *types.KnowledgeBase,
-	engineRegistry interfaces.RetrieveEngineRegistry,
-) (interfaces.RetrieveEngine, error) {
-	if kb.VectorStoreID != nil && strings.TrimSpace(*kb.VectorStoreID) != "" {
-		engineService, err := engineRegistry.GetByStoreID(*kb.VectorStoreID)
-		if err != nil {
-			return nil, err
-		}
-		if engineService != nil && supportsVectorType(engineService) {
-			return engineService, nil
-		}
-		return nil, nil
-	}
-
-	// Fall back to tenant-level engines.
-	tenant, ok := types.TenantInfoFromContext(ctx)
-	if !ok {
-		return nil, nil
-	}
-	seen := make(map[types.RetrieverEngineType]struct{})
-	for _, params := range tenant.GetEffectiveEngines() {
-		if params.RetrieverType != types.VectorRetrieverType {
-			continue
-		}
-		if _, exists := seen[params.RetrieverEngineType]; exists {
-			continue
-		}
-		seen[params.RetrieverEngineType] = struct{}{}
-		engineService, err := engineRegistry.GetRetrieveEngineService(params.RetrieverEngineType)
-		if err != nil {
-			return nil, err
-		}
-		if engineService != nil && supportsVectorType(engineService) {
-			return engineService, nil
-		}
-	}
-	return nil, nil
-}
-
-func supportsVectorType(engine interfaces.RetrieveEngineService) bool {
-	if engine == nil {
-		return false
-	}
-	for _, supported := range engine.Support() {
-		if supported == types.VectorRetrieverType {
 			return true
 		}
 	}

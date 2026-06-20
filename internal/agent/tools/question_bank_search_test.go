@@ -141,7 +141,7 @@ func TestQuestionBankSearch_EmptyQueryListsRecent(t *testing.T) {
 	seedQuestionBank(t, db)
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"limit": 10,
@@ -176,7 +176,7 @@ func TestQuestionBankSearch_ValidQueryFindsStemText(t *testing.T) {
 	seedQuestionBank(t, db)
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"query": "prime",
@@ -203,7 +203,7 @@ func TestQuestionBankSearch_ValidQueryFindsAnswerText(t *testing.T) {
 	seedQuestionBank(t, db)
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"query": "rates of change",
@@ -226,7 +226,7 @@ func TestQuestionBankSearch_ValidQueryFindsAnalysisText(t *testing.T) {
 	seedQuestionBank(t, db)
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"query": "Basic addition",
@@ -250,7 +250,7 @@ func TestQuestionBankSearch_TenantIsolation(t *testing.T) {
 
 	// Only search tenant 1's KB
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"query": "gravity",
@@ -273,7 +273,7 @@ func TestQuestionBankSearch_DeletedQuestionExcluded(t *testing.T) {
 	seedQuestionBank(t, db)
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"query": "Deleted question",
@@ -296,7 +296,7 @@ func TestQuestionBankSearch_DeletedQuestionSetExcluded(t *testing.T) {
 	seedQuestionBank(t, db)
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"query": "Deleted set question",
@@ -319,7 +319,7 @@ func TestQuestionBankSearch_NonQuestionBankKBExcluded(t *testing.T) {
 	seedQuestionBank(t, db)
 
 	targets := searchTargetsWithKBs([]string{"doc1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"query": "Document KB question",
@@ -342,7 +342,7 @@ func TestQuestionBankSearch_LimitClamping(t *testing.T) {
 	seedQuestionBank(t, db)
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	// limit=0 should default to 20
 	args, _ := json.Marshal(map[string]interface{}{"limit": 0})
@@ -364,7 +364,7 @@ func TestQuestionBankSearch_NoKBsInScope(t *testing.T) {
 	seedQuestionBank(t, db)
 
 	targets := searchTargetsWithKBs([]string{})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"query": "anything",
@@ -390,7 +390,7 @@ func TestQuestionBankSearch_NoMatchingResults(t *testing.T) {
 	seedQuestionBank(t, db)
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"query": "zzz_nonexistent_phrase_zzz",
@@ -411,7 +411,7 @@ func TestQuestionBankSearch_NoMatchingResults(t *testing.T) {
 func TestQuestionBankSearch_InvalidJSONArgs(t *testing.T) {
 	db := setupQuestionBankTestDB(t)
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	// Invalid JSON
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{bad json`))
@@ -428,7 +428,7 @@ func TestQuestionBankSearch_ResultIncludesQuestionSetNameAndKBID(t *testing.T) {
 	seedQuestionBank(t, db)
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"query": "2+2",
@@ -475,7 +475,7 @@ func TestQuestionBankSearch_WildcardCharactersEscaped(t *testing.T) {
 		('q_underscore', 1, 'qs_esc', 'qb_esc', 'single_choice', 'foo_bar item', '{}', '', '{}', '', 'easy', '[]', '[]', 'draft', '2024-01-02', NULL)`)
 
 	targets := searchTargetsWithKBs([]string{"qb_esc"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	// Searching for literal "%" should find "50% discount?" but not match everything
 	args, _ := json.Marshal(map[string]interface{}{
@@ -511,7 +511,7 @@ func TestQuestionBankSearch_XMLEscaping(t *testing.T) {
 		('q_xml', 1, 'qs_xml', 'qb_xml', 'short_answer', 'Is a < b && b > c?', '{"note":"x & y"}', 'Yes, a < b', '{"reason":"because a<b"}', 'Explanation: a > c', 'easy', '["logic"]', '[]', 'draft', '2024-01-01', NULL)`)
 
 	targets := searchTargetsWithKBs([]string{"qb_xml"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"query": "a < b",
@@ -537,7 +537,7 @@ func TestQuestionBankSearch_StatusFilter(t *testing.T) {
 	seedQuestionBank(t, db)
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	// Filter by status=draft → should only return q2
 	args, _ := json.Marshal(map[string]interface{}{
@@ -579,7 +579,7 @@ func TestQuestionBankSearch_InvalidStatus(t *testing.T) {
 	seedQuestionBank(t, db)
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"status": "invalid_status",
@@ -604,6 +604,13 @@ func TestQuestionBankSearch_ToolImplementsInterface(t *testing.T) {
 // ---- Semantic search helpers ----
 
 func strPtr(s string) *string { return &s }
+
+// stubStoreOwnership implements retriever.TenantStoreOwnership for tests.
+type stubStoreOwnership struct{}
+
+func (s *stubStoreOwnership) StoreOwnedBy(ctx context.Context, storeID string, tenantID uint64) (bool, error) {
+	return true, nil
+}
 
 // stubEmbedder implements embedding.Embedder for tests.
 type stubEmbedder struct {
@@ -866,7 +873,7 @@ func TestQuestionBankSearch_Semantic_RequiresQuery(t *testing.T) {
 	seedSemanticQuestions(t, db)
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"mode":  "semantic",
@@ -901,7 +908,7 @@ func TestQuestionBankSearch_Semantic_RetrieveAndBackfill(t *testing.T) {
 	registry := &stubEngineRegistry{engine: engine}
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry)
+	tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"mode":  "semantic",
@@ -961,7 +968,7 @@ func TestQuestionBankSearch_Semantic_TenantIsolation(t *testing.T) {
 	registry := &stubEngineRegistry{engine: engine}
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry)
+	tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"mode":  "semantic",
@@ -1006,7 +1013,7 @@ func TestQuestionBankSearch_Semantic_DeletedQuestionExcluded(t *testing.T) {
 	registry := &stubEngineRegistry{engine: engine}
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry)
+	tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"mode":  "semantic",
@@ -1039,7 +1046,7 @@ func TestQuestionBankSearch_Semantic_StatusFilter(t *testing.T) {
 	registry := &stubEngineRegistry{engine: engine}
 
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry)
+	tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"mode":   "semantic",
@@ -1083,7 +1090,7 @@ func TestQuestionBankSearch_Semantic_StructuredFilters(t *testing.T) {
 
 	// Test question_type filter
 	t.Run("question_type", func(t *testing.T) {
-		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry)
+		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
 		args, _ := json.Marshal(map[string]interface{}{
 			"mode":          "semantic",
 			"query":         "test",
@@ -1099,7 +1106,7 @@ func TestQuestionBankSearch_Semantic_StructuredFilters(t *testing.T) {
 
 	// Test difficulty filter
 	t.Run("difficulty", func(t *testing.T) {
-		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry)
+		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
 		args, _ := json.Marshal(map[string]interface{}{
 			"mode":       "semantic",
 			"query":      "test",
@@ -1117,7 +1124,7 @@ func TestQuestionBankSearch_Semantic_StructuredFilters(t *testing.T) {
 
 	// Test knowledge_points filter
 	t.Run("knowledge_points", func(t *testing.T) {
-		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry)
+		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
 		args, _ := json.Marshal(map[string]interface{}{
 			"mode":             "semantic",
 			"query":            "test",
@@ -1136,7 +1143,7 @@ func TestQuestionBankSearch_Semantic_StructuredFilters(t *testing.T) {
 
 	// Test tags filter
 	t.Run("tags", func(t *testing.T) {
-		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry)
+		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
 		args, _ := json.Marshal(map[string]interface{}{
 			"mode":  "semantic",
 			"query": "test",
@@ -1152,7 +1159,7 @@ func TestQuestionBankSearch_Semantic_StructuredFilters(t *testing.T) {
 
 	// Test exclude_question_ids
 	t.Run("exclude_question_ids", func(t *testing.T) {
-		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry)
+		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
 		args, _ := json.Marshal(map[string]interface{}{
 			"mode":                 "semantic",
 			"query":                "test",
@@ -1170,7 +1177,7 @@ func TestQuestionBankSearch_Semantic_StructuredFilters(t *testing.T) {
 
 	// Test question_set_id filter
 	t.Run("question_set_id", func(t *testing.T) {
-		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry)
+		tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
 		args, _ := json.Marshal(map[string]interface{}{
 			"mode":            "semantic",
 			"query":           "test",
@@ -1202,7 +1209,7 @@ func TestQuestionBankSearch_Semantic_NonQuestionBankKBExcluded(t *testing.T) {
 	engine := &stubRetrieveEngine{sourceIDs: []string{}, kbID: "non_qb"}
 	registry := &stubEngineRegistry{engine: engine}
 
-	tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry)
+	tool := NewQuestionBankSearchTool(db, targets, kbService, modelService, registry, &stubStoreOwnership{})
 	args, _ := json.Marshal(map[string]interface{}{
 		"mode":  "semantic",
 		"query": "test",
@@ -1235,7 +1242,7 @@ func TestQuestionBankSearch_Semantic_MissingVectorDependency(t *testing.T) {
 				"qb1": {ID: "qb1", TenantID: 1, Type: "question_bank", EmbeddingModelID: ""},
 			},
 		}
-		tool := NewQuestionBankSearchTool(db, targets, kbService, nil, nil)
+		tool := NewQuestionBankSearchTool(db, targets, kbService, nil, nil, nil)
 		args, _ := json.Marshal(map[string]interface{}{
 			"mode":  "semantic",
 			"query": "test",
@@ -1263,7 +1270,7 @@ func TestQuestionBankSearch_Semantic_MissingVectorDependency(t *testing.T) {
 		}
 		registry := &stubEngineRegistry{engine: engine}
 		// modelService is nil — keyword mode should still work fine.
-		tool := NewQuestionBankSearchTool(db, targets, kbService, nil, registry)
+		tool := NewQuestionBankSearchTool(db, targets, kbService, nil, registry, nil)
 
 		keywordArgs, _ := json.Marshal(map[string]interface{}{
 			"mode":  "keyword",
@@ -1288,7 +1295,7 @@ func TestQuestionBankSearch_Keyword_ModeBackwardCompatibility(t *testing.T) {
 
 	// No mode specified → should default to keyword
 	t.Run("default_mode_is_keyword", func(t *testing.T) {
-		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 		args, _ := json.Marshal(map[string]interface{}{
 			"query": "prime",
 		})
@@ -1306,7 +1313,7 @@ func TestQuestionBankSearch_Keyword_ModeBackwardCompatibility(t *testing.T) {
 
 	// Explicit mode=keyword
 	t.Run("explicit_keyword", func(t *testing.T) {
-		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 		args, _ := json.Marshal(map[string]interface{}{
 			"mode":  "keyword",
 			"query": "prime",
@@ -1325,7 +1332,7 @@ func TestQuestionBankSearch_Keyword_ModeBackwardCompatibility(t *testing.T) {
 
 	// Keyword mode with structured filters
 	t.Run("keyword_with_structured_filters", func(t *testing.T) {
-		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 		args, _ := json.Marshal(map[string]interface{}{
 			"mode":       "keyword",
 			"query":      "",
@@ -1345,7 +1352,7 @@ func TestQuestionBankSearch_Keyword_ModeBackwardCompatibility(t *testing.T) {
 func TestQuestionBankSearch_Semantic_InvalidMode(t *testing.T) {
 	db := setupQuestionBankTestDB(t)
 	targets := searchTargetsWithKBs([]string{"qb1"})
-	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 
 	args, _ := json.Marshal(map[string]interface{}{
 		"mode":  "hybrid",
@@ -1370,7 +1377,7 @@ func TestQuestionBankSearch_Keyword_StructuredFilters(t *testing.T) {
 	targets := searchTargetsWithKBs([]string{"qb1"})
 
 	t.Run("question_type_filter", func(t *testing.T) {
-		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 		args, _ := json.Marshal(map[string]interface{}{
 			"question_type": "short_answer",
 		})
@@ -1384,7 +1391,7 @@ func TestQuestionBankSearch_Keyword_StructuredFilters(t *testing.T) {
 	})
 
 	t.Run("difficulty_filter", func(t *testing.T) {
-		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 		args, _ := json.Marshal(map[string]interface{}{
 			"difficulty": "hard",
 		})
@@ -1398,7 +1405,7 @@ func TestQuestionBankSearch_Keyword_StructuredFilters(t *testing.T) {
 	})
 
 	t.Run("exclude_question_ids_filter", func(t *testing.T) {
-		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil)
+		tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
 		args, _ := json.Marshal(map[string]interface{}{
 			"exclude_question_ids": []string{"q1"},
 		})
@@ -1410,4 +1417,42 @@ func TestQuestionBankSearch_Keyword_StructuredFilters(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestQuestionBankSearch_Keyword_KnowledgePointsFilter(t *testing.T) {
+	db := setupQuestionBankTestDB(t)
+	seedQuestionBank(t, db)
+	targets := searchTargetsWithKBs([]string{"qb1"})
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
+	args, _ := json.Marshal(map[string]interface{}{
+		"query":            "arithmetic",
+		"knowledge_points": []string{"arithmetic"},
+	})
+	result, _ := tool.Execute(context.Background(), args)
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.Error)
+	}
+	results, _ := result.Data["results"].([]QuestionBankSearchResult)
+	if len(results) == 0 {
+		t.Error("expected at least one result for knowledge_points filter")
+	}
+}
+
+func TestQuestionBankSearch_Keyword_TagsFilter(t *testing.T) {
+	db := setupQuestionBankTestDB(t)
+	seedQuestionBank(t, db)
+	targets := searchTargetsWithKBs([]string{"qb1"})
+	tool := NewQuestionBankSearchTool(db, targets, nil, nil, nil, nil)
+	args, _ := json.Marshal(map[string]interface{}{
+		"query": "math",
+		"tags":  []string{"math"},
+	})
+	result, _ := tool.Execute(context.Background(), args)
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.Error)
+	}
+	results, _ := result.Data["results"].([]QuestionBankSearchResult)
+	if len(results) == 0 {
+		t.Error("expected at least one result for tags filter")
+	}
 }

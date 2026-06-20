@@ -25,7 +25,6 @@ type QuestionRepository interface {
 	UpdateQuestion(context.Context, *types.Question) error
 	DeleteQuestion(context.Context, uint64, string, string) error
 	ListQuestionsByKB(context.Context, uint64, string, *types.QuestionListFilter, *types.Pagination) (*types.PageResult, error)
-	ListQuestionsByIDs(ctx context.Context, tenantID uint64, questionIDs []string) ([]*types.Question, error)
 }
 
 type QuestionVectorIndexRepository interface {

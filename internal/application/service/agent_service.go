@@ -11,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/agent/approval"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/application/service/retriever"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -62,6 +63,7 @@ type agentService struct {
 	tenantService         interfaces.TenantService
 	toolApprovalGate      approval.MCPApproval
 	engineRegistry        interfaces.RetrieveEngineRegistry
+	storeOwnership        retriever.TenantStoreOwnership
 }
 
 // NewAgentService creates a new agent service
@@ -83,6 +85,7 @@ func NewAgentService(
 	tenantService interfaces.TenantService,
 	toolApprovalGate approval.MCPApproval,
 	engineRegistry interfaces.RetrieveEngineRegistry,
+	storeOwnership retriever.TenantStoreOwnership,
 ) interfaces.AgentService {
 	return &agentService{
 		cfg:                   cfg,
@@ -102,6 +105,7 @@ func NewAgentService(
 		tenantService:         tenantService,
 		toolApprovalGate:      toolApprovalGate,
 		engineRegistry:        engineRegistry,
+		storeOwnership:        storeOwnership,
 	}
 }
 
@@ -612,6 +616,7 @@ func (s *agentService) registerTools(
 				s.knowledgeBaseService,
 				s.modelService,
 				s.engineRegistry,
+				s.storeOwnership,
 			)
 
 		default:
