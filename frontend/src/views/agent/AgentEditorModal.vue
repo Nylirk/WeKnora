@@ -4213,11 +4213,6 @@ const handleSave = async () => {
     }
   }
 
-  .system-prompt-textarea-wrapper {
-    width: 100%;
-    min-width: 0;
-  }
-
   label {
     font-size: 15px;
     font-weight: 500;
@@ -4265,6 +4260,15 @@ const handleSave = async () => {
 
   :deep(.t-input-number) {
     width: 120px;
+  }
+}
+
+.system-prompt-textarea-wrapper {
+  width: 100%;
+  min-width: 0;
+
+  .system-prompt-textarea {
+    width: 100%;
   }
 }
 
