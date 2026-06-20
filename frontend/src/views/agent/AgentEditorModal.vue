@@ -1576,13 +1576,15 @@ const allTools = computed(() => [
   // 数据分析
   { value: 'data_analysis', label: t('agentEditor.tools.dataAnalysis'), description: t('agentEditor.tools.dataAnalysisDesc'), group: 'data' },
   { value: 'data_schema', label: t('agentEditor.tools.dataSchema'), description: t('agentEditor.tools.dataSchemaDesc'), group: 'data' },
-  // 题库搜索
-  { value: 'question_bank_search', label: t('agentEditor.tools.questionBankSearch'), description: t('agentEditor.tools.questionBankSearchDesc'), group: 'rag' },
+  // 题库工具
+  { value: 'question_bank_search', label: t('agentEditor.tools.questionBankSearch'), description: t('agentEditor.tools.questionBankSearchDesc'), group: 'question_bank' },
+  { value: 'similar_question_search', label: t('agentEditor.tools.similarQuestionSearch'), description: t('agentEditor.tools.similarQuestionSearchDesc'), group: 'question_bank' },
 ]);
 
 // 工具分组元信息
 const toolGroups = computed(() => [
   { key: 'base', label: t('agentEditor.tools.groupBase') },
+  { key: 'question_bank', label: t('agentEditor.tools.groupQuestionBank') },
   { key: 'rag', label: t('agentEditor.tools.groupRag') },
   { key: 'wiki_read', label: t('agentEditor.tools.groupWikiRead') },
   { key: 'wiki_edit', label: t('agentEditor.tools.groupWikiEdit') },

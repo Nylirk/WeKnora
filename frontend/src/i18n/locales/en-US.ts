@@ -5036,6 +5036,10 @@ export default {
       requiresRagKb: '(requires a KB with vector/keyword indexing enabled)',
       requiresWikiKb: '(requires a Wiki-enabled knowledge base)',
       needsQuestionBank: '(requires a question bank KB)',
+      questionBankSearchDesc: 'Search questions in question bank KBs by keyword, semantic, or hybrid mode across stems, answers, analysis, knowledge points, and tags',
+      similarQuestionSearch: 'Similar Question Search',
+      similarQuestionSearchDesc: 'Find semantically similar questions by question ID for duplication detection and variant recommendation',
+      groupQuestionBank: 'Question Bank',
       // Wiki read tools
       wikiSearch: 'Search Wiki',
       wikiSearchDesc: 'Keyword / semantic search over Wiki pages',
