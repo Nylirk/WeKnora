@@ -759,11 +759,6 @@ const initFormData = (type: 'document' | 'faq' | 'question_bank' = 'document') =
     // existing binding from the KB response below.
     vectorStoreId: '' as string,
     vectorStoreInfo: {
-        // Question bank auto-processing config
-        questionBankConfig: {
-          knowledgePointKbId: (kb as any).question_bank_config?.knowledge_point_knowledge_base_id || "" as string,
-          syllabusKbId: (kb as any).question_bank_config?.syllabus_knowledge_base_id || "" as string,
-        },
       source: undefined as string | undefined,
       name: undefined as string | undefined,
       engineType: undefined as string | undefined,
@@ -894,6 +889,11 @@ const loadKBData = async () => {
         wikiEnabled: kb.indexing_strategy?.wiki_enabled ?? false,
         graphEnabled: kb.indexing_strategy?.graph_enabled ?? false,
       },
+      // Question bank auto-processing config (edit mode)
+      questionBankConfig: {
+        knowledgePointKbId: (kb as any).question_bank_config?.knowledge_point_knowledge_base_id || '' as string,
+        syllabusKbId: (kb as any).question_bank_config?.syllabus_knowledge_base_id || '' as string,
+      },
       // Vector-store binding. vectorStoreId is editor-only state; it
       // is only included in the create request, never the update
       // request, because the binding is immutable after creation.
@@ -902,11 +902,6 @@ const loadKBData = async () => {
       // response.
       vectorStoreId: '',
       vectorStoreInfo: {
-        // Question bank auto-processing config
-        questionBankConfig: {
-          knowledgePointKbId: (kb as any).question_bank_config?.knowledge_point_knowledge_base_id || "" as string,
-          syllabusKbId: (kb as any).question_bank_config?.syllabus_knowledge_base_id || "" as string,
-        },
         source: kb.vector_store_source,
         name: kb.vector_store_name,
         engineType: kb.vector_store_engine_type,

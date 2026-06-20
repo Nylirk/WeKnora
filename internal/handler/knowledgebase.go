@@ -790,9 +790,10 @@ func (h *KnowledgeBaseHandler) TogglePinKnowledgeBase(c *gin.Context) {
 
 // UpdateKnowledgeBaseRequest defines the request body structure for updating a knowledge base
 type UpdateKnowledgeBaseRequest struct {
-	Name        string                     `json:"name"        binding:"required"`
-	Description string                     `json:"description"`
-	Config      *types.KnowledgeBaseConfig `json:"config"`
+	Name               string                     `json:"name"        binding:"required"`
+	Description        string                     `json:"description"`
+	Config             *types.KnowledgeBaseConfig `json:"config"`
+	QuestionBankConfig *types.QuestionBankConfig  `json:"question_bank_config"`
 }
 
 // UpdateKnowledgeBase godoc
@@ -837,7 +838,7 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		secutils.SanitizeForLog(id), secutils.SanitizeForLog(req.Name))
 
 	// Update the knowledge base
-	kb, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config)
+	kb, err := h.service.UpdateKnowledgeBase(ctx, id, req.Name, req.Description, req.Config, req.QuestionBankConfig)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(apperrors.NewInternalServerError(err.Error()))

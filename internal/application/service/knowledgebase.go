@@ -425,6 +425,7 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	name string,
 	description string,
 	config *types.KnowledgeBaseConfig,
+	questionBankConfig *types.QuestionBankConfig,
 ) (*types.KnowledgeBase, error) {
 	if id == "" {
 		logger.Error(ctx, "Knowledge base ID is empty")
@@ -472,6 +473,12 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 				kb.ExtractConfig = &types.ExtractConfig{Enabled: true}
 			}
 		}
+	}
+	// Update question bank auto-processing config when provided.
+	// Only applies to question_bank type KBs; EnsureDefaults() clears
+	// it for other types.
+	if questionBankConfig != nil {
+		kb.QuestionBankConfig = questionBankConfig
 	}
 	kb.UpdatedAt = time.Now()
 	kb.EnsureDefaults()

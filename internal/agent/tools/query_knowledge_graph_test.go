@@ -51,6 +51,7 @@ func (s *stubKnowledgeBaseService) UpdateKnowledgeBase(
 	string,
 	string,
 	*types.KnowledgeBaseConfig,
+	*types.QuestionBankConfig,
 ) (*types.KnowledgeBase, error) {
 	return nil, nil
 }
