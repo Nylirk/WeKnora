@@ -73,51 +73,6 @@
                         <p class="form-tip">{{ formData.type === 'question_bank' ? '用于管理试题、答案、解析、知识点和评测集导出，适合试卷、练习题、考试题库。' : $t('knowledgeEditor.basic.typeDescription') }}</p>
                       </div>
 
-                      <!-- 题库自动处理配置（仅题库型） -->
-                      <div v-if="isQuestionBank" class="form-item">
-                        <div class="section-header" style="margin-bottom: 12px">
-                          <h3 class="section-title" style="font-size: 14px">题库自动处理配置</h3>
-                        </div>
-                        <div class="form-item">
-                          <label class="form-label">知识点知识库</label>
-                          <t-select
-                            v-model="formData.questionBankConfig.knowledgePointKbId"
-                            clearable
-                            placeholder="选择知识点知识库（可选）"
-                            :loading="loadingKbList"
-                            filterable
-                          >
-                            <t-option v-for="kb in availableKbs" :key="kb.id" :value="kb.id" :label="kb.name" />
-                          </t-select>
-                          <p v-if="!formData.questionBankConfig.knowledgePointKbId" class="form-tip kb-hint">
-                            未选择知识点知识库，导入题目后不会启用自动知识点关联。
-                          </p>
-                        </div>
-                        <div class="form-item">
-                          <label class="form-label">考纲</label>
-                          <t-select
-                            v-model="formData.questionBankConfig.syllabusKbId"
-                            clearable
-                            placeholder="选择考纲（可选）"
-                            :loading="loadingKbList"
-                            filterable
-                          >
-                            <t-option v-for="kb in availableKbs" :key="kb.id" :value="kb.id" :label="kb.name" />
-                          </t-select>
-                          <p v-if="!formData.questionBankConfig.syllabusKbId" class="form-tip kb-hint">
-                            未选择考纲，导入题目后不会启用自动考纲筛选。
-                          </p>
-                        </div>
-                        <t-alert
-                          v-if="!formData.questionBankConfig.knowledgePointKbId && !formData.questionBankConfig.syllabusKbId"
-                          theme="info"
-                          :close-btn="false"
-                          style="margin-top: 8px"
-                        >
-                          题目仍可导入，但只会创建草稿题目，不启用自动知识点关联和考纲筛选。
-                        </t-alert>
-                      </div>
-
                       <!-- 索引策略 (紧跟类型选择) -->
                       <div v-if="showDocumentSections" class="form-item">
                         <label class="form-label required">{{ $t('knowledgeEditor.indexing.title') }}</label>
@@ -197,6 +152,43 @@
                           :maxlength="200"
                           :autosize="{ minRows: 3, maxRows: 6 }"
                         />
+                      </div>
+
+                      <!-- 题库自动处理配置（仅题库型，放在名称和描述之后） -->
+                      <div v-if="isQuestionBank" class="form-item">
+                        <div class="section-header" style="margin-bottom: 12px">
+                          <h3 class="section-title" style="font-size: 14px">题库自动处理配置</h3>
+                        </div>
+                        <div class="form-item">
+                          <label class="form-label">知识点知识库</label>
+                          <t-select
+                            v-model="formData.questionBankConfig.knowledgePointKbId"
+                            clearable
+                            placeholder="选择知识点知识库（可选）"
+                            :loading="loadingKbList"
+                            filterable
+                          >
+                            <t-option v-for="kb in availableKbs" :key="kb.id" :value="kb.id" :label="kb.name" />
+                          </t-select>
+                          <p v-if="!formData.questionBankConfig.knowledgePointKbId" class="form-tip kb-hint">
+                            未选择知识点知识库，导入题目后不会启用自动知识点关联。
+                          </p>
+                        </div>
+                        <div class="form-item">
+                          <label class="form-label">考纲</label>
+                          <t-select
+                            v-model="formData.questionBankConfig.syllabusKbId"
+                            clearable
+                            placeholder="选择考纲（可选）"
+                            :loading="loadingKbList"
+                            filterable
+                          >
+                            <t-option v-for="kb in availableKbs" :key="kb.id" :value="kb.id" :label="kb.name" />
+                          </t-select>
+                          <p v-if="!formData.questionBankConfig.syllabusKbId" class="form-tip kb-hint">
+                            未选择考纲，导入题目后不会启用自动考纲筛选。
+                          </p>
+                        </div>
                       </div>
 
                       <!-- Wiki 合成模型移至模型配置页 -->
