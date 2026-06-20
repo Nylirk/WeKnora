@@ -5192,6 +5192,9 @@ export default {
       requiresRagKb: "（需要关联启用向量/关键词索引的知识库）",
       requiresWikiKb: "（需要关联启用 Wiki 能力的知识库）",
       needsQuestionBank: "（需要关联题库类型知识库）",
+      questionBankSearchDesc: "在题库知识库中按关键词或语义检索题目，匹配题干、答案、解析、知识点和标签",
+      similarQuestionSearch: "相似题搜索",
+      similarQuestionSearchDesc: "根据题目 ID 查找语义相似题，用于重复题检测、变式题推荐和组卷前去重",
       // Wiki 读取类
       wikiSearch: "搜索 Wiki",
       wikiSearchDesc: "在 Wiki 知识库中按关键词/语义搜索页面",
@@ -5220,6 +5223,7 @@ export default {
       webFetch: "网页抓取",
       // 分组
       groupBase: "基础",
+      groupQuestionBank: "题库工具",
       groupRag: "知识库检索（RAG）",
       groupWikiRead: "Wiki 读取",
       groupWikiEdit: "Wiki 编辑",

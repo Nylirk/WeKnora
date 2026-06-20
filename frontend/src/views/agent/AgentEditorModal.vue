@@ -178,8 +178,14 @@
                         <div v-show="activePromptAnchor === 'system'"
                           class="setting-row setting-row-vertical prompts-panel__pane">
                       <div class="setting-info">
-                        <label>{{ $t('agent.editor.systemPrompt') }} <span v-if="!isBuiltinAgent"
-                            class="required">*</span></label>
+                        <div class="setting-info-header">
+                          <label>{{ $t('agent.editor.systemPrompt') }} <span v-if="!isBuiltinAgent"
+                              class="required">*</span></label>
+                          <PromptTemplateSelector :type="isAgentMode ? 'agentSystemPrompt' : 'systemPrompt'"
+                            position="inline" :hasKnowledgeBase="hasKnowledgeBase"
+                            @select="handleSystemPromptTemplateSelect"
+                            @reset-default="isAgentMode ? handleAgentSystemPromptResetDefault : handleSystemPromptTemplateSelect" />
+                        </div>
                         <p class="desc">{{ $t('agentEditor.desc.systemPrompt') }}{{ isBuiltinAgent ?
                           $t('agentEditor.desc.leaveEmptyDefault') : '' }}</p>
                         <div class="placeholder-tags">
@@ -195,22 +201,16 @@
                       </div>
                       <div class="setting-control setting-control-full" style="position: relative;">
                         <!-- Agent模式：统一提示词（使用 {{web_search_status}} 占位符动态控制行为） -->
-                        <div v-if="isAgentMode" class="textarea-with-template">
+                        <div v-if="isAgentMode" class="system-prompt-textarea-wrapper">
                           <t-textarea ref="promptTextareaRef" v-model="formData.config.system_prompt"
-                            :placeholder="systemPromptPlaceholder" :autosize="{ minRows: 10, maxRows: 25 }"
+                            :placeholder="systemPromptPlaceholder" :autosize="{ minRows: 10 }"
                             @input="handlePromptInput" class="system-prompt-textarea" />
-                          <PromptTemplateSelector type="agentSystemPrompt" position="corner"
-                            :hasKnowledgeBase="hasKnowledgeBase" @select="handleSystemPromptTemplateSelect"
-                            @reset-default="handleAgentSystemPromptResetDefault" />
                         </div>
                         <!-- 普通模式：单个提示词 -->
-                        <div v-else class="textarea-with-template">
+                        <div v-else class="system-prompt-textarea-wrapper">
                           <t-textarea ref="promptTextareaRef" v-model="formData.config.system_prompt"
-                            :placeholder="systemPromptPlaceholder" :autosize="{ minRows: 10, maxRows: 25 }"
+                            :placeholder="systemPromptPlaceholder" :autosize="{ minRows: 10 }"
                             @input="handlePromptInput" class="system-prompt-textarea" />
-                          <PromptTemplateSelector type="systemPrompt" position="corner"
-                            :hasKnowledgeBase="hasKnowledgeBase" @select="handleSystemPromptTemplateSelect"
-                            @reset-default="handleSystemPromptTemplateSelect" />
                         </div>
                         <!-- 占位符提示下拉框 -->
                         <Teleport to="body">
@@ -1576,13 +1576,15 @@ const allTools = computed(() => [
   // 数据分析
   { value: 'data_analysis', label: t('agentEditor.tools.dataAnalysis'), description: t('agentEditor.tools.dataAnalysisDesc'), group: 'data' },
   { value: 'data_schema', label: t('agentEditor.tools.dataSchema'), description: t('agentEditor.tools.dataSchemaDesc'), group: 'data' },
-  // 题库搜索
-  { value: 'question_bank_search', label: t('agentEditor.tools.questionBankSearch'), description: t('agentEditor.tools.questionBankSearchDesc'), group: 'rag' },
+  // 题库工具
+  { value: 'question_bank_search', label: t('agentEditor.tools.questionBankSearch'), description: t('agentEditor.tools.questionBankSearchDesc'), group: 'question_bank' },
+  { value: 'similar_question_search', label: t('agentEditor.tools.similarQuestionSearch'), description: t('agentEditor.tools.similarQuestionSearchDesc'), group: 'question_bank' },
 ]);
 
 // 工具分组元信息
 const toolGroups = computed(() => [
   { key: 'base', label: t('agentEditor.tools.groupBase') },
+  { key: 'question_bank', label: t('agentEditor.tools.groupQuestionBank') },
   { key: 'rag', label: t('agentEditor.tools.groupRag') },
   { key: 'wiki_read', label: t('agentEditor.tools.groupWikiRead') },
   { key: 'wiki_edit', label: t('agentEditor.tools.groupWikiEdit') },
@@ -2263,6 +2265,7 @@ const kbSatisfiesPresetFilter = (kb: { capabilities?: KBCapabilities; ragEnabled
     wiki: !!kb.wikiEnabled,
     graph: false,
     faq: kb.type === 'faq',
+    question_bank: kb.type === 'question_bank',
   };
   const has = (name: string): boolean => {
     switch (name) {
@@ -2271,6 +2274,7 @@ const kbSatisfiesPresetFilter = (kb: { capabilities?: KBCapabilities; ragEnabled
       case 'wiki': return !!caps.wiki;
       case 'graph': return !!caps.graph;
       case 'faq': return !!caps.faq;
+      case 'question_bank': return !!caps.question_bank;
       default: return false;
     }
   };
@@ -4198,9 +4202,13 @@ const handleSave = async () => {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
+    width: 100%;
     margin-bottom: 4px;
 
     label {
+      flex: 1;
+      min-width: 0;
       margin-bottom: 0;
     }
   }
@@ -4252,6 +4260,20 @@ const handleSave = async () => {
 
   :deep(.t-input-number) {
     width: 120px;
+  }
+}
+
+.system-prompt-textarea-wrapper {
+  width: 100%;
+  min-width: 0;
+
+  .system-prompt-textarea {
+    width: 100%;
+
+    :deep(textarea) {
+      overflow-y: hidden;
+      resize: none;
+    }
   }
 }
 

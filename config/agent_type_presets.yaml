@@ -16,7 +16,7 @@
 #   any_of:   KB must expose at least ONE of the listed capability names.
 #   all_of:   KB must expose ALL of the listed capability names.
 #   none_of:  KB must expose NONE of the listed capability names.
-# Capability names: vector, keyword, wiki, graph, faq.
+# Capability names: vector, keyword, wiki, graph, faq, question_bank.
 # An empty kb_filter (or kb_filter absent) means "any KB is allowed".
 #
 # NOTE: In the default "tool-driven" mode, the frontend DERIVES the any_of
@@ -137,7 +137,30 @@ agent_type_presets:
     # or completely unindexed) are still excluded since no tool will return
     # anything useful.
 
+    # --------------------------------------------------------------------------
+  # Question Bank QA — search, compare and find similar questions in
+  # question-bank knowledge bases. Uses question_bank_search (keyword /
+  # semantic / hybrid) and similar_question_search.
   # --------------------------------------------------------------------------
+  - id: "question-bank-qa"
+    i18n:
+      default:
+        label: "Question Bank Assistant"
+        description: "Searches, explains, compares and finds similar questions in question-bank knowledge bases."
+      zh-CN:
+        label: "题库助手"
+        description: "用于题库知识库的搜题、讲题、题目对比和相似题查找。"
+    config:
+      system_prompt_id: "question_bank_agent"
+      temperature: 0.3
+      max_iterations: 20
+      allowed_tools:
+        - "question_bank_search"
+        - "similar_question_search"
+      retain_retrieval_history: false
+      kb_selection_mode: "all"
+    # kb_filter derived from allowed_tools: any_of = [question_bank]
+
   # Data Analysis — SQL / statistics over tabular files (CSV / Excel) in the KB.
   # Retrieval capabilities (vector/wiki/…) are largely irrelevant here — the
   # agent drives `data_schema` + `data_analysis` tools against uploaded files,
