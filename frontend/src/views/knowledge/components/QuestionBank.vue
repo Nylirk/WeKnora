@@ -3,9 +3,16 @@
     <aside class="set-sidebar">
       <div class="set-sidebar-header">
         <h3>{{ $t('questionBank.title') }}</h3>
-        <t-button size="small" theme="primary" @click="openCreateSetDialog">
-          <template #icon><t-icon name="add" /></template>
-          {{ $t('questionBank.createSet') }}
+        <t-button
+          v-if="!creatingInlineSet"
+          size="small"
+          variant="text"
+          class="create-set-btn"
+          :aria-label="$t('questionBank.createSet')"
+          :title="$t('questionBank.createSet')"
+          @click="startCreateSet"
+        >
+          <t-icon name="add" />
         </t-button>
       </div>
 
@@ -26,10 +33,37 @@
       </div>
 
       <div class="set-list">
+        <!-- Inline create row -->
+        <div v-if="creatingInlineSet" class="set-list-item creating">
+          <span class="set-index">#</span>
+          <div class="set-edit-input">
+            <t-input
+              ref="newSetNameRef"
+              v-model="newInlineSetName"
+              size="small"
+              :maxlength="40"
+              :placeholder="$t('questionBank.setNamePlaceholder')"
+              @enter="confirmCreateSet"
+              @keydown="(_v: any, ctx: any) => { if (ctx?.e?.key === 'Escape') { ctx.e.stopPropagation(); ctx.e.preventDefault(); cancelCreateSet() } }"
+            />
+          </div>
+          <span class="set-count">--</span>
+          <div class="set-inline-actions">
+            <t-button variant="text" theme="default" size="small" class="set-action-btn confirm"
+              :loading="creatingInlineSetLoading" @click.stop="confirmCreateSet">
+              <t-icon name="check" size="16px" />
+            </t-button>
+            <t-button variant="text" theme="default" size="small" class="set-action-btn cancel"
+              @click.stop="cancelCreateSet">
+              <t-icon name="close" size="16px" />
+            </t-button>
+          </div>
+        </div>
+
         <div v-if="loadingSets" class="set-list-loading">
           <t-loading size="small" />
         </div>
-        <div v-else-if="!filteredQuestionSets.length" class="set-list-empty">
+        <div v-else-if="!creatingInlineSet && !filteredQuestionSets.length" class="set-list-empty">
           {{ setSearchKeyword ? $t('questionBank.noMatchingSet') : $t('questionBank.noSet') }}
         </div>
         <template v-else>
@@ -86,23 +120,6 @@
     </section>
 
     <t-dialog
-      v-model:visible="createSetVisible"
-      :header="$t('questionBank.createSet')"
-      :confirm-btn="{ content: $t('common.confirm'), loading: creatingSet }"
-      :cancel-btn="{ content: $t('common.cancel'), disabled: creatingSet }"
-      @confirm="createSet"
-    >
-      <t-form>
-        <t-form-item :label="$t('questionBank.setName')">
-          <t-input v-model="newSetName" :placeholder="$t('questionBank.setNamePlaceholder')" />
-        </t-form-item>
-        <t-form-item :label="$t('questionBank.description')">
-          <t-textarea v-model="newSetDescription" :placeholder="$t('questionBank.descPlaceholder')" />
-        </t-form-item>
-      </t-form>
-    </t-dialog>
-
-    <t-dialog
       v-model:visible="renameVisible"
       :header="$t('questionBank.renameSetTitle')"
       :confirm-btn="{ content: $t('common.confirm'), loading: renamingSet }"
@@ -119,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 import {
   createQuestionSet as apiCreateSet,
@@ -128,7 +145,10 @@ import {
   updateQuestionSet as apiUpdateSet,
   type QuestionSet,
 } from '@/api/question'
+import type { ComponentPublicInstance } from 'vue'
 import QuestionSetDetail from './QuestionSetDetail.vue'
+
+type InputInstance = ComponentPublicInstance<{ focus: () => void; select: () => void }>;
 
 const props = defineProps<{
   knowledgeBaseId: string
@@ -139,15 +159,17 @@ const questionSets = ref<QuestionSet[]>([])
 const loadingSets = ref(false)
 const selectedSetId = ref('')
 const setSearchKeyword = ref('')
-const createSetVisible = ref(false)
-const creatingSet = ref(false)
-const newSetName = ref('')
-const newSetDescription = ref('')
 const renameVisible = ref(false)
 const renamingSet = ref(false)
 const renameTarget = ref<QuestionSet | null>(null)
 const renameSetName = ref('')
 let loadRequestId = 0
+
+// Inline create state
+const creatingInlineSet = ref(false)
+const creatingInlineSetLoading = ref(false)
+const newInlineSetName = ref('')
+const newSetNameRef = ref<InputInstance | null>(null)
 
 const filteredQuestionSets = computed(() => {
   const keyword = setSearchKeyword.value.trim().toLowerCase()
@@ -178,26 +200,35 @@ async function loadSets() {
   }
 }
 
-function openCreateSetDialog() {
-  newSetName.value = ''
-  newSetDescription.value = ''
-  createSetVisible.value = true
+// Inline create functions
+function startCreateSet() {
+  if (!props.enabled || !props.knowledgeBaseId) return
+  if (creatingInlineSet.value) return
+  creatingInlineSet.value = true
+  newInlineSetName.value = ''
+  nextTick(() => {
+    newSetNameRef.value?.focus?.()
+    newSetNameRef.value?.select?.()
+  })
 }
 
-async function createSet() {
-  if (!props.enabled || !props.knowledgeBaseId || creatingSet.value) return
-  if (!newSetName.value.trim()) {
+function cancelCreateSet() {
+  creatingInlineSet.value = false
+  newInlineSetName.value = ''
+}
+
+async function confirmCreateSet() {
+  if (!props.enabled || !props.knowledgeBaseId || creatingInlineSetLoading.value) return
+  const name = newInlineSetName.value.trim()
+  if (!name) {
     MessagePlugin.warning('请输入题集名称')
     return
   }
-  creatingSet.value = true
+  creatingInlineSetLoading.value = true
   try {
-    const result: any = await apiCreateSet(props.knowledgeBaseId, {
-      name: newSetName.value.trim(),
-      description: newSetDescription.value.trim(),
-    })
+    const result: any = await apiCreateSet(props.knowledgeBaseId, { name })
     const created: QuestionSet = result?.data ?? result
-    createSetVisible.value = false
+    cancelCreateSet()
     setSearchKeyword.value = ''
     await loadSets()
     if (created?.id) {
@@ -208,7 +239,7 @@ async function createSet() {
   } catch (e: any) {
     MessagePlugin.error(e?.message || '创建题集失败')
   } finally {
-    creatingSet.value = false
+    creatingInlineSetLoading.value = false
   }
 }
 
@@ -303,6 +334,8 @@ watch(
     questionSets.value = []
     setSearchKeyword.value = ''
     loadingSets.value = false
+    creatingInlineSet.value = false
+    newInlineSetName.value = ''
     if (!id || !enabled) return
     await loadSets()
   },
@@ -315,6 +348,8 @@ watch(
 .set-sidebar { width: 280px; flex-shrink: 0; padding: 16px 16px 0 0; border-right: 1px solid var(--td-component-stroke); display: flex; flex-direction: column; gap: 12px; }
 .set-sidebar-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .set-sidebar-header h3 { margin: 0; font-size: 16px; }
+.create-set-btn { width: 24px; height: 24px; padding: 0; color: var(--td-text-color-secondary); }
+.create-set-btn:hover { color: var(--td-brand-color); background: var(--td-bg-color-container-hover); }
 .set-list-header,
 .set-list-item { display: grid; grid-template-columns: 24px minmax(0, 1fr) 58px 32px; align-items: center; column-gap: 6px; }
 .set-list-header { padding: 0 8px; color: var(--td-text-color-placeholder); font-size: 12px; }
@@ -324,6 +359,7 @@ watch(
 .set-list-item { min-height: 40px; padding: 0 8px; border-radius: 6px; color: var(--td-text-color-primary); cursor: pointer; }
 .set-list-item:hover { background: var(--td-bg-color-container-hover); }
 .set-list-item.active { background: var(--td-brand-color-light); color: var(--td-brand-color); }
+.set-list-item.creating { grid-template-columns: 24px minmax(0, 1fr) 58px 32px; cursor: default; background: transparent; }
 .set-index,
 .set-count { color: var(--td-text-color-secondary); font-size: 12px; }
 .set-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
@@ -334,6 +370,11 @@ watch(
 .set-menu-item { width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 0; border-radius: 4px; color: var(--td-text-color-primary); background: transparent; cursor: pointer; text-align: left; }
 .set-menu-item:hover { background: var(--td-bg-color-container-hover); }
 .set-menu-item.danger { color: var(--td-error-color); }
+.set-edit-input { flex: 1; min-width: 0; }
+.set-inline-actions { display: flex; gap: 4px; margin-left: auto; }
+.set-action-btn { width: 24px; height: 24px; padding: 0; }
+.set-action-btn.confirm { color: var(--td-success-color); }
+.set-action-btn.cancel { color: var(--td-text-color-secondary); }
 .question-content { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 16px 0 0 20px; }
 .question-bank-empty { height: 100%; min-height: 240px; display: flex; align-items: center; justify-content: center; color: var(--td-text-color-placeholder); }
 </style>
