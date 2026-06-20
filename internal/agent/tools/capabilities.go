@@ -21,10 +21,10 @@ import (
 type KBCapability string
 
 const (
-	CapVector  KBCapability = "vector"
-	CapKeyword KBCapability = "keyword"
-	CapWiki    KBCapability = "wiki"
-	CapGraph   KBCapability = "graph"
+	CapVector       KBCapability = "vector"
+	CapKeyword      KBCapability = "keyword"
+	CapWiki         KBCapability = "wiki"
+	CapGraph        KBCapability = "graph"
 	CapFAQ          KBCapability = "faq"
 	CapQuestionBank KBCapability = "question_bank"
 )
@@ -81,7 +81,8 @@ var ToolCapabilityRequirements = map[string]ToolRequirement{
 	"data_schema":   {AnyOf: []KBCapability{CapVector, CapKeyword}, ConsumesFiles: true},
 
 	// ---- Question bank (searches structured questions in question_bank KBs) ----
-	"question_bank_search": {AnyOf: []KBCapability{CapQuestionBank}},
+	"question_bank_search":    {AnyOf: []KBCapability{CapQuestionBank}},
+	"similar_question_search": {AnyOf: []KBCapability{CapQuestionBank}},
 }
 
 func hasCap(caps types.KBCapabilities, c KBCapability) bool {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"html"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/application/service/retriever"
@@ -17,16 +16,15 @@ import (
 const (
 	questionBankSearchModeKeyword  = "keyword"
 	questionBankSearchModeSemantic = "semantic"
+	questionBankSearchModeHybrid   = "hybrid"
 
-	// semanticOverfetchFactor multiplies the user-requested limit to get the
-	// vector topK so that SQL-side filtering still leaves enough candidates.
 	semanticOverfetchFactor = 5
+	semanticMinTopK         = 100
+	semanticMaxTopK         = 300
 
-	// semanticMinTopK is the floor for the vector retrieval topK.
-	semanticMinTopK = 100
-
-	// semanticMaxTopK is the ceiling for the vector retrieval topK.
-	semanticMaxTopK = 300
+	keywordOverfetchFactor = 5
+	keywordCandidateMin    = 100
+	keywordCandidateMax    = 300
 )
 
 // questionBankSearchTool is the base definition (name, description, schema).
@@ -38,9 +36,10 @@ Accepts an optional keyword query and searches across stem_text, answer_text,
 analysis_text, question_body, answer_body, knowledge_points, and tags fields.
 When the query is empty or whitespace, lists recent questions in scope.
 
-Supports two modes:
+Supports three modes:
 - keyword (default): SQL LIKE search across question fields
 - semantic: vector/embedding-based semantic search using question vector indexes
+- hybrid: RRF fusion of keyword and semantic results
 
 ## When to use
 - Use when the user asks about questions, exam problems, or quiz content in a
@@ -52,7 +51,7 @@ Supports two modes:
 - question_id, question_set_id, question_set_name, knowledge_base_id
 - question_type, stem_text, question_body, answer_text, answer_body
 - analysis_text, difficulty, knowledge_points, tags, status
-- mode, match_type, score (semantic mode only)`,
+- mode, match_type, score, rank`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -62,8 +61,8 @@ Supports two modes:
     },
     "mode": {
       "type": "string",
-      "enum": ["keyword", "semantic"],
-      "description": "Search mode: keyword (SQL LIKE, default) or semantic (vector embedding). Defaults to keyword for backward compatibility.",
+      "enum": ["keyword", "semantic", "hybrid"],
+      "description": "Search mode: keyword (SQL LIKE, default), semantic (vector embedding), or hybrid (RRF fusion of keyword + semantic). Defaults to keyword for backward compatibility.",
       "default": "keyword"
     },
     "limit": {
@@ -124,23 +123,27 @@ type QuestionBankSearchInput struct {
 
 // QuestionBankSearchResult represents a single question result returned by the tool.
 type QuestionBankSearchResult struct {
-	ID              string     `json:"question_id"       gorm:"column:id"`
-	QuestionSetID   string     `json:"question_set_id"   gorm:"column:question_set_id"`
-	QuestionSetName string     `json:"question_set_name" gorm:"column:question_set_name"`
-	KnowledgeBaseID string     `json:"knowledge_base_id" gorm:"column:knowledge_base_id"`
-	QuestionType    string     `json:"question_type"     gorm:"column:question_type"`
-	StemText        string     `json:"stem_text"         gorm:"column:stem_text"`
-	QuestionBody    types.JSON `json:"question_body"     gorm:"column:question_body"`
-	AnswerText      string     `json:"answer_text"       gorm:"column:answer_text"`
-	AnswerBody      types.JSON `json:"answer_body"       gorm:"column:answer_body"`
-	AnalysisText    string     `json:"analysis_text"     gorm:"column:analysis_text"`
-	Difficulty      string     `json:"difficulty"        gorm:"column:difficulty"`
-	KnowledgePoints types.JSON `json:"knowledge_points"  gorm:"column:knowledge_points"`
-	Tags            types.JSON `json:"tags"              gorm:"column:tags"`
-	Status          string     `json:"status"            gorm:"column:status"`
-	MatchType       string     `json:"match_type,omitempty" gorm:"-"`
-	Score           float64    `json:"score,omitempty"       gorm:"-"`
-	Rank            int        `json:"rank,omitempty"        gorm:"-"`
+	ID               string     `json:"question_id"       gorm:"column:id"`
+	QuestionSetID    string     `json:"question_set_id"   gorm:"column:question_set_id"`
+	QuestionSetName  string     `json:"question_set_name" gorm:"column:question_set_name"`
+	KnowledgeBaseID  string     `json:"knowledge_base_id" gorm:"column:knowledge_base_id"`
+	QuestionType     string     `json:"question_type"     gorm:"column:question_type"`
+	StemText         string     `json:"stem_text"         gorm:"column:stem_text"`
+	QuestionBody     types.JSON `json:"question_body"     gorm:"column:question_body"`
+	AnswerText       string     `json:"answer_text"       gorm:"column:answer_text"`
+	AnswerBody       types.JSON `json:"answer_body"       gorm:"column:answer_body"`
+	AnalysisText     string     `json:"analysis_text"     gorm:"column:analysis_text"`
+	Difficulty       string     `json:"difficulty"        gorm:"column:difficulty"`
+	KnowledgePoints  types.JSON `json:"knowledge_points"  gorm:"column:knowledge_points"`
+	Tags             types.JSON `json:"tags"              gorm:"column:tags"`
+	Status           string     `json:"status"            gorm:"column:status"`
+	MatchType        string     `json:"match_type,omitempty"       gorm:"-"`
+	Score            float64    `json:"score,omitempty"             gorm:"-"`
+	Rank             int        `json:"rank,omitempty"              gorm:"-"`
+	KeywordRank      int        `json:"keyword_rank,omitempty"      gorm:"-"`
+	SemanticRank     int        `json:"semantic_rank,omitempty"     gorm:"-"`
+	RRFScore         float64    `json:"rrf_score,omitempty"         gorm:"-"`
+	SourceQuestionID string     `json:"source_question_id,omitempty" gorm:"-"`
 }
 
 // QuestionBankSearchTool searches questions in question bank KBs.
@@ -189,10 +192,10 @@ func (t *QuestionBankSearchTool) Execute(ctx context.Context, args json.RawMessa
 	if mode == "" {
 		mode = questionBankSearchModeKeyword
 	}
-	if mode != questionBankSearchModeKeyword && mode != questionBankSearchModeSemantic {
+	if mode != questionBankSearchModeKeyword && mode != questionBankSearchModeSemantic && mode != questionBankSearchModeHybrid {
 		return &types.ToolResult{
 			Success: false,
-			Error:   fmt.Sprintf("Invalid mode %q: must be keyword or semantic", mode),
+			Error:   fmt.Sprintf("Invalid mode %q: must be keyword, semantic, or hybrid", mode),
 		}, fmt.Errorf("invalid mode %q", mode)
 	}
 
@@ -204,7 +207,6 @@ func (t *QuestionBankSearchTool) Execute(ctx context.Context, args json.RawMessa
 		limit = 50
 	}
 
-	// Validate status if provided: only allow known statuses.
 	validStatuses := map[string]bool{"": true, "draft": true, "reviewed": true, "rejected": true}
 	if !validStatuses[input.Status] {
 		return &types.ToolResult{
@@ -213,7 +215,6 @@ func (t *QuestionBankSearchTool) Execute(ctx context.Context, args json.RawMessa
 		}, fmt.Errorf("invalid status %q", input.Status)
 	}
 
-	// Build empty-result Data shape used on all success paths.
 	emptyData := func() map[string]interface{} {
 		return map[string]interface{}{
 			"results":      []QuestionBankSearchResult{},
@@ -225,13 +226,18 @@ func (t *QuestionBankSearchTool) Execute(ctx context.Context, args json.RawMessa
 		}
 	}
 
-	if mode == questionBankSearchModeSemantic {
+	switch mode {
+	case questionBankSearchModeSemantic:
 		return t.executeSemanticSearch(ctx, input, query, limit, emptyData)
+	case questionBankSearchModeHybrid:
+		return t.executeHybridSearch(ctx, input, query, limit, emptyData)
+	default:
+		return t.executeKeywordSearch(ctx, input, query, limit, emptyData)
 	}
-	return t.executeKeywordSearch(ctx, input, query, limit, emptyData)
 }
 
-// executeKeywordSearch performs the existing SQL LIKE keyword search.
+// ---- keyword search ----
+
 func (t *QuestionBankSearchTool) executeKeywordSearch(
 	ctx context.Context,
 	input QuestionBankSearchInput,
@@ -261,13 +267,11 @@ func (t *QuestionBankSearchTool) executeKeywordSearch(
 	}
 	kbFilter := "(" + strings.Join(orClauses, " OR ") + ")"
 
-	// Build search clause with dialect-appropriate syntax.
 	dialect := t.db.Dialector.Name()
 	var searchClause string
 	var searchArgs []interface{}
 
 	if query != "" {
-		// Escape LIKE wildcards so user query is treated literally.
 		escapedQuery := strings.ReplaceAll(query, "\\", "\\\\")
 		escapedQuery = strings.ReplaceAll(escapedQuery, "%", "\\%")
 		escapedQuery = strings.ReplaceAll(escapedQuery, "_", "\\_")
@@ -285,7 +289,6 @@ func (t *QuestionBankSearchTool) executeKeywordSearch(
 				` OR questions.tags::text ILIKE ? ESCAPE '\'` +
 				`)`
 		default:
-			// SQLite (including test environments); project does not use MySQL.
 			searchClause = ` AND (` +
 				`LOWER(questions.stem_text) LIKE LOWER(?) ESCAPE '\'` +
 				` OR LOWER(questions.answer_text) LIKE LOWER(?) ESCAPE '\'` +
@@ -299,7 +302,6 @@ func (t *QuestionBankSearchTool) executeKeywordSearch(
 		searchArgs = []interface{}{pattern, pattern, pattern, pattern, pattern, pattern, pattern}
 	}
 
-	// Status filter — only apply when explicitly specified.
 	var statusFilter string
 	var statusArgs []interface{}
 	if input.Status != "" {
@@ -307,10 +309,8 @@ func (t *QuestionBankSearchTool) executeKeywordSearch(
 		statusArgs = []interface{}{input.Status}
 	}
 
-	// Structured filter clauses for keyword mode.
 	structFilter, structArgs := buildQuestionStructFilter(input, dialect)
 
-	// Build and execute the query.
 	baseSQL := `SELECT
 		questions.id,
 		questions.question_set_id,
@@ -371,7 +371,8 @@ func (t *QuestionBankSearchTool) executeKeywordSearch(
 	}, nil
 }
 
-// executeSemanticSearch performs vector-based semantic search then SQL backfill.
+// ---- semantic search ----
+
 func (t *QuestionBankSearchTool) executeSemanticSearch(
 	ctx context.Context,
 	input QuestionBankSearchInput,
@@ -386,8 +387,6 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		}, fmt.Errorf("semantic search requires a non-empty query")
 	}
 
-	// Guard against nil dependencies so semantic mode returns a clear
-	// error instead of panicking. Keyword mode is unaffected.
 	if t.knowledgeBaseService == nil || t.modelService == nil ||
 		t.engineRegistry == nil || t.ownership == nil {
 		return &types.ToolResult{
@@ -396,14 +395,52 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		}, fmt.Errorf("semantic question search requires knowledgeBaseService, modelService, engineRegistry, and ownership")
 	}
 
-	// 1. Collect question_bank KBs in scope.
+	candidates, err := t.runSemanticCandidate(ctx, input, query, limit)
+	if err != nil {
+		return &types.ToolResult{
+			Success: false,
+			Error:   fmt.Sprintf("Semantic search failed: %v", err),
+		}, err
+	}
+
+	results := candidatesToResults(candidates)
+	if results == nil {
+		results = []QuestionBankSearchResult{}
+	}
+	for i := range results {
+		results[i].Rank = i + 1
+	}
+
+	return &types.ToolResult{
+		Success: true,
+		Output:  formatQuestionBankSearchResults(results, query, limit, questionBankSearchModeSemantic),
+		Data: map[string]interface{}{
+			"results":      results,
+			"result_count": len(results),
+			"display_type": "question_bank_results",
+			"query":        query,
+			"limit":        limit,
+			"mode":         questionBankSearchModeSemantic,
+		},
+	}, nil
+}
+
+// runSemanticCandidate returns raw candidates (unpaged, unfiltered by limit —
+// the caller applies limit and final formatting). It is shared by semantic
+// and hybrid modes.
+func (t *QuestionBankSearchTool) runSemanticCandidate(
+	ctx context.Context,
+	input QuestionBankSearchInput,
+	query string,
+	limit int,
+) ([]questionSearchCandidate, error) {
 	type kbTarget struct {
 		kb       *types.KnowledgeBase
 		tenantID uint64
 	}
-	var kbTargets []kbTarget
 	kbIDs := t.searchTargets.GetAllKnowledgeBaseIDs()
 	kbTenantMap := t.searchTargets.GetKBTenantMap()
+	var kbTargets []kbTarget
 	for _, kbID := range kbIDs {
 		tenantID := kbTenantMap[kbID]
 		if kbID == "" || tenantID == 0 {
@@ -420,15 +457,9 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		kbTargets = append(kbTargets, kbTarget{kb: kb, tenantID: tenantID})
 	}
 	if len(kbTargets) == 0 {
-		return &types.ToolResult{
-			Success: true,
-			Output:  "No valid question bank knowledge bases in scope for semantic search.",
-			Data:    emptyData(),
-		}, nil
+		return nil, nil
 	}
 
-	// 2. For each KB, resolve embedding + engine via retriever factory,
-	//    generate embedding, retrieve.
 	type kbRetrieval struct {
 		kbID             string
 		tenantID         uint64
@@ -449,13 +480,8 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 			logger.Warnf(ctx, "Semantic question search: cannot resolve engine for KB %s: %v", kb.ID, err)
 			continue
 		}
-		if engine == nil {
+		if engine == nil || !compositeSupportsVector(engine) {
 			logger.Warnf(ctx, "Semantic question search: KB %s has no vector retriever available", kb.ID)
-			continue
-		}
-		// Check that the engine supports vector retrieval.
-		if !compositeSupportsVector(engine) {
-			logger.Warnf(ctx, "Semantic question search: KB %s engine does not support vector retrieval", kb.ID)
 			continue
 		}
 		retrievals = append(retrievals, kbRetrieval{
@@ -466,13 +492,9 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		})
 	}
 	if len(retrievals) == 0 {
-		return &types.ToolResult{
-			Success: false,
-			Error:   "Semantic question search requires a question bank knowledge base with a vector retriever and embedding model configured.",
-		}, fmt.Errorf("semantic question search requires vector retriever and embedding model")
+		return nil, fmt.Errorf("semantic question search requires vector retriever and embedding model")
 	}
 
-	// 3. Compute topK with overfetch.
 	topK := limit * semanticOverfetchFactor
 	if topK < semanticMinTopK {
 		topK = semanticMinTopK
@@ -481,36 +503,30 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		topK = semanticMaxTopK
 	}
 
-	// 4. For each KB retrieval, generate embedding (cached by model ID)
-	//    and query its own engine. Each KB uses its own resolved engine so
-	//    that KBs with different vector stores are queried independently.
 	embeddingCache := make(map[string][]float32)
-
 	var orderedIDs []string
 	idToScore := make(map[string]float64)
 	idToKB := make(map[string]string)
 	seen := make(map[string]bool)
 
 	for _, r := range retrievals {
-		// Resolve or cache the query embedding.
-		embedding, ok := embeddingCache[r.embeddingModelID]
+		emb, ok := embeddingCache[r.embeddingModelID]
 		if !ok {
 			embedder, err := t.modelService.GetEmbeddingModel(ctx, r.embeddingModelID)
 			if err != nil {
 				logger.Warnf(ctx, "Semantic question search: cannot get embedding model %s: %v", r.embeddingModelID, err)
 				continue
 			}
-			embedding, err = embedder.Embed(ctx, query)
+			emb, err = embedder.Embed(ctx, query)
 			if err != nil {
 				logger.Warnf(ctx, "Semantic question search: embedding failed for model %s: %v", r.embeddingModelID, err)
 				continue
 			}
-			embeddingCache[r.embeddingModelID] = embedding
+			embeddingCache[r.embeddingModelID] = emb
 		}
-
 		params := types.RetrieveParams{
 			Query:            query,
-			Embedding:        embedding,
+			Embedding:        emb,
 			KnowledgeBaseIDs: []string{r.kbID},
 			TopK:             topK,
 			RetrieverType:    types.VectorRetrieverType,
@@ -544,15 +560,10 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 	}
 
 	if len(orderedIDs) == 0 {
-		return &types.ToolResult{
-			Success: true,
-			Output:  formatQuestionBankSearchResults(nil, query, limit, questionBankSearchModeSemantic),
-			Data:    emptyData(),
-		}, nil
+		return nil, nil
 	}
 
-	// 5. SQL backfill: fetch questions for the retrieved IDs, scoped to the correct tenants.
-	// Group IDs by tenant for proper isolation.
+	// SQL backfill.
 	tenantIDToIDs := make(map[uint64][]string)
 	for _, id := range orderedIDs {
 		kbID := idToKB[id]
@@ -571,7 +582,7 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		if len(ids) == 0 {
 			continue
 		}
-		questions, err := t.listQuestionsByIDs(ctx, tenantID, ids)
+		questions, err := listQuestionsByIDs(ctx, t.db, tenantID, ids)
 		if err != nil {
 			logger.Warnf(ctx, "Semantic question search: backfill query failed for tenant %d: %v", tenantID, err)
 			continue
@@ -579,7 +590,6 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		allQuestions = append(allQuestions, questions...)
 	}
 
-	// Build lookup map: question_id → *Question.
 	questionMap := make(map[string]*types.Question)
 	for _, q := range allQuestions {
 		if q != nil && q.DeletedAt.Time.IsZero() {
@@ -587,19 +597,13 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		}
 	}
 
-	// 6. Apply structured filters and build results in vector rank order.
-	//    Results preserve the original vector retrieval order — no cross-engine
-	//    score-based reordering.
 	excludeSet := make(map[string]bool)
 	for _, eid := range input.ExcludeQuestionIDs {
 		excludeSet[eid] = true
 	}
 
-	var results []QuestionBankSearchResult
+	var candidates []questionSearchCandidate
 	for _, id := range orderedIDs {
-		if len(results) >= limit {
-			break
-		}
 		if excludeSet[id] {
 			continue
 		}
@@ -607,7 +611,6 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		if !ok {
 			continue
 		}
-		// Tenant scope: must match the KB's tenant.
 		kbID := idToKB[id]
 		if kbID == "" {
 			continue
@@ -616,301 +619,289 @@ func (t *QuestionBankSearchTool) executeSemanticSearch(
 		if q.TenantID != expectedTenant {
 			continue
 		}
-		// KB scope: only question_bank KBs in searchTargets.
 		if !t.searchTargets.ContainsKB(q.KnowledgeBaseID) {
 			continue
 		}
-		// Per-KB question_set_id restriction.
 		if input.QuestionSetID != "" && q.QuestionSetID != input.QuestionSetID {
 			continue
 		}
-		// Structured filters.
 		if !questionMatchesFilters(q, input) {
 			continue
 		}
-
-		results = append(results, QuestionBankSearchResult{
-			ID:              q.ID,
-			QuestionSetID:   q.QuestionSetID,
-			KnowledgeBaseID: q.KnowledgeBaseID,
-			QuestionType:    q.QuestionType,
-			StemText:        q.StemText,
-			QuestionBody:    q.QuestionBody,
-			AnswerText:      q.AnswerText,
-			AnswerBody:      q.AnswerBody,
-			AnalysisText:    q.AnalysisText,
-			Difficulty:      string(q.Difficulty),
-			KnowledgePoints: q.KnowledgePoints,
-			Tags:            q.Tags,
-			Status:          string(q.Status),
-			MatchType:       "semantic",
-			Score:           idToScore[id],
+		candidates = append(candidates, questionSearchCandidate{
+			QuestionID:    q.ID,
+			SemanticScore: idToScore[id],
+			Result: QuestionBankSearchResult{
+				ID:              q.ID,
+				QuestionSetID:   q.QuestionSetID,
+				KnowledgeBaseID: q.KnowledgeBaseID,
+				QuestionType:    q.QuestionType,
+				StemText:        q.StemText,
+				QuestionBody:    q.QuestionBody,
+				AnswerText:      q.AnswerText,
+				AnswerBody:      q.AnswerBody,
+				AnalysisText:    q.AnalysisText,
+				Difficulty:      string(q.Difficulty),
+				KnowledgePoints: q.KnowledgePoints,
+				Tags:            q.Tags,
+				Status:          string(q.Status),
+				MatchType:       "semantic",
+				Score:           idToScore[id],
+			},
 		})
 	}
 
-	// Batch-fetch question set names.
-	setIDs := make([]string, 0, len(results))
+	// Populate question set names.
+	setIDs := make([]string, 0, len(candidates))
 	seenSets := make(map[string]bool)
-	for _, r := range results {
-		if !seenSets[r.QuestionSetID] {
-			seenSets[r.QuestionSetID] = true
-			setIDs = append(setIDs, r.QuestionSetID)
+	for _, c := range candidates {
+		if !seenSets[c.Result.QuestionSetID] {
+			seenSets[c.Result.QuestionSetID] = true
+			setIDs = append(setIDs, c.Result.QuestionSetID)
 		}
 	}
-	setNameMap := t.batchGetQuestionSetNames(ctx, setIDs)
-
-	for i := range results {
-		results[i].Rank = i + 1
-		if name, ok := setNameMap[results[i].QuestionSetID]; ok {
-			results[i].QuestionSetName = name
+	setNameMap := batchGetQuestionSetNames(ctx, t.db, setIDs)
+	for i := range candidates {
+		if name, ok := setNameMap[candidates[i].Result.QuestionSetID]; ok {
+			candidates[i].Result.QuestionSetName = name
 		}
+	}
+
+	// Assign semantic ranks (1-based, in vector order).
+	for i := range candidates {
+		candidates[i].SemanticRank = i + 1
+	}
+
+	return candidates, nil
+}
+
+// ---- hybrid search ----
+
+func (t *QuestionBankSearchTool) executeHybridSearch(
+	ctx context.Context,
+	input QuestionBankSearchInput,
+	query string,
+	limit int,
+	emptyData func() map[string]interface{},
+) (*types.ToolResult, error) {
+	if query == "" {
+		return &types.ToolResult{
+			Success: false,
+			Error:   "Hybrid search requires a non-empty query.",
+		}, fmt.Errorf("hybrid search requires a non-empty query")
+	}
+
+	var keywordCandidates, semanticCandidates []questionSearchCandidate
+	var semanticWarning string
+	keywordCandidateCount := 0
+	semanticCandidateCount := 0
+
+	// Run keyword candidate.
+	kwLimit := limit * keywordOverfetchFactor
+	if kwLimit < keywordCandidateMin {
+		kwLimit = keywordCandidateMin
+	}
+	if kwLimit > keywordCandidateMax {
+		kwLimit = keywordCandidateMax
+	}
+	var kwErr error
+	keywordCandidates, kwErr = t.runKeywordCandidate(ctx, input, query, kwLimit)
+	if kwErr != nil {
+		return &types.ToolResult{
+			Success: false,
+			Error:   fmt.Sprintf("Hybrid search keyword phase failed: %v", kwErr),
+		}, kwErr
+	}
+	keywordCandidateCount = len(keywordCandidates)
+
+	// Run semantic candidate (best-effort).
+	if t.knowledgeBaseService != nil && t.modelService != nil &&
+		t.engineRegistry != nil && t.ownership != nil {
+		semCands, semErr := t.runSemanticCandidate(ctx, input, query, limit)
+		if semErr != nil {
+			semanticWarning = fmt.Sprintf("Semantic phase unavailable: %v", semErr)
+			logger.Warnf(ctx, "Hybrid search: semantic phase failed: %v", semErr)
+		} else {
+			semanticCandidates = semCands
+		}
+	} else {
+		semanticWarning = "Semantic search is not available: required services are not configured."
+		logger.Warnf(ctx, "Hybrid search: semantic dependencies not configured, using keyword-only")
+	}
+	semanticCandidateCount = len(semanticCandidates)
+
+	// RRF fusion.
+	fused := fuseCandidatesRRF(keywordCandidates, semanticCandidates)
+	results := candidatesToResults(fused)
+
+	// Apply limit.
+	if len(results) > limit {
+		results = results[:limit]
 	}
 	if results == nil {
 		results = []QuestionBankSearchResult{}
 	}
+	for i := range results {
+		results[i].Rank = i + 1
+		results[i].MatchType = "hybrid"
+	}
+
+	data := map[string]interface{}{
+		"results":                  results,
+		"result_count":             len(results),
+		"display_type":             "question_bank_results",
+		"query":                    query,
+		"limit":                    limit,
+		"mode":                     questionBankSearchModeHybrid,
+		"fusion":                   "rrf",
+		"keyword_candidate_count":  keywordCandidateCount,
+		"semantic_candidate_count": semanticCandidateCount,
+	}
+	if semanticWarning != "" {
+		data["semantic_warning"] = semanticWarning
+	}
 
 	return &types.ToolResult{
 		Success: true,
-		Output:  formatQuestionBankSearchResults(results, query, limit, questionBankSearchModeSemantic),
-		Data: map[string]interface{}{
-			"results":      results,
-			"result_count": len(results),
-			"display_type": "question_bank_results",
-			"query":        query,
-			"limit":        limit,
-			"mode":         questionBankSearchModeSemantic,
-		},
+		Output:  formatQuestionBankSearchResults(results, query, limit, questionBankSearchModeHybrid),
+		Data:    data,
 	}, nil
 }
 
-// compositeSupportsVector checks whether a CompositeRetrieveEngine supports
-// vector retrieval across any of its internal engines.
-func compositeSupportsVector(engine *retriever.CompositeRetrieveEngine) bool {
-	if engine == nil {
-		return false
+// runKeywordCandidate returns raw keyword candidates (overfetched, unfiltered
+// by final limit). It is shared by keyword and hybrid modes.
+func (t *QuestionBankSearchTool) runKeywordCandidate(
+	ctx context.Context,
+	input QuestionBankSearchInput,
+	query string,
+	limit int,
+) ([]questionSearchCandidate, error) {
+	kbIDs := t.searchTargets.GetAllKnowledgeBaseIDs()
+	kbTenantMap := t.searchTargets.GetKBTenantMap()
+	var orClauses []string
+	var orArgs []interface{}
+	for _, kbID := range kbIDs {
+		tenantID := kbTenantMap[kbID]
+		if kbID == "" || tenantID == 0 {
+			continue
+		}
+		orClauses = append(orClauses, "(questions.knowledge_base_id = ? AND questions.tenant_id = ?)")
+		orArgs = append(orArgs, kbID, tenantID)
 	}
-	return engine.SupportRetriever(types.VectorRetrieverType)
-}
-
-// listQuestionsByIDs fetches questions scoped to a tenant. Uses explicit
-// column selection to avoid time.Time scan issues with SQLite in tests.
-func (t *QuestionBankSearchTool) listQuestionsByIDs(ctx context.Context, tenantID uint64, ids []string) ([]*types.Question, error) {
-	if len(ids) == 0 {
+	if len(orClauses) == 0 {
 		return nil, nil
 	}
-	var questions []*types.Question
-	if err := t.db.WithContext(ctx).
-		Select("id, tenant_id, question_set_id, knowledge_base_id, question_type, "+
-			"stem_text, question_body, answer_text, answer_body, analysis_text, "+
-			"difficulty, knowledge_points, tags, status, deleted_at").
-		Where("tenant_id = ? AND id IN ? AND deleted_at IS NULL", tenantID, ids).
-		Find(&questions).Error; err != nil {
+	kbFilter := "(" + strings.Join(orClauses, " OR ") + ")"
+
+	dialect := t.db.Dialector.Name()
+	var searchClause string
+	var searchArgs []interface{}
+
+	if query != "" {
+		escapedQuery := strings.ReplaceAll(query, "\\", "\\\\")
+		escapedQuery = strings.ReplaceAll(escapedQuery, "%", "\\%")
+		escapedQuery = strings.ReplaceAll(escapedQuery, "_", "\\_")
+		pattern := "%" + escapedQuery + "%"
+
+		switch {
+		case dialect == "postgres" || dialect == "postgresql":
+			searchClause = ` AND (` +
+				`questions.stem_text ILIKE ? ESCAPE '\'` +
+				` OR questions.answer_text ILIKE ? ESCAPE '\'` +
+				` OR questions.analysis_text ILIKE ? ESCAPE '\'` +
+				` OR questions.question_body::text ILIKE ? ESCAPE '\'` +
+				` OR questions.answer_body::text ILIKE ? ESCAPE '\'` +
+				` OR questions.knowledge_points::text ILIKE ? ESCAPE '\'` +
+				` OR questions.tags::text ILIKE ? ESCAPE '\'` +
+				`)`
+		default:
+			searchClause = ` AND (` +
+				`LOWER(questions.stem_text) LIKE LOWER(?) ESCAPE '\'` +
+				` OR LOWER(questions.answer_text) LIKE LOWER(?) ESCAPE '\'` +
+				` OR LOWER(questions.analysis_text) LIKE LOWER(?) ESCAPE '\'` +
+				` OR LOWER(CAST(questions.question_body AS TEXT)) LIKE LOWER(?) ESCAPE '\'` +
+				` OR LOWER(CAST(questions.answer_body AS TEXT)) LIKE LOWER(?) ESCAPE '\'` +
+				` OR LOWER(CAST(questions.knowledge_points AS TEXT)) LIKE LOWER(?) ESCAPE '\'` +
+				` OR LOWER(CAST(questions.tags AS TEXT)) LIKE LOWER(?) ESCAPE '\'` +
+				`)`
+		}
+		searchArgs = []interface{}{pattern, pattern, pattern, pattern, pattern, pattern, pattern}
+	}
+
+	var statusFilter string
+	var statusArgs []interface{}
+	if input.Status != "" {
+		statusFilter = ` AND questions.status = ?`
+		statusArgs = []interface{}{input.Status}
+	}
+
+	structFilter, structArgs := buildQuestionStructFilter(input, dialect)
+
+	baseSQL := `SELECT
+		questions.id,
+		questions.question_set_id,
+		question_sets.name AS question_set_name,
+		questions.knowledge_base_id,
+		questions.question_type,
+		questions.stem_text,
+		questions.question_body,
+		questions.answer_text,
+		questions.answer_body,
+		questions.analysis_text,
+		questions.difficulty,
+		questions.knowledge_points,
+		questions.tags,
+		questions.status,
+		questions.created_at
+	FROM questions
+	JOIN knowledge_bases ON knowledge_bases.id = questions.knowledge_base_id
+		AND knowledge_bases.type = 'question_bank'
+		AND knowledge_bases.deleted_at IS NULL
+	JOIN question_sets ON question_sets.id = questions.question_set_id
+		AND question_sets.tenant_id = questions.tenant_id
+		AND question_sets.knowledge_base_id = questions.knowledge_base_id
+		AND question_sets.deleted_at IS NULL
+	WHERE questions.deleted_at IS NULL
+		AND ` + kbFilter + searchClause + statusFilter + structFilter + `
+	ORDER BY questions.created_at DESC
+	LIMIT ?`
+
+	allArgs := append(orArgs, searchArgs...)
+	allArgs = append(allArgs, statusArgs...)
+	allArgs = append(allArgs, structArgs...)
+	allArgs = append(allArgs, limit)
+
+	var rows []QuestionBankSearchResult
+	if err := t.db.WithContext(ctx).Raw(baseSQL, allArgs...).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	return questions, nil
+
+	candidates := make([]questionSearchCandidate, 0, len(rows))
+	for i, row := range rows {
+		candidates = append(candidates, questionSearchCandidate{
+			QuestionID:  row.ID,
+			KeywordRank: i + 1,
+			Result:      row,
+		})
+	}
+	return candidates, nil
 }
 
-// batchGetQuestionSetNames resolves question set IDs to names.
-func (t *QuestionBankSearchTool) batchGetQuestionSetNames(ctx context.Context, setIDs []string) map[string]string {
-	if len(setIDs) == 0 {
-		return nil
-	}
-	type row struct {
-		ID   string `gorm:"column:id"`
-		Name string `gorm:"column:name"`
-	}
-	var rows []row
-	if err := t.db.WithContext(ctx).
-		Table("question_sets").
-		Select("id, name").
-		Where("id IN ?", setIDs).
-		Find(&rows).Error; err != nil {
-		return nil
-	}
-	m := make(map[string]string, len(rows))
-	for _, r := range rows {
-		m[r.ID] = r.Name
-	}
-	return m
-}
-
-// buildQuestionStructFilter builds SQL filter clauses for structured fields
-// (question_set_id, question_type, difficulty, knowledge_points, tags,
-// exclude_question_ids) applicable to keyword mode.
-func buildQuestionStructFilter(input QuestionBankSearchInput, dialect string) (string, []interface{}) {
-	var clauses []string
-	var args []interface{}
-
-	if input.QuestionSetID != "" {
-		clauses = append(clauses, "questions.question_set_id = ?")
-		args = append(args, input.QuestionSetID)
-	}
-	if input.QuestionType != "" {
-		clauses = append(clauses, "questions.question_type = ?")
-		args = append(args, input.QuestionType)
-	}
-	if input.Difficulty != "" {
-		clauses = append(clauses, "questions.difficulty = ?")
-		args = append(args, input.Difficulty)
-	}
-	// Knowledge points: for each target KP, check if it appears in the JSON array.
-	// Use LIKE with escaped wildcards; dialect-aware operator selection.
-	for _, kp := range input.KnowledgePoints {
-		escaped := escapeLike(kp)
-		pattern := "%" + escaped + "%"
-		clauses = append(clauses, kpLikeClause("questions.knowledge_points", dialect))
-		args = append(args, pattern)
-	}
-	// Tags: same approach as knowledge points.
-	for _, tag := range input.Tags {
-		escaped := escapeLike(tag)
-		pattern := "%" + escaped + "%"
-		clauses = append(clauses, kpLikeClause("questions.tags", dialect))
-		args = append(args, pattern)
-	}
-	if len(input.ExcludeQuestionIDs) > 0 {
-		clauses = append(clauses, "questions.id NOT IN ?")
-		args = append(args, input.ExcludeQuestionIDs)
-	}
-
-	if len(clauses) == 0 {
-		return "", nil
-	}
-	return " AND " + strings.Join(clauses, " AND "), args
-}
-
-// kpLikeClause returns a dialect-appropriate LIKE clause for a JSON column.
-func kpLikeClause(column, dialect string) string {
-	switch {
-	case dialect == "postgres" || dialect == "postgresql":
-		return column + `::text ILIKE ? ESCAPE '\'`
-	default:
-		return `LOWER(CAST(` + column + ` AS TEXT)) LIKE LOWER(?) ESCAPE '\'`
-	}
-}
-
-// escapeLike escapes %, _, and \ for a LIKE pattern.
-func escapeLike(s string) string {
-	s = strings.ReplaceAll(s, "\\", "\\\\")
-	s = strings.ReplaceAll(s, "%", "\\%")
-	s = strings.ReplaceAll(s, "_", "\\_")
-	return s
-}
-
-// questionMatchesFilters checks a question against the structured filters
-// (used in semantic mode where filtering happens post-retrieval in Go).
-func questionMatchesFilters(q *types.Question, input QuestionBankSearchInput) bool {
-	if q == nil {
-		return false
-	}
-	if input.Status != "" && string(q.Status) != input.Status {
-		return false
-	}
-	if input.QuestionType != "" && q.QuestionType != input.QuestionType {
-		return false
-	}
-	if input.Difficulty != "" && string(q.Difficulty) != input.Difficulty {
-		return false
-	}
-	// Knowledge points: question must have at least one matching KP.
-	if len(input.KnowledgePoints) > 0 {
-		if !anyJSONContains(string(q.KnowledgePoints), input.KnowledgePoints) {
-			return false
+// candidatesToResults converts fused/sorted candidates to results with ranks.
+func candidatesToResults(candidates []questionSearchCandidate) []QuestionBankSearchResult {
+	results := make([]QuestionBankSearchResult, 0, len(candidates))
+	for i := range candidates {
+		c := &candidates[i]
+		r := c.Result
+		r.KeywordRank = c.KeywordRank
+		r.SemanticRank = c.SemanticRank
+		r.RRFScore = c.RRFScore
+		if r.Score == 0 {
+			r.Score = c.SemanticScore
 		}
+		results = append(results, r)
 	}
-	// Tags: question must have at least one matching tag.
-	if len(input.Tags) > 0 {
-		if !anyJSONContains(string(q.Tags), input.Tags) {
-			return false
-		}
-	}
-	return true
-}
-
-// anyJSONContains checks whether a JSON array string (e.g. `["a","b"]`)
-// contains at least one of the target strings.
-func anyJSONContains(jsonStr string, targets []string) bool {
-	if jsonStr == "" || jsonStr == "[]" || jsonStr == "null" {
-		return false
-	}
-	for _, t := range targets {
-		if strings.Contains(strings.ToLower(jsonStr), strings.ToLower(t)) {
-			return true
-		}
-	}
-	return false
-}
-
-// escapeXML escapes user-controlled text for safe XML embedding.
-func escapeXML(s string) string {
-	s = html.EscapeString(s)
-	return s
-}
-
-// formatQuestionBankSearchResults produces a human-readable and LLM-friendly
-// formatted output from the search results.
-func formatQuestionBankSearchResults(results []QuestionBankSearchResult, query string, limit int, mode string) string {
-	var b strings.Builder
-
-	if len(results) == 0 {
-		if query == "" {
-			b.WriteString("No questions found in the question bank knowledge bases in scope.\n")
-		} else {
-			fmt.Fprintf(&b, "No questions matched the query %q in the question bank knowledge bases in scope.\n", query)
-		}
-		return b.String()
-	}
-
-	modeLabel := ""
-	if mode == questionBankSearchModeSemantic {
-		modeLabel = " (semantic)"
-	}
-	if query == "" {
-		fmt.Fprintf(&b, "Recent questions in scope%s (%d results, limit %d):\n\n", modeLabel, len(results), limit)
-	} else {
-		fmt.Fprintf(&b, "Question bank search results for %q%s (%d results, limit %d):\n\n", query, modeLabel, len(results), limit)
-	}
-
-	for i, r := range results {
-		fmt.Fprintf(&b, "--- Result %d ---\n", i+1)
-		fmt.Fprintf(&b, "question_id: %s\n", r.ID)
-		fmt.Fprintf(&b, "question_set_id: %s\n", r.QuestionSetID)
-		fmt.Fprintf(&b, "question_set_name: %s\n", escapeXML(r.QuestionSetName))
-		fmt.Fprintf(&b, "knowledge_base_id: %s\n", r.KnowledgeBaseID)
-		fmt.Fprintf(&b, "question_type: %s\n", r.QuestionType)
-		fmt.Fprintf(&b, "difficulty: %s\n", r.Difficulty)
-		fmt.Fprintf(&b, "status: %s\n", r.Status)
-		if r.MatchType != "" {
-			fmt.Fprintf(&b, "match_type: %s\n", r.MatchType)
-		}
-		if r.Score != 0 {
-			fmt.Fprintf(&b, "score: %.4f\n", r.Score)
-		}
-		fmt.Fprintf(&b, "stem_text: %s\n", escapeXML(r.StemText))
-		if string(r.QuestionBody) != "" && string(r.QuestionBody) != "null" {
-			fmt.Fprintf(&b, "question_body: %s\n", escapeXML(string(r.QuestionBody)))
-		}
-		fmt.Fprintf(&b, "answer_text: %s\n", escapeXML(r.AnswerText))
-		if string(r.AnswerBody) != "" && string(r.AnswerBody) != "null" {
-			fmt.Fprintf(&b, "answer_body: %s\n", escapeXML(string(r.AnswerBody)))
-		}
-		if r.AnalysisText != "" {
-			fmt.Fprintf(&b, "analysis_text: %s\n", escapeXML(r.AnalysisText))
-		}
-		if string(r.KnowledgePoints) != "" && string(r.KnowledgePoints) != "null" && string(r.KnowledgePoints) != "[]" {
-			fmt.Fprintf(&b, "knowledge_points: %s\n", escapeXML(string(r.KnowledgePoints)))
-		}
-		if string(r.Tags) != "" && string(r.Tags) != "null" && string(r.Tags) != "[]" {
-			fmt.Fprintf(&b, "tags: %s\n", escapeXML(string(r.Tags)))
-		}
-		b.WriteString("\n")
-	}
-
-	if len(results) == limit {
-		b.WriteString("(Results may have been truncated; consider narrowing the query or increasing the limit.)\n")
-	}
-
-	return b.String()
+	return results
 }
 
 // Ensure QuestionBankSearchTool implements Tool interface.
