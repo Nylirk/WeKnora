@@ -73,6 +73,10 @@ CREATE TABLE IF NOT EXISTS knowledge_bases (
     asr_config TEXT,
     vector_store_id VARCHAR(36),
     creator_id VARCHAR(36),
+    parent_knowledge_base_id VARCHAR(36),
+    purpose VARCHAR(64),
+    visibility VARCHAR(16) NOT NULL DEFAULT 'visible',
+    system_managed BOOLEAN NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME
@@ -83,6 +87,8 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_bases_tenant_vector_store
     ON knowledge_bases(tenant_id, vector_store_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_bases_tenant_creator
     ON knowledge_bases(tenant_id, creator_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_bases_parent ON knowledge_bases(parent_knowledge_base_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_bases_visibility ON knowledge_bases(visibility);
 
 CREATE TABLE IF NOT EXISTS knowledges (
     id VARCHAR(36) PRIMARY KEY,

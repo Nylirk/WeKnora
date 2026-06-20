@@ -680,9 +680,23 @@ func (s *QuestionService) buildReferenceContexts(ctx context.Context, q *types.Q
 }
 
 var validImportFileExtensions = map[string]bool{
-	".doc":  true,
-	".docx": true,
-	".pdf":  true,
+	".doc":     true,
+	".docx":    true,
+	".pdf":     true,
+	".md":      true,
+	".markdown": true,
+	".xlsx":    true,
+	".xls":     true,
+}
+
+func isMarkdownFile(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.HasSuffix(lower, ".md") || strings.HasSuffix(lower, ".markdown")
+}
+
+func isExcelFile(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.HasSuffix(lower, ".xlsx") || strings.HasSuffix(lower, ".xls")
 }
 
 func isValidImportFileExtension(name string) bool {
@@ -725,7 +739,7 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 
 	// 2. Validate file extension
 	if !isValidImportFileExtension(fileName) {
-		return nil, apperrors.NewBadRequestError("仅支持 DOC、DOCX、PDF 文件。")
+		return nil, apperrors.NewBadRequestError("仅支持 DOC、DOCX、PDF、MD、Markdown、XLSX、XLS 文件。")
 	}
 
 	// 3. Validate file size
@@ -816,11 +830,25 @@ func (s *QuestionService) PreviewImportQuestionsFromFile(
 		default:
 		}
 
-		items, parseErrors, parseWarnings = s.extractionService.Extract(
-			ctx, extractedText, defaultType, defaultDifficulty,
-		)
-		log.Infof("[import-file preview] extraction finished: items=%d errors=%d warnings=%d",
-			len(items), len(parseErrors), len(parseWarnings))
+		// Route to the appropriate normalizer based on file type.
+		// .md / .markdown → markdown question normalizer
+		// .xlsx / .xls     → excel question normalizer
+		// .doc / .docx / .pdf → existing extraction service (rule-based)
+		if isMarkdownFile(fileName) {
+			items, parseErrors = normalizeMarkdownQuestions(extractedText)
+			log.Infof("[import-file preview] markdown normalization finished: items=%d errors=%d",
+				len(items), len(parseErrors))
+		} else if isExcelFile(fileName) {
+			items, parseErrors = normalizeExcelQuestions(extractedText)
+			log.Infof("[import-file preview] excel normalization finished: items=%d errors=%d",
+				len(items), len(parseErrors))
+		} else {
+			items, parseErrors, parseWarnings = s.extractionService.Extract(
+				ctx, extractedText, defaultType, defaultDifficulty,
+			)
+			log.Infof("[import-file preview] extraction finished: items=%d errors=%d warnings=%d",
+				len(items), len(parseErrors), len(parseWarnings))
+		}
 	}
 
 	// 6a. Optional debug export (best-effort, non-fatal)

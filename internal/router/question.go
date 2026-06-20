@@ -8,6 +8,14 @@ import (
 func RegisterQuestionRoutes(r *gin.RouterGroup, h *handler.QuestionHandler, g *rbacGuards) {
 	kb := r.Group("/knowledge-bases/:id")
 	{
+		// Syllabus management (question bank only).
+		qb := kb.Group("/question-bank")
+		{
+			qb.GET("/syllabus", g.Viewer(), g.KBAccessRead("id"), h.GetSyllabus)
+			qb.POST("/syllabus", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.UploadSyllabus)
+			qb.DELETE("/syllabus", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.DeleteSyllabus)
+		}
+
 		qs := kb.Group("/question-sets")
 		{
 			qs.GET("", g.Viewer(), g.KBAccessRead("id"), h.ListQuestionSets)

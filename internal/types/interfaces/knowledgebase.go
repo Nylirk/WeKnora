@@ -75,6 +75,12 @@ type KnowledgeBaseService interface {
 		questionBankConfig *types.QuestionBankConfig,
 	) (*types.KnowledgeBase, error)
 
+	// UpdateQuestionBankSyllabusKnowledgeBaseID updates only the
+	// syllabus_knowledge_base_id field in a question bank KB's
+	// question_bank_config. It preserves all other config fields.
+	// Used exclusively by the syllabus upload/delete APIs.
+	UpdateQuestionBankSyllabusKnowledgeBaseID(ctx context.Context, kbID string, syllabusKBID string) error
+
 	// DeleteKnowledgeBase deletes a knowledge base
 	// Parameters:
 	//   - ctx: Context information
@@ -195,6 +201,12 @@ type KnowledgeBaseRepository interface {
 	//   - List of knowledge base objects
 	//   - Possible errors such as database errors, etc.
 	ListKnowledgeBasesByTenantID(ctx context.Context, tenantID uint64) ([]*types.KnowledgeBase, error)
+
+	// ListKnowledgeBasesByParentID lists all KBs that have the given parent KB ID.
+	ListKnowledgeBasesByParentID(ctx context.Context, tenantID uint64, parentID string) ([]*types.KnowledgeBase, error)
+
+	// GetKnowledgeBaseByPurpose returns the first KB matching a purpose (optionally scoped to parent).
+	GetKnowledgeBaseByPurpose(ctx context.Context, tenantID uint64, purpose string, parentKBID string) (*types.KnowledgeBase, error)
 
 	// UpdateKnowledgeBase updates a knowledge base record
 	// Parameters:

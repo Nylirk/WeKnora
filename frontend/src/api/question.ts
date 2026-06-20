@@ -203,3 +203,46 @@ export const previewImportFile = (
     config,
   ).then((response: any) => normalizeImportFilePreviewResponse(response))
 }
+
+// --- Syllabus management for question bank KBs ---
+
+export interface SyllabusInfo {
+  syllabus_kb_id: string
+  file_name: string
+  file_size: number
+  parse_status: string
+  knowledge_count: number
+  chunk_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface SyllabusUploadResponse {
+  syllabus_kb_id: string
+  file_name: string
+  parse_status: string
+  knowledge_count: number
+  chunk_count: number
+  message: string
+}
+
+/** Upload a syllabus file for a question bank KB. */
+export function uploadSyllabus(kbId: string, file: File): Promise<SyllabusUploadResponse> {
+  const fd = new FormData()
+  fd.append('file', file)
+  return postUpload(`/api/v1/knowledge-bases/${kbId}/question-bank/syllabus`, fd).then(
+    (r: any) => r?.data ?? r,
+  )
+}
+
+/** Get syllabus info for a question bank KB. */
+export function getSyllabus(kbId: string): Promise<SyllabusInfo | null> {
+  return get(`/api/v1/knowledge-bases/${kbId}/question-bank/syllabus`).then(
+    (r: any) => r?.data ?? null,
+  )
+}
+
+/** Delete the syllabus from a question bank KB. */
+export function deleteSyllabus(kbId: string): Promise<void> {
+  return del(`/api/v1/knowledge-bases/${kbId}/question-bank/syllabus`)
+}

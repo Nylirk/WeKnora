@@ -103,6 +103,38 @@ func (r *knowledgeBaseRepository) ListKnowledgeBasesByTenantID(
 	return kbs, nil
 }
 
+// ListKnowledgeBasesByParentID lists all non-deleted KBs that have the given
+// parent KB ID. Used to find system-managed children (e.g., hidden syllabus KBs).
+func (r *knowledgeBaseRepository) ListKnowledgeBasesByParentID(
+	ctx context.Context, tenantID uint64, parentID string,
+) ([]*types.KnowledgeBase, error) {
+	var kbs []*types.KnowledgeBase
+	if err := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND parent_knowledge_base_id = ?", tenantID, parentID).
+		Find(&kbs).Error; err != nil {
+		return nil, err
+	}
+	return kbs, nil
+}
+
+// GetKnowledgeBaseByPurpose returns the first KB matching the given purpose
+// and optionally scoped to a parent KB. Used to find system-managed KBs
+// like hidden syllabus KBs (purpose = "question_bank_syllabus").
+func (r *knowledgeBaseRepository) GetKnowledgeBaseByPurpose(
+	ctx context.Context, tenantID uint64, purpose string, parentKBID string,
+) (*types.KnowledgeBase, error) {
+	var kb types.KnowledgeBase
+	query := r.db.WithContext(ctx).
+		Where("tenant_id = ? AND purpose = ?", tenantID, purpose)
+	if parentKBID != "" {
+		query = query.Where("parent_knowledge_base_id = ?", parentKBID)
+	}
+	if err := query.First(&kb).Error; err != nil {
+		return nil, err
+	}
+	return &kb, nil
+}
+
 // userKBPinRow mirrors the user_kb_pins table. Kept local to the
 // repository because it never escapes the package; callers see the
 // higher-level map[kb_id]pinned_at returned by ListUserKBPinIDs.

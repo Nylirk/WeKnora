@@ -56,6 +56,9 @@ func (s *stubKnowledgeBaseService) UpdateKnowledgeBase(
 	return nil, nil
 }
 
+func (s *stubKnowledgeBaseService) UpdateQuestionBankSyllabusKnowledgeBaseID(context.Context, string, string) error {
+	return nil
+}
 func (s *stubKnowledgeBaseService) DeleteKnowledgeBase(context.Context, string) error {
 	return nil
 }

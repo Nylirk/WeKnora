@@ -11,10 +11,21 @@ import (
 
 // KnowledgeBaseType represents the type of the knowledge base
 const (
-	KnowledgeBaseTypeDocument      = "document"
-	KnowledgeBaseTypeFAQ           = "faq"
-	KnowledgeBaseTypeWiki          = "wiki"
-	KnowledgeBaseTypeQuestionBank  = "question_bank"
+	KnowledgeBaseTypeDocument     = "document"
+	KnowledgeBaseTypeFAQ          = "faq"
+	KnowledgeBaseTypeWiki         = "wiki"
+	KnowledgeBaseTypeQuestionBank = "question_bank"
+)
+
+// KBVisibility controls whether a knowledge base is visible in normal listings.
+const (
+	KBVisibilityVisible = "visible"
+	KBVisibilityHidden  = "hidden"
+)
+
+// KBPurpose describes the system-managed role of a knowledge base.
+const (
+	KBPurposeQuestionBankSyllabus = "question_bank_syllabus"
 )
 
 // FAQIndexMode represents the FAQ index mode: only index questions or index questions and answers
@@ -95,6 +106,20 @@ type KnowledgeBase struct {
 	// Includes optional knowledge point KB and syllabus KB references.
 	// Only meaningful when Type == KnowledgeBaseTypeQuestionBank.
 	QuestionBankConfig *QuestionBankConfig `yaml:"question_bank_config"    json:"question_bank_config,omitempty"    gorm:"column:question_bank_config;type:jsonb"`
+	// ParentKnowledgeBaseID is the ID of the parent knowledge base, used for
+	// system-managed child KBs (e.g., hidden syllabus KBs owned by a question bank).
+	// nil means this is a top-level KB with no parent.
+	ParentKnowledgeBaseID *string `yaml:"parent_knowledge_base_id"  json:"parent_knowledge_base_id,omitempty"  gorm:"column:parent_knowledge_base_id;type:varchar(36);index"`
+	// Purpose describes the system role of this KB (e.g., "question_bank_syllabus").
+	// nil or empty means no special purpose — a normal user-created KB.
+	Purpose *string `yaml:"purpose"                  json:"purpose,omitempty"                   gorm:"column:purpose;type:varchar(64)"`
+	// Visibility controls whether this KB appears in normal listings.
+	// "visible" (default) or "hidden".
+	Visibility string `yaml:"visibility"              json:"visibility"                          gorm:"column:visibility;type:varchar(16);default:'visible'"`
+	// SystemManaged indicates this KB was created and is managed by the system
+	// (e.g., auto-created hidden syllabus KB). System-managed KBs are hidden
+	// from normal listings and protected from manual delete/edit operations.
+	SystemManaged bool `yaml:"system_managed"          json:"system_managed"                     gorm:"column:system_managed;default:false"`
 	// IsPinned and PinnedAt are computed per-caller from user_kb_pins
 	// (see migration 000050). They used to be stored on the row itself,
 	// which made pinning a tenant-wide ordering decision gated behind
@@ -611,6 +636,9 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 	} else {
 		kb.QuestionBankConfig = nil
 	}
+	if kb.Visibility == "" {
+		kb.Visibility = KBVisibilityVisible
+	}
 	if kb.IndexingStrategy.IsZero() {
 		kb.IndexingStrategy = DefaultIndexingStrategy()
 	}
@@ -621,6 +649,27 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 
 func (kb *KnowledgeBase) IsQuestionBank() bool {
 	return kb != nil && kb.Type == KnowledgeBaseTypeQuestionBank
+}
+
+// IsHidden returns true when the KB should be excluded from normal listings.
+func (kb *KnowledgeBase) IsHidden() bool {
+	return kb != nil && kb.Visibility == KBVisibilityHidden
+}
+
+// IsSystemManaged returns true when the KB was auto-created by the system.
+func (kb *KnowledgeBase) IsSystemManaged() bool {
+	return kb != nil && kb.SystemManaged
+}
+
+// HasPurpose returns true when the KB has the given system purpose.
+func (kb *KnowledgeBase) HasPurpose(purpose string) bool {
+	return kb != nil && kb.Purpose != nil && *kb.Purpose == purpose
+}
+
+// ShouldHideFromListing returns true when the KB should be excluded from
+// normal knowledge base list responses (hidden or system-managed).
+func (kb *KnowledgeBase) ShouldHideFromListing() bool {
+	return kb.IsHidden() || kb.IsSystemManaged()
 }
 
 // KBCapabilities describes the functional features a knowledge base exposes.
