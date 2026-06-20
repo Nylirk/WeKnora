@@ -134,6 +134,14 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 	}
 	applyTenantDefaultStorageProvider(ctx, kb)
 
+	// Validate question bank auto-processing config (reference KB types).
+	// kb.ID is still empty during create, so self-reference check is not needed here.
+	if kb.QuestionBankConfig != nil {
+		if err := s.validateQuestionBankReferenceConfig(ctx, kb.TenantID, "", kb.QuestionBankConfig); err != nil {
+			return nil, err
+		}
+	}
+
 	// Fold empty-string vector_store_id into nil so this path and the
 	// retrieve-engine factory's pre-condition share a single representation.
 	wasEmpty := kb.VectorStoreID != nil && *kb.VectorStoreID == ""
@@ -162,6 +170,54 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 
 	logger.Infof(ctx, "Knowledge base created successfully, ID: %s, name: %s", kb.ID, kb.Name)
 	return kb, nil
+}
+
+// allowedReferenceKBTypes defines which KB types can be referenced as
+// knowledge point KB or syllabus KB in QuestionBankConfig.
+var allowedReferenceKBTypes = map[string]bool{
+	types.KnowledgeBaseTypeDocument: true,
+	types.KnowledgeBaseTypeWiki:     true,
+}
+
+// validateQuestionBankReferenceConfig validates the QuestionBankConfig fields:
+// - Empty strings are allowed (means "disabled").
+// - Non-empty must reference an existing KB in the same tenant.
+// - Cannot reference self.
+// - Cannot reference a question_bank KB.
+func (s *knowledgeBaseService) validateQuestionBankReferenceConfig(
+	ctx context.Context,
+	tenantID uint64,
+	currentKBID string,
+	cfg *types.QuestionBankConfig,
+) error {
+	if cfg == nil {
+		return nil
+	}
+	if cfg.KnowledgePointKnowledgeBaseID != "" {
+		if cfg.KnowledgePointKnowledgeBaseID == currentKBID {
+			return apperrors.NewBadRequestError("题库不能关联自身作为知识点知识库")
+		}
+		target, err := s.repo.GetKnowledgeBaseByIDAndTenant(ctx, cfg.KnowledgePointKnowledgeBaseID, tenantID)
+		if err != nil {
+			return apperrors.NewBadRequestError("知识点知识库不存在或无权访问")
+		}
+		if !allowedReferenceKBTypes[target.Type] {
+			return apperrors.NewBadRequestError("知识点知识库不能选择题库型知识库")
+		}
+	}
+	if cfg.SyllabusKnowledgeBaseID != "" {
+		if cfg.SyllabusKnowledgeBaseID == currentKBID {
+			return apperrors.NewBadRequestError("题库不能关联自身作为考纲")
+		}
+		target, err := s.repo.GetKnowledgeBaseByIDAndTenant(ctx, cfg.SyllabusKnowledgeBaseID, tenantID)
+		if err != nil {
+			return apperrors.NewBadRequestError("考纲不存在或无权访问")
+		}
+		if !allowedReferenceKBTypes[target.Type] {
+			return apperrors.NewBadRequestError("考纲不能选择题库型知识库")
+		}
+	}
+	return nil
 }
 
 // applyTenantDefaultStorageProvider fills an empty KB storage provider from the
@@ -477,13 +533,10 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 			return nil, apperrors.NewBadRequestError("当前租户中已存在同名知识库")
 		}
 	}
-	// Self-reference check for question_bank_config
+	// Validate question bank auto-processing config (reference KB types + self-reference).
 	if questionBankConfig != nil && kb.IsQuestionBank() {
-		if questionBankConfig.KnowledgePointKnowledgeBaseID == id {
-			return nil, apperrors.NewBadRequestError("题库不能关联自身作为知识点知识库")
-		}
-		if questionBankConfig.SyllabusKnowledgeBaseID == id {
-			return nil, apperrors.NewBadRequestError("题库不能关联自身作为考纲")
+		if err := s.validateQuestionBankReferenceConfig(ctx, kb.TenantID, id, questionBankConfig); err != nil {
+			return nil, err
 		}
 	}
 

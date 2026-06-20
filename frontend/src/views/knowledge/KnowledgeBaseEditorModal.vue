@@ -778,9 +778,12 @@ const loadAvailableKbs = async () => {
     const response: any = await listKnowledgeBases()
     const data = response?.data ?? response
     const list = Array.isArray(data) ? data : (data?.data ?? [])
-    // Exclude current KB from selectable options (self-reference prevention)
+    // Reference KBs: exclude self and question_bank type KBs.
+    // Only document and wiki KBs are allowed as knowledge point / syllabus references.
+    const allowedTypes = new Set(['document', 'wiki'])
     availableKbs.value = list
       .filter((kb: any) => kb.id !== props.kbId)
+      .filter((kb: any) => allowedTypes.has(kb.type))
       .map((kb: any) => ({ id: kb.id, name: kb.name }))
   } catch {
     // silent
