@@ -2,7 +2,7 @@
   <div class="question-bank">
     <aside class="set-sidebar">
       <div class="set-sidebar-header">
-        <h3>{{ $t('questionBank.title') }}</h3>
+        <h3>分类</h3>
         <t-button
           v-if="!creatingInlineSet"
           size="small"
@@ -79,7 +79,7 @@
           >
             <span class="set-index">{{ index + 1 }}</span>
             <span class="set-name" :title="set.name">{{ set.name }}</span>
-            <span class="set-count">{{ set.question_count || 0 }} 题</span>
+            <span class="set-count">{{ set.question_count || 0 }}</span>
             <div class="set-more" @click.stop>
               <t-popup trigger="click" placement="top-right" overlay-class-name="question-set-more-popup">
                 <button type="button" class="set-more-btn" :aria-label="$t('questionBank.setListOperation')">
@@ -345,14 +345,14 @@ watch(
 
 <style scoped>
 .question-bank { display: flex; flex: 1; min-height: 0; border-top: 1px solid var(--td-component-stroke); }
-.set-sidebar { width: 280px; flex-shrink: 0; padding: 16px 16px 0 0; border-right: 1px solid var(--td-component-stroke); display: flex; flex-direction: column; gap: 12px; }
+.set-sidebar { width: 180px; flex-shrink: 0; padding: 16px 12px 0 0; border-right: 1px solid var(--td-component-stroke); display: flex; flex-direction: column; gap: 10px; }
 .set-sidebar-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .set-sidebar-header h3 { margin: 0; font-size: 16px; }
 .create-set-btn { width: 24px; height: 24px; padding: 0; color: var(--td-text-color-secondary); }
 .create-set-btn:hover { color: var(--td-brand-color); background: var(--td-bg-color-container-hover); }
 .set-list-header,
-.set-list-item { display: grid; grid-template-columns: 24px minmax(0, 1fr) 58px 32px; align-items: center; column-gap: 6px; }
-.set-list-header { padding: 0 8px; color: var(--td-text-color-placeholder); font-size: 12px; }
+.set-list-item { display: grid; grid-template-columns: 18px minmax(0, 1fr) 28px 28px; align-items: center; column-gap: 4px; }
+.set-list-header { padding: 0 4px; color: var(--td-text-color-placeholder); font-size: 11px; }
 .set-list { flex: 1; min-height: 0; overflow-y: auto; }
 .set-list-loading,
 .set-list-empty { padding: 28px 8px; color: var(--td-text-color-placeholder); text-align: center; font-size: 13px; }

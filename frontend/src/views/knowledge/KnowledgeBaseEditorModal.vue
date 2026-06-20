@@ -73,6 +73,51 @@
                         <p class="form-tip">{{ formData.type === 'question_bank' ? '用于管理试题、答案、解析、知识点和评测集导出，适合试卷、练习题、考试题库。' : $t('knowledgeEditor.basic.typeDescription') }}</p>
                       </div>
 
+                      <!-- 题库自动处理配置（仅题库型） -->
+                      <div v-if="isQuestionBank" class="form-item">
+                        <div class="section-header" style="margin-bottom: 12px">
+                          <h3 class="section-title" style="font-size: 14px">题库自动处理配置</h3>
+                        </div>
+                        <div class="form-item">
+                          <label class="form-label">知识点知识库</label>
+                          <t-select
+                            v-model="formData.questionBankConfig.knowledgePointKbId"
+                            clearable
+                            placeholder="选择知识点知识库（可选）"
+                            :loading="loadingKbList"
+                            filterable
+                          >
+                            <t-option v-for="kb in availableKbs" :key="kb.id" :value="kb.id" :label="kb.name" />
+                          </t-select>
+                          <p v-if="!formData.questionBankConfig.knowledgePointKbId" class="form-tip kb-hint">
+                            未选择知识点知识库，导入题目后不会启用自动知识点关联。
+                          </p>
+                        </div>
+                        <div class="form-item">
+                          <label class="form-label">考纲</label>
+                          <t-select
+                            v-model="formData.questionBankConfig.syllabusKbId"
+                            clearable
+                            placeholder="选择考纲（可选）"
+                            :loading="loadingKbList"
+                            filterable
+                          >
+                            <t-option v-for="kb in availableKbs" :key="kb.id" :value="kb.id" :label="kb.name" />
+                          </t-select>
+                          <p v-if="!formData.questionBankConfig.syllabusKbId" class="form-tip kb-hint">
+                            未选择考纲，导入题目后不会启用自动考纲筛选。
+                          </p>
+                        </div>
+                        <t-alert
+                          v-if="!formData.questionBankConfig.knowledgePointKbId && !formData.questionBankConfig.syllabusKbId"
+                          theme="info"
+                          :close-btn="false"
+                          style="margin-top: 8px"
+                        >
+                          题目仍可导入，但只会创建草稿题目，不启用自动知识点关联和考纲筛选。
+                        </t-alert>
+                      </div>
+
                       <!-- 索引策略 (紧跟类型选择) -->
                       <div v-if="showDocumentSections" class="form-item">
                         <label class="form-label required">{{ $t('knowledgeEditor.indexing.title') }}</label>
@@ -218,56 +263,6 @@
                       <div class="faq-guide">
                         <p>{{ $t('knowledgeEditor.faq.entryGuide') }}</p>
                       </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 题库配置（仅 question_bank 类型） -->
-                <div v-if="isQuestionBank && formData" v-show="currentSection === 'questionBank'" class="section">
-                  <div class="section-content">
-                    <div class="section-header">
-                      <h3 class="section-title">题库配置</h3>
-                      <p class="section-desc">设置自动知识点关联和考纲筛选所需的知识库。两项均可为空。</p>
-                    </div>
-                    <div class="section-body">
-                      <div class="form-item">
-                        <label class="form-label">知识点知识库</label>
-                        <t-select
-                          v-model="formData.questionBankConfig.knowledgePointKbId"
-                          clearable
-                          placeholder="选择知识点知识库（可选）"
-                          :loading="loadingKbList"
-                          filterable
-                        >
-                          <t-option v-for="kb in availableKbs" :key="kb.id" :value="kb.id" :label="kb.name" />
-                        </t-select>
-                        <p v-if="!formData.questionBankConfig.knowledgePointKbId" class="form-tip kb-hint">
-                          未选择知识点知识库，不会启用自动知识点关联。
-                        </p>
-                      </div>
-                      <div class="form-item">
-                        <label class="form-label">考纲</label>
-                        <t-select
-                          v-model="formData.questionBankConfig.syllabusKbId"
-                          clearable
-                          placeholder="选择考纲（可选）"
-                          :loading="loadingKbList"
-                          filterable
-                        >
-                          <t-option v-for="kb in availableKbs" :key="kb.id" :value="kb.id" :label="kb.name" />
-                        </t-select>
-                        <p v-if="!formData.questionBankConfig.syllabusKbId" class="form-tip kb-hint">
-                          未选择考纲，不会启用自动考纲筛选。
-                        </p>
-                      </div>
-                      <t-alert
-                        v-if="!formData.questionBankConfig.knowledgePointKbId && !formData.questionBankConfig.syllabusKbId"
-                        theme="info"
-                        :close-btn="false"
-                        style="margin-top: 8px"
-                      >
-                        题目仍可导入，但只会创建草稿题目，不启用自动关联和考纲筛选。
-                      </t-alert>
                     </div>
                   </div>
                 </div>
@@ -583,7 +578,7 @@ const navItems = computed(() => {
   if (formData.value?.type === 'faq') {
     items.push({ key: 'faq', icon: 'help-circle', label: t('knowledgeEditor.sidebar.faq') })
   } else if (formData.value?.type === 'question_bank') {
-    items.push({ key: 'questionBank', icon: 'file-paste', label: '题库配置' })
+    // question_bank type: no parser/chunking/multimodal/asr/graph sections
   } else {
     items.push(
       { key: 'parser', icon: 'file-search', label: t('settings.parserEngine') },
