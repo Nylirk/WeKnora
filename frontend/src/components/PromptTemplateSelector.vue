@@ -3,7 +3,8 @@
     <div class="template-btn-group">
       <!-- 恢复默认按钮 -->
       <t-button
-        variant="text"
+        theme="default"
+        variant="outline"
         size="small"
         class="template-default-btn"
         :loading="resettingDefault"
@@ -58,6 +59,7 @@
           </div>
         </template>
         <t-button
+          theme="primary"
           variant="outline"
           size="small"
           class="template-trigger-btn"

@@ -178,8 +178,14 @@
                         <div v-show="activePromptAnchor === 'system'"
                           class="setting-row setting-row-vertical prompts-panel__pane">
                       <div class="setting-info">
-                        <label>{{ $t('agent.editor.systemPrompt') }} <span v-if="!isBuiltinAgent"
-                            class="required">*</span></label>
+                        <div class="setting-info-header">
+                          <label>{{ $t('agent.editor.systemPrompt') }} <span v-if="!isBuiltinAgent"
+                              class="required">*</span></label>
+                          <PromptTemplateSelector :type="isAgentMode ? 'agentSystemPrompt' : 'systemPrompt'"
+                            position="inline" :hasKnowledgeBase="hasKnowledgeBase"
+                            @select="handleSystemPromptTemplateSelect"
+                            @reset-default="isAgentMode ? handleAgentSystemPromptResetDefault : handleSystemPromptTemplateSelect" />
+                        </div>
                         <p class="desc">{{ $t('agentEditor.desc.systemPrompt') }}{{ isBuiltinAgent ?
                           $t('agentEditor.desc.leaveEmptyDefault') : '' }}</p>
                         <div class="placeholder-tags">
@@ -195,22 +201,16 @@
                       </div>
                       <div class="setting-control setting-control-full" style="position: relative;">
                         <!-- Agent模式：统一提示词（使用 {{web_search_status}} 占位符动态控制行为） -->
-                        <div v-if="isAgentMode" class="textarea-with-template">
+                        <div v-if="isAgentMode">
                           <t-textarea ref="promptTextareaRef" v-model="formData.config.system_prompt"
                             :placeholder="systemPromptPlaceholder" :autosize="{ minRows: 10, maxRows: 25 }"
                             @input="handlePromptInput" class="system-prompt-textarea" />
-                          <PromptTemplateSelector type="agentSystemPrompt" position="corner"
-                            :hasKnowledgeBase="hasKnowledgeBase" @select="handleSystemPromptTemplateSelect"
-                            @reset-default="handleAgentSystemPromptResetDefault" />
                         </div>
                         <!-- 普通模式：单个提示词 -->
-                        <div v-else class="textarea-with-template">
+                        <div v-else>
                           <t-textarea ref="promptTextareaRef" v-model="formData.config.system_prompt"
                             :placeholder="systemPromptPlaceholder" :autosize="{ minRows: 10, maxRows: 25 }"
                             @input="handlePromptInput" class="system-prompt-textarea" />
-                          <PromptTemplateSelector type="systemPrompt" position="corner"
-                            :hasKnowledgeBase="hasKnowledgeBase" @select="handleSystemPromptTemplateSelect"
-                            @reset-default="handleSystemPromptTemplateSelect" />
                         </div>
                         <!-- 占位符提示下拉框 -->
                         <Teleport to="body">

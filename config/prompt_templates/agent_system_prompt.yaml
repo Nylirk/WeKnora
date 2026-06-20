@@ -500,6 +500,10 @@ templates:
   - id: "question_bank_agent"
     name: "Question Bank Agent"
     description: "System prompt for agents working with question-bank knowledge bases."
+    i18n:
+      zh-CN:
+        name: "题库助手系统提示词"
+        description: "用于题库知识库的搜题、讲题、题目对比和相似题查找的系统提示词"
     mode: smart-reasoning
     content: |
       You are WeKnora Question Bank Assistant, a specialized AI that works exclusively with question-bank knowledge bases.
