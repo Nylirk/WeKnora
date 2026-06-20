@@ -89,7 +89,7 @@ func normalizeExcelQuestions(tableText string) ([]types.ImportQuestionItem, []ty
 		}
 
 		// Parse options (option_a, option_b, ...)
-		options := parseOptions(values, colIndex)
+		options := parseExcelOptions(values, colIndex)
 		if len(options) > 0 && (qType == string(types.QuestionTypeSingleChoice) || qType == string(types.QuestionTypeMultipleChoice)) {
 			body := types.ChoiceQuestionBody{Options: options}
 			if bodyBytes, err := json.Marshal(body); err == nil {
@@ -214,8 +214,8 @@ func getColValue(values []string, idx columnIndex, col string) string {
 	return strings.TrimSpace(values[pos])
 }
 
-// parseOptions extracts choice options from the row values based on column headers.
-func parseOptions(values []string, idx columnIndex) []types.QuestionOption {
+// parseExcelOptions extracts choice options from the row values based on column headers.
+func parseExcelOptions(values []string, idx columnIndex) []types.QuestionOption {
 	var options []types.QuestionOption
 	optionLabels := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
 	for _, label := range optionLabels {
