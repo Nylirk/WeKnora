@@ -157,6 +157,17 @@ func (r *questionRepository) DeleteQuestion(ctx context.Context, tenantID uint64
 	return r.db.WithContext(ctx).Where("tenant_id = ? AND question_set_id = ? AND id = ?", tenantID, setID, id).Delete(&types.Question{}).Error
 }
 
+func (r *questionRepository) ListQuestionsByIDs(ctx context.Context, tenantID uint64, questionIDs []string) ([]*types.Question, error) {
+	if len(questionIDs) == 0 {
+		return []*types.Question{}, nil
+	}
+	var questions []*types.Question
+	if err := r.db.WithContext(ctx).Where("tenant_id = ? AND id IN ? AND deleted_at IS NULL", tenantID, questionIDs).Find(&questions).Error; err != nil {
+		return nil, err
+	}
+	return questions, nil
+}
+
 func applyQuestionFilters(q *gorm.DB, filter *types.QuestionListFilter) *gorm.DB {
 	if filter == nil {
 		return q
