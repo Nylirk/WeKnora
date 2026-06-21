@@ -496,6 +496,19 @@ test('processing drawer renders waterfall timeline matching knowledge timeline s
   assert.equal(source.includes('kp-stage-list'), false, 'old kp-stage-list must be removed')
   assert.equal(source.includes('kp-stage-row'), false, 'old kp-stage-row must be removed')
   assert.equal(source.includes('processing-drawer-hint'), false, 'old processing-drawer-hint must be removed')
+  // Detail panel for row click
+  assert.equal(source.includes('kp-detail'), true, 'must use kp-detail panel')
+  assert.equal(source.includes('kp-detail-head'), true, 'must use kp-detail-head')
+  assert.equal(source.includes('kp-tabs'), true, 'must use kp-tabs')
+  assert.equal(source.includes('概览'), true, 'must have 概览 tab')
+  assert.equal(source.includes('输入'), true, 'must have 输入 tab')
+  assert.equal(source.includes('输出'), true, 'must have 输出 tab')
+  assert.equal(source.includes('原始 JSON'), true, 'must have 原始 JSON tab')
+  assert.equal(source.includes('kp-body-with-detail'), true, 'must use kp-body-with-detail')
+  // kp-name-reason between stage name and kind
+  assert.equal(source.includes('kp-name-reason'), true, 'must use kp-name-reason for paused reason')
+  // Paused loading is orange
+  assert.equal(source.includes('qp-loading-warning'), true, 'must have qp-loading-warning class')
   // Paused still shows reason text via row.reason
   assert.equal(source.includes('row.reason'), true, 'must show row.reason for paused stages')
   // Paused icon is NOT pause-circle
@@ -504,14 +517,14 @@ test('processing drawer renders waterfall timeline matching knowledge timeline s
 })
 
 test('processing drawer header shows status tag for paused and ready_for_review', () => {
-  // Header status tag computed covers paused and ready_for_review
+  // Header status tag computed values
   assert.equal(source.includes("'部分暂停'"), true, 'header status must include 部分暂停 for paused')
-  assert.equal(source.includes("'已完成'"), true, 'header status must include 已完成 for ready_for_review/completed')
+  assert.equal(source.includes("'待人工审核'"), true, 'ready_for_review header status must show 待人工审核')
   // Old banner hint removed (waterfall shows reason per row instead)
   assert.equal(source.includes('部分阶段因配置缺失已暂停'), false, 'old alert banner text must be removed')
 })
 
-test('processing resolve functions implement correct priority: failed > running > paused > ready_for_review', () => {
+test('processing resolve functions implement correct priority and 4-stage pipeline', () => {
   const apiSource = readFileSync(new URL('../../api/question.ts', import.meta.url), 'utf8')
 
   // resolveProcessingStages handles paused stages from config
@@ -524,6 +537,10 @@ test('processing resolve functions implement correct priority: failed > running 
   assert.equal(buttonFn.includes("stage === 'failed'"), true, 'failed check must have highest priority')
   assert.equal(buttonFn.includes("status === 'running'"), true, 'running check must precede paused')
   assert.equal(buttonFn.includes("status === 'paused'"), true, 'paused check must precede ready_for_review')
+
+  // STAGE_ORDER has 4 items, no ready_for_review
+  assert.equal(apiSource.includes("STAGE_ORDER = ['draft_imported', 'indexing', 'auto_tagging', 'syllabus_checking']"), true, 'STAGE_ORDER must have 4 stages without ready_for_review')
+  assert.equal(apiSource.includes("ready_for_review']"), false, 'STAGE_ORDER must not include ready_for_review')
 
   // Stages derivation checks both enabled flags
   assert.equal(apiSource.includes('auto_tagging_enabled'), true, 'must check auto_tagging_enabled')

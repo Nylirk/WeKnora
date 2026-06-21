@@ -62,16 +62,16 @@ export const PROCESSING_BUTTON_LABELS: Record<ProcessingButtonState, string> = {
   completed: '处理完成',
 }
 
-const STAGE_ORDER = ['draft_imported', 'indexing', 'auto_tagging', 'syllabus_checking', 'ready_for_review']
+const STAGE_ORDER = ['draft_imported', 'indexing', 'auto_tagging', 'syllabus_checking']
 
 /**
  * Derive per-stage status from the API response.
  * Prefer backend-computed stages when available; fall back to local derivation.
  */
 export function resolveProcessingStages(status: QuestionSetProcessingStatus): ProcessingStageDetail[] {
-  // When backend provides structured stages, use them directly.
+  // When backend provides structured stages, use them directly (filter out ready_for_review).
   if (status.stages && status.stages.length > 0) {
-    return status.stages
+    return status.stages.filter(s => s.key !== 'ready_for_review')
   }
 
   // Fallback: derive from current stage + config booleans.
@@ -86,12 +86,20 @@ export function resolveProcessingStages(status: QuestionSetProcessingStatus): Pr
 
   const currentIdx = STAGE_ORDER.indexOf(currentStage)
   const isFailed = currentStage === 'failed'
+  const isReadyForReview = currentStage === 'ready_for_review'
 
-  for (let i = 0; i < stages.length; i++) {
-    if (i < currentIdx) {
+  // ready_for_review is a terminal status: all 4 stages are completed.
+  if (isReadyForReview) {
+    for (let i = 0; i < stages.length; i++) {
       stages[i].status = 'completed'
-    } else if (i === currentIdx && !isFailed) {
-      stages[i].status = currentStage === 'ready_for_review' ? 'completed' : 'running'
+    }
+  } else {
+    for (let i = 0; i < stages.length; i++) {
+      if (i < currentIdx) {
+        stages[i].status = 'completed'
+      } else if (i === currentIdx && !isFailed) {
+        stages[i].status = 'running'
+      }
     }
   }
 

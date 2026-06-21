@@ -12,7 +12,11 @@
             @click="processingDrawerVisible = true"
           >
             <template #icon>
-              <t-loading v-if="processingButton.state === 'running' || processingButton.state === 'paused'" size="small" />
+              <t-loading
+                v-if="processingButton.state === 'running' || processingButton.state === 'paused'"
+                size="small"
+                :class="{ 'qp-loading-warning': processingButton.state === 'paused' }"
+              />
               <t-icon v-else :name="processingButtonIcon" />
             </template>
             {{ processingButtonLabel }}
@@ -90,7 +94,7 @@
             </div>
 
             <!-- BODY (Waterfall) -->
-            <div class="kp-body">
+            <div class="kp-body" :class="{ 'kp-body-with-detail': selectedProcessingRow }">
               <div v-if="qpShowRuler" class="kp-ruler">
                 <div class="kp-ruler-spacer-name" />
                 <div class="kp-ruler-spacer-meta" />
@@ -106,10 +110,13 @@
 
               <div class="kp-scroll">
                 <div class="kp-rows">
-                  <div v-for="row in qpFlatRows" :key="row.key" class="kp-row" :class="{
-                    'kp-row-root': row.isRoot,
-                    'kp-row-stage': row.isStage,
-                  }">
+                  <div v-for="row in qpFlatRows" :key="row.key" class="kp-row"
+                    :class="{
+                      'kp-row-root': row.isRoot,
+                      'kp-row-stage': row.isStage,
+                      'kp-row-active': selectedProcessingRow?.key === row.key,
+                    }"
+                    @click="selectProcessingRow(row)">
                     <div class="kp-cell-name">
                       <div class="kp-name-inner" :style="{ paddingLeft: row.depth * 16 + 'px' }">
                         <span class="kp-tree-toggle-spacer" />
@@ -117,6 +124,7 @@
                         <span class="kp-name-text" :class="{ 'kp-name-root': row.isRoot, 'kp-name-mono': !row.isRoot }">
                           {{ row.label }}
                         </span>
+                        <span v-if="row.reason" class="kp-name-reason">{{ row.reason }}</span>
                         <span class="kp-name-kind">{{ row.kind }}</span>
                       </div>
                     </div>
@@ -131,7 +139,7 @@
                     </div>
 
                     <div class="kp-cell-bar">
-                      <div v-if="row.isPlaceholder" class="kp-bar kp-bar-placeholder" />
+                      <div v-if="row.status === 'paused' || row.isPlaceholder" class="kp-bar kp-bar-placeholder" />
                       <template v-else>
                         <div class="kp-bar" :class="[`kp-bar-${row.status}`]" :style="qpBarStyle(row)">
                           <span class="kp-bar-tip">
@@ -142,14 +150,131 @@
                             <span>{{ PROCESSING_STAGE_STATUS_LABELS[row.status] || row.status }}</span>
                           </span>
                         </div>
-                        <span v-if="row.status === 'paused' && row.reason" style="position:absolute; left:0; top:24px; font-size:11px; color:var(--td-warning-color); white-space:nowrap;">
-                          {{ row.reason }}
-                        </span>
                       </template>
                     </div>
                   </div>
                 </div>
               </div>
+            </div>
+
+            <!-- DETAIL PANEL -->
+            <div class="kp-detail" :class="{ 'kp-detail-open': selectedProcessingRow }">
+              <template v-if="selectedProcessingRow">
+                <div class="kp-detail-head">
+                  <div class="kp-detail-title">
+                    <span class="kp-status-dot kp-detail-dot" :class="[`kp-dot-${selectedProcessingRow.status}`]" />
+                    <span class="kp-detail-name">{{ selectedProcessingRow.label }}</span>
+                    <span class="kp-detail-kind">{{ selectedProcessingRow.kind }}</span>
+                    <span class="kp-status-chip" :class="`kp-chip-${selectedProcessingRow.status}`">
+                      {{ PROCESSING_STAGE_STATUS_LABELS[selectedProcessingRow.status] || selectedProcessingRow.status }}
+                    </span>
+                  </div>
+                  <div class="kp-detail-actions">
+                    <button type="button" class="kp-icon-btn" title="关闭" @click="selectedProcessingRow = null">
+                      <t-icon name="close" size="18px" />
+                    </button>
+                  </div>
+                </div>
+
+                <div class="kp-tabs">
+                  <button type="button" class="kp-tab" :class="{ 'kp-tab-active': processingDetailTab === 'overview' }"
+                    @click="processingDetailTab = 'overview'">概览</button>
+                  <button type="button" class="kp-tab" :class="{ 'kp-tab-active': processingDetailTab === 'input' }"
+                    @click="processingDetailTab = 'input'">输入</button>
+                  <button type="button" class="kp-tab" :class="{ 'kp-tab-active': processingDetailTab === 'output' }"
+                    @click="processingDetailTab = 'output'">输出</button>
+                  <button type="button" class="kp-tab" :class="{ 'kp-tab-active': processingDetailTab === 'raw' }"
+                    @click="processingDetailTab = 'raw'">原始 JSON</button>
+                </div>
+
+                <div class="kp-detail-body">
+                  <!-- Overview tab -->
+                  <template v-if="processingDetailTab === 'overview'">
+                    <div class="kp-section">
+                      <div class="kp-section-title">状态</div>
+                      <div class="kp-kv">
+                        <div class="kp-kv-row">
+                          <span class="kp-kv-key">状态</span>
+                          <span class="kp-kv-val">
+                            <span class="kp-status-chip" :class="`kp-chip-${selectedProcessingRow.status}`">
+                              {{ PROCESSING_STAGE_STATUS_LABELS[selectedProcessingRow.status] || selectedProcessingRow.status }}
+                            </span>
+                          </span>
+                        </div>
+                        <div class="kp-kv-row">
+                          <span class="kp-kv-key">耗时</span>
+                          <span class="kp-kv-val kp-mono">{{ selectedProcessingRow.formattedDur }}</span>
+                        </div>
+                        <div v-if="selectedProcessingRow.reason" class="kp-kv-row">
+                          <span class="kp-kv-key">原因</span>
+                          <span class="kp-kv-val" style="color:var(--td-warning-color)">{{ selectedProcessingRow.reason }}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="kp-section">
+                      <div class="kp-section-title">身份信息</div>
+                      <div class="kp-kv">
+                        <div class="kp-kv-row">
+                          <span class="kp-kv-key">名称</span>
+                          <span class="kp-kv-val">{{ selectedProcessingRow.label }}</span>
+                        </div>
+                        <div class="kp-kv-row">
+                          <span class="kp-kv-key">类型</span>
+                          <span class="kp-kv-val kp-mono">{{ selectedProcessingRow.kind.toUpperCase() }}</span>
+                        </div>
+                        <div class="kp-kv-row">
+                          <span class="kp-kv-key">状态</span>
+                          <span class="kp-kv-val">{{ PROCESSING_STAGE_STATUS_LABELS[selectedProcessingRow.status] || selectedProcessingRow.status }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+
+                  <!-- Input tab -->
+                  <template v-else-if="processingDetailTab === 'input'">
+                    <div class="kp-section">
+                      <div class="kp-section-title">配置快照</div>
+                      <div class="kp-kv">
+                        <div class="kp-kv-row">
+                          <span class="kp-kv-key">知识点关联</span>
+                          <span class="kp-kv-val">{{ processingStatus?.auto_tagging_enabled ? '已启用' : '未启用' }}</span>
+                        </div>
+                        <div class="kp-kv-row">
+                          <span class="kp-kv-key">考纲筛选</span>
+                          <span class="kp-kv-val">{{ processingStatus?.syllabus_check_enabled ? '已启用' : '未启用' }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+
+                  <!-- Output tab -->
+                  <template v-else-if="processingDetailTab === 'output'">
+                    <div class="kp-section">
+                      <div class="kp-section-title">阶段结果</div>
+                      <div class="kp-kv">
+                        <div class="kp-kv-row" v-if="processingStatus?.skipped_auto_tagging_reason">
+                          <span class="kp-kv-key">知识点关联</span>
+                          <span class="kp-kv-val" style="color:var(--td-warning-color)">{{ processingStatus.skipped_auto_tagging_reason }}</span>
+                        </div>
+                        <div class="kp-kv-row" v-if="processingStatus?.skipped_syllabus_reason">
+                          <span class="kp-kv-key">考纲筛选</span>
+                          <span class="kp-kv-val" style="color:var(--td-warning-color)">{{ processingStatus.skipped_syllabus_reason }}</span>
+                        </div>
+                        <div v-if="!processingStatus?.skipped_auto_tagging_reason && !processingStatus?.skipped_syllabus_reason" class="kp-kv-row">
+                          <span class="kp-kv-val">所有阶段正常运行</span>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+
+                  <!-- Raw JSON tab -->
+                  <template v-else-if="processingDetailTab === 'raw'">
+                    <div class="kp-section">
+                      <pre class="kp-json kp-mono">{{ qpRowJson(selectedProcessingRow) }}</pre>
+                    </div>
+                  </template>
+                </div>
+              </template>
             </div>
           </div>
         </div>
@@ -374,7 +499,26 @@ const STAGE_LABELS: Record<string, string> = {
   indexing: '索引处理',
   auto_tagging: '知识点关联',
   syllabus_checking: '考纲筛选',
-  ready_for_review: '待人工审核',
+}
+
+const selectedProcessingRow = ref<QpFlatRow | null>(null)
+const processingDetailTab = ref<'overview' | 'input' | 'output' | 'raw'>('overview')
+
+function selectProcessingRow(row: QpFlatRow) {
+  if (selectedProcessingRow.value?.key === row.key) {
+    selectedProcessingRow.value = null
+    return
+  }
+  selectedProcessingRow.value = row
+  processingDetailTab.value = 'overview'
+}
+
+function qpRowJson(row: QpFlatRow): string {
+  try {
+    return JSON.stringify(row, null, 2)
+  } catch {
+    return String(row)
+  }
 }
 
 interface QpFlatRow {
@@ -411,7 +555,7 @@ const qpFlatRows = computed<QpFlatRow[]>(() => {
       : processingButton.value.state === 'running' ? 'running'
       : processingButton.value.state === 'ready_for_review' ? 'done'
       : processingButton.value.state === 'completed' ? 'done'
-      : processingButton.value.state === 'paused' ? 'running'
+      : processingButton.value.state === 'paused' ? 'paused'
       : 'pending',
     isRoot: true,
     isStage: false,
@@ -423,7 +567,9 @@ const qpFlatRows = computed<QpFlatRow[]>(() => {
 
   sorted.forEach((s, i) => {
     const offset = i * 500
-    const dur = s.status === 'pending' ? 0 : s.status === 'running' ? total - offset : s.status === 'paused' ? 200 : 500
+    const isPaused = s.status === 'paused'
+    const isPending = s.status === 'pending'
+    const dur = isPending || isPaused ? 0 : s.status === 'running' ? total - offset : 500
     rows.push({
       key: s.key,
       depth: 1,
@@ -433,10 +579,10 @@ const qpFlatRows = computed<QpFlatRow[]>(() => {
       reason: s.reason,
       isRoot: false,
       isStage: true,
-      isPlaceholder: s.status === 'pending',
-      durationMs: dur,
-      startMs: offset,
-      formattedDur: s.status === 'pending' ? '—' : s.status === 'running' ? formatMs(total - offset) : s.status === 'paused' ? formatMs(200) : '500ms',
+      isPlaceholder: isPending || isPaused,
+      durationMs: isPending || isPaused ? 0 : dur,
+      startMs: isPending || isPaused ? 0 : offset,
+      formattedDur: isPending || isPaused ? '—' : s.status === 'running' ? formatMs(total - offset) : '500ms',
     })
   })
 
@@ -483,7 +629,8 @@ const qpHeaderStatusText = computed(() => {
   if (processingStatus.value?.stage === 'failed') return '处理失败'
   if (processingButton.value.state === 'running') return '进行中'
   if (processingButton.value.state === 'paused') return '部分暂停'
-  if (processingButton.value.state === 'ready_for_review' || processingButton.value.state === 'completed') return '已完成'
+  if (processingButton.value.state === 'ready_for_review') return '待人工审核'
+  if (processingButton.value.state === 'completed') return '已完成'
   return ''
 })
 
@@ -1082,7 +1229,12 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
   z-index: 2;
 }
 .kp-bar:hover { filter: brightness(1.05); }
-.kp-bar-placeholder { display: none; }
+.kp-bar-placeholder {
+  background: transparent;
+  border: 1px dashed var(--td-component-border);
+  height: 6px;
+  top: 13px;
+}
 .kp-bar-done,
 .kp-bar-completed { background: var(--td-success-color); }
 .kp-bar-failed { background: var(--td-error-color); }
@@ -1132,6 +1284,137 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 @keyframes kpLivePulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.45; transform: scale(0.8); }
+}
+
+/* Reason text between stage name and kind */
+.kp-name-reason {
+  font-size: 11px;
+  color: var(--td-warning-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+}
+
+/* Detail panel */
+.kp-body-with-detail .kp-scroll {
+  max-height: 55vh;
+}
+.kp-detail {
+  flex: 0 0 auto;
+  max-height: 0;
+  overflow: hidden;
+  border-top: 1px solid transparent;
+  transition: max-height 0.2s ease;
+}
+.kp-detail-open {
+  max-height: 45vh;
+  border-top-color: var(--td-component-stroke);
+  overflow-y: auto;
+}
+.kp-detail-head {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--td-component-stroke);
+}
+.kp-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.kp-detail-dot {
+  width: 9px; height: 9px;
+}
+.kp-detail-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+.kp-detail-kind {
+  font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", "Menlo", "Courier New", monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--td-text-color-placeholder);
+  padding-left: 8px;
+}
+.kp-detail-actions {
+  margin-left: auto;
+}
+.kp-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--td-component-stroke);
+  padding: 0 16px;
+}
+.kp-tab {
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.kp-tab:hover { color: var(--td-text-color-primary); }
+.kp-tab-active {
+  color: var(--td-brand-color);
+  border-bottom-color: var(--td-brand-color);
+}
+.kp-detail-body {
+  padding: 12px 20px;
+  font-size: 13px;
+}
+.kp-section { margin-bottom: 16px; }
+.kp-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--td-text-color-placeholder);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+.kp-kv { display: flex; flex-direction: column; gap: 6px; }
+.kp-kv-row { display: flex; align-items: baseline; gap: 8px; }
+.kp-kv-key {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+  min-width: 60px;
+  flex-shrink: 0;
+}
+.kp-kv-val { font-size: 13px; color: var(--td-text-color-primary); }
+.kp-status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.kp-chip-completed,
+.kp-chip-done { background: var(--td-success-color-1); color: var(--td-success-color); }
+.kp-chip-running { background: var(--td-warning-color-1); color: var(--td-warning-color); }
+.kp-chip-paused { background: var(--td-warning-color-1); color: var(--td-warning-color); }
+.kp-chip-failed { background: var(--td-error-color-1); color: var(--td-error-color); }
+.kp-chip-pending { background: var(--td-bg-color-secondarycontainer); color: var(--td-text-color-placeholder); }
+.kp-json {
+  margin: 0;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 30vh;
+  overflow: auto;
+  background: var(--td-bg-color-secondarycontainer);
+  padding: 10px 12px;
+  border-radius: 4px;
+}
+
+/* Orange loading for paused button */
+.qp-loading-warning :deep(svg),
+.qp-loading-warning :deep(circle) {
+  color: var(--td-warning-color);
 }
 .import-type-menu { width: 320px; padding: 6px; }
 .import-type-item { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; border: 0; border-radius: 6px; color: var(--td-text-color-primary); background: transparent; text-align: left; cursor: pointer; }
