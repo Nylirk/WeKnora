@@ -3,6 +3,22 @@
     <div class="detail-header">
       <h2>{{ displaySetName }}</h2>
       <div class="header-actions">
+
+        <t-tooltip v-if="processingButton.state !== 'hidden'" :content="processingButtonTooltip" placement="bottom-right">
+          <t-button
+            :theme="processingButtonTheme"
+            variant="outline"
+            shape="round"
+            :loading="processingButton.state === 'running'"
+            @click="processingDrawerVisible = true"
+          >
+            <template v-if="processingButton.state !== 'running'" #icon>
+              <t-icon :name="processingButtonIcon" />
+            </template>
+            {{ processingButtonLabel }}
+          </t-button>
+        </t-tooltip>
+
         <t-button theme="primary" @click="openCreateDialog">
           <template #icon><t-icon name="add" /></template>
           {{ $t('questionBank.addQuestion', '新增题目') }}
@@ -27,25 +43,67 @@
             </div>
           </template>
         </t-popup>
-        <t-button @click="generateVisible = true">{{ $t('questionBank.generateTitle', '生成题目') }}</t-button>
-        <t-button theme="success" @click="openExportDialog">{{ $t('questionBank.export', '导出评测集') }}</t-button>
+
       </div>
     </div>
 
-    <!-- Processing status banner (only visible when processing is active) -->
-    <div v-if="processingStatus && processingStatus.stage && processingStatus.stage !== 'ready_for_review'" class="processing-banner">
-      <t-alert
-        :theme="processingStatus.stage === 'failed' ? 'error' : 'info'"
-        :close-btn="false"
-      >
-        <template #message>
-          <div class="processing-banner-content">
-            <span>{{ stageLabel(processingStatus.stage) }}</span>
-            <span v-if="processingStatus.error_message" class="processing-error">：{{ processingStatus.error_message }}</span>
+    <!-- Processing progress Drawer -->
+    <t-drawer
+      v-model:visible="processingDrawerVisible"
+      header="处理进度"
+      :close-btn="true"
+      size="380px"
+      placement="right"
+      :z-index="2500"
+    >
+      <div class="processing-drawer-content">
+        <!-- Error message (when failed) -->
+        <div v-if="processingStatus?.stage === 'failed' && processingStatus?.error_message" class="processing-error-banner">
+          <t-alert theme="error" :close-btn="false">
+            {{ processingStatus.error_message }}
+          </t-alert>
+        </div>
+
+        <!-- Stage list -->
+        <div class="processing-stages">
+          <div
+            v-for="stage in processingStages"
+            :key="stage.key"
+            class="processing-stage-item"
+            :class="`stage-${stage.status}`"
+          >
+            <div class="stage-indicator">
+              <t-icon v-if="stage.status === 'completed'" name="check-circle-filled" size="18px" class="stage-icon-completed" />
+              <t-icon v-else-if="stage.status === 'running'" name="loading" size="18px" class="stage-icon-running" />
+              <t-icon v-else-if="stage.status === 'paused'" name="pause-circle-filled" size="18px" class="stage-icon-paused" />
+              <t-icon v-else-if="stage.status === 'failed'" name="close-circle-filled" size="18px" class="stage-icon-failed" />
+              <t-icon v-else name="time-filled" size="18px" class="stage-icon-pending" />
+            </div>
+            <div class="stage-body">
+              <div class="stage-label">{{ stage.label }}</div>
+              <div class="stage-status" :class="`status-${stage.status}`">
+                {{ PROCESSING_STAGE_STATUS_LABELS[stage.status] || stage.status }}
+                <span v-if="stage.status === 'running'" class="stage-spinner"><t-loading size="small" /></span>
+              </div>
+              <div v-if="stage.reason" class="stage-reason">{{ stage.reason }}</div>
+            </div>
           </div>
-        </template>
-      </t-alert>
-    </div>
+        </div>
+
+        <!-- Footer hint -->
+        <div v-if="processingButton.state === 'paused'" class="processing-drawer-hint">
+          <t-alert theme="warning" :close-btn="false">
+            部分阶段因配置缺失已暂停。请前往知识库设置配置知识点知识库或考纲后重新导入。
+          </t-alert>
+        </div>
+        <div v-else-if="processingButton.state === 'ready_for_review'" class="processing-drawer-hint">
+          <t-alert theme="success" :close-btn="false">
+            自动处理已完成。题目已进入人工审核阶段，可在题目列表中逐题审核。
+          </t-alert>
+        </div>
+      </div>
+    </t-drawer>
+
 
     <div class="filter-bar">
       <t-select v-model="filter.question_type" :placeholder="$t('questionBank.typeFilter', '题型')" clearable style="width: 120px" @change="reloadFromFirstPage">
@@ -193,8 +251,11 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import {
   getQuestionSet, listQuestions, deleteQuestion as apiDeleteQuestion,
   exportToEvaluationDataset, updateQuestionStatus, getQuestionSetProcessingStatus,
+  resolveProcessingStages, resolveProcessingButtonState,
+  PROCESSING_STAGE_STATUS_LABELS, PROCESSING_BUTTON_LABELS,
   type Question, type QuestionListFilter, type QuestionType,
   type QuestionSetProcessingStatus, type QuestionSetProcessingStage,
+  type ProcessingButtonState,
 } from '@/api/question'
 import type { BlockPreviewSummary, ImportBlock } from '@/api/question_block'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
@@ -211,20 +272,67 @@ const importUI = useImportUIStore()
 
 // Processing status
 const processingStatus = ref<QuestionSetProcessingStatus | null>(null)
+const processingDrawerVisible = ref(false)
 let processingPollTimer: ReturnType<typeof setInterval> | null = null
 
-function stageLabel(stage: QuestionSetProcessingStage): string {
-  const map: Record<string, string> = {
-    '': '未开始',
-    draft_imported: '已导入为草稿',
-    indexing: '向量化中',
-    auto_tagging: '知识点匹配中',
-    syllabus_checking: '考纲筛选中',
-    ready_for_review: '待人工审核',
-    failed: '处理失败',
+// Derived processing state
+const processingStages = computed(() => {
+  if (!processingStatus.value) return []
+  return resolveProcessingStages(processingStatus.value)
+})
+
+const processingButton = computed(() => {
+  return resolveProcessingButtonState(processingStatus.value)
+})
+
+const processingButtonLabel = computed(() => {
+  const btn = processingButton.value
+  if (btn.state === 'running') {
+    return `${PROCESSING_BUTTON_LABELS[btn.state]} ${btn.completedCount}/${btn.totalCount}`
   }
-  return map[stage] || stage
-}
+  return PROCESSING_BUTTON_LABELS[btn.state]
+})
+
+const processingButtonTooltip = computed(() => {
+  const btn = processingButton.value
+  if (btn.state === 'running') {
+    return `题目处理中 (${btn.completedCount}/${btn.totalCount})`
+  }
+  if (btn.state === 'paused') {
+    return '部分处理阶段已暂停，点击查看详情'
+  }
+  if (btn.state === 'failed') {
+    return '处理失败，点击查看错误详情'
+  }
+  if (btn.state === 'ready_for_review') {
+    return '自动处理已完成，点击查看进度'
+  }
+  return '点击查看处理进度'
+})
+
+const processingButtonTheme = computed(() => {
+  const themeMap: Record<ProcessingButtonState, string> = {
+    hidden: 'default',
+    running: 'primary',
+    paused: 'warning',
+    failed: 'danger',
+    ready_for_review: 'success',
+    completed: 'success',
+  }
+  return themeMap[processingButton.value.state] || 'default'
+})
+
+const processingButtonIcon = computed(() => {
+  const iconMap: Record<ProcessingButtonState, string> = {
+    hidden: '',
+    running: 'loading',
+    paused: 'pause-circle',
+    failed: 'close-circle',
+    ready_for_review: 'check-circle',
+    completed: 'check-circle',
+  }
+  return iconMap[processingButton.value.state] || 'info-circle'
+})
 
 async function fetchProcessingStatus() {
   if (!props.knowledgeBaseId || !props.setId) return
@@ -628,9 +736,94 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .draft-review-tag:hover { color: var(--td-brand-color); }
 .question-empty { padding: 48px 16px; }
 .restore-draft-copy { margin: 0; color: var(--td-text-color-secondary); line-height: 1.7; }
-.processing-banner { margin-bottom: 16px; }
-.processing-banner-content { display: flex; gap: 4px; }
-.processing-error { color: var(--td-error-color); }
+
+/* Processing status button — compact circle, fixed to right */
+.processing-status-btn {
+  flex-shrink: 0;
+}
+
+/* Processing drawer */
+.processing-drawer-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.processing-error-banner {
+  /* uses t-alert, no extra styling needed */
+}
+.processing-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.processing-stage-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--td-component-stroke);
+  transition: background 0.15s ease;
+}
+.processing-stage-item:last-child {
+  border-bottom: none;
+}
+.stage-indicator {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+}
+.stage-icon-completed { color: var(--td-success-color); }
+.stage-icon-running { color: var(--td-brand-color); animation: spin 1s linear infinite; }
+.stage-icon-paused { color: var(--td-warning-color); }
+.stage-icon-failed { color: var(--td-error-color); }
+.stage-icon-pending { color: var(--td-text-color-disabled); }
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.stage-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stage-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+.stage-status {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stage-status.status-completed { color: var(--td-success-color); }
+.stage-status.status-running { color: var(--td-brand-color); }
+.stage-status.status-paused { color: var(--td-warning-color); }
+.stage-status.status-failed { color: var(--td-error-color); }
+.stage-status.status-pending { color: var(--td-text-color-placeholder); }
+.stage-spinner {
+  display: inline-flex;
+  align-items: center;
+}
+.stage-reason {
+  font-size: 12px;
+  color: var(--td-warning-color);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+.processing-drawer-hint {
+  margin-top: 4px;
+}
 .import-type-menu { width: 320px; padding: 6px; }
 .import-type-item { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; border: 0; border-radius: 6px; color: var(--td-text-color-primary); background: transparent; text-align: left; cursor: pointer; }
 .import-type-item:not(:disabled):hover { background: var(--td-bg-color-container-hover); }
@@ -653,4 +846,6 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .import-loading-overlay.leaving { opacity: 0; pointer-events: none; }
 .import-loading-content { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .import-loading-text { font-size: 14px; color: var(--td-text-color-secondary); }
+
+
 </style>

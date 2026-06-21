@@ -437,3 +437,96 @@ test('jsonQuestionImport does not silently drop malformed JSONL lines', () => {
   assert.equal(adapterSource.includes('JSONL_PARSE_ERROR'), true, 'must emit error for unparseable lines')
   assert.equal(adapterSource.includes('_jsonl_parse_error'), true, 'must track parse errors')
 })
+
+// ── Processing button state & drawer ──
+
+test('processing helper functions are imported in QuestionSetDetail', () => {
+  assert.equal(source.includes('resolveProcessingStages'), true, 'must import resolveProcessingStages')
+  assert.equal(source.includes('resolveProcessingButtonState'), true, 'must import resolveProcessingButtonState')
+  assert.equal(source.includes('PROCESSING_STAGE_STATUS_LABELS'), true, 'must import PROCESSING_STAGE_STATUS_LABELS')
+  assert.equal(source.includes('PROCESSING_BUTTON_LABELS'), true, 'must import PROCESSING_BUTTON_LABELS')
+})
+
+test('processing button is conditionally rendered based on state', () => {
+  // Button must check state before rendering
+  assert.equal(source.includes("processingButton.state !== 'hidden'"), true, 'must hide button when state is hidden')
+  // Running state shows loading spinner
+  assert.equal(source.includes("processingButton.state === 'running'"), true, 'must check running state for loading')
+  // Click opens drawer
+  assert.equal(source.includes('processingDrawerVisible = true'), true, 'must open drawer on click')
+  // Button is circle shape with tooltip
+  assert.equal(source.includes('shape="round"'), true, 'must use round shape for pill button style')
+  assert.equal(source.includes('processingButtonTooltip'), true, 'must use tooltip for status text')
+})
+
+test('processing drawer shows stage list with status and reason', () => {
+  assert.equal(source.includes('processingDrawerVisible'), true, 'must have drawer visibility state')
+  assert.equal(source.includes('<t-drawer'), true, 'must have t-drawer component')
+  assert.equal(source.includes('处理进度'), true, 'drawer title must be 处理进度')
+  // Stage iteration
+  assert.equal(source.includes('v-for="stage in processingStages"'), true, 'must iterate processingStages')
+  // Stage reason display
+  assert.equal(source.includes('stage.reason'), true, 'must show stage.reason for paused stages')
+  // Status labels from constants
+  assert.equal(source.includes('PROCESSING_STAGE_STATUS_LABELS[stage.status]'), true, 'must use status label constants')
+  // Error message for failed state
+  assert.equal(source.includes("processingStatus?.stage === 'failed'"), true, 'must check failed state for error banner')
+})
+
+test('processing drawer shows contextual hints for paused and ready_for_review', () => {
+  assert.equal(source.includes("processingButton.state === 'paused'"), true, 'must show paused hint')
+  assert.equal(source.includes("processingButton.state === 'ready_for_review'"), true, 'must show ready_for_review hint')
+  assert.equal(source.includes('部分阶段因配置缺失已暂停'), true, 'must show paused hint text')
+  assert.equal(source.includes('自动处理已完成'), true, 'must show ready_for_review hint text')
+})
+
+test('processing resolve functions implement correct priority: failed > running > paused > ready_for_review', () => {
+  const apiSource = readFileSync(new URL('../../api/question.ts', import.meta.url), 'utf8')
+
+  // resolveProcessingStages handles paused stages from config
+  assert.equal(apiSource.includes("status === 'paused'"), true, 'must define paused status')
+  assert.equal(apiSource.includes("status === 'failed'"), true, 'must define failed status')
+  assert.equal(apiSource.includes("status === 'running'"), true, 'must define running status')
+
+  // resolveProcessingButtonState implements priority order
+  const buttonFn = sourceSection(apiSource, 'export function resolveProcessingButtonState', 'export function')
+  assert.equal(buttonFn.includes("stage === 'failed'"), true, 'failed check must have highest priority')
+  assert.equal(buttonFn.includes("status === 'running'"), true, 'running check must precede paused')
+  assert.equal(buttonFn.includes("status === 'paused'"), true, 'paused check must precede ready_for_review')
+
+  // Stages derivation checks both enabled flags
+  assert.equal(apiSource.includes('auto_tagging_enabled'), true, 'must check auto_tagging_enabled')
+  assert.equal(apiSource.includes('syllabus_check_enabled'), true, 'must check syllabus_check_enabled')
+  assert.equal(apiSource.includes('skipped_auto_tagging_reason'), true, 'must use skipped_auto_tagging_reason')
+  assert.equal(apiSource.includes('skipped_syllabus_reason'), true, 'must use skipped_syllabus_reason')
+})
+
+test('processing button uses dynamic theme and icon per state', () => {
+  // Theme mapping includes all states
+  assert.equal(source.includes("failed: 'danger'"), true, 'failed state must use danger theme')
+  assert.equal(source.includes("paused: 'warning'"), true, 'paused state must use warning theme')
+  assert.equal(source.includes("running: 'primary'"), true, 'running state must use primary theme')
+  assert.equal(source.includes("ready_for_review: 'success'"), true, 'ready_for_review must use success theme')
+
+  // Icon mapping distinguishes paused from failed
+  assert.equal(source.includes("paused: 'pause-circle'"), true, 'paused must use pause-circle icon')
+  assert.equal(source.includes("failed: 'close-circle'"), true, 'failed must use close-circle icon')
+})
+
+test('processing button tooltip shows progress count when running', () => {
+  // Running state shows X/Y progress in tooltip
+  assert.equal(source.includes('btn.completedCount'), true, 'must show completedCount')
+  assert.equal(source.includes('btn.totalCount'), true, 'must show totalCount')
+  assert.equal(source.includes("btn.state === 'running'"), true, 'must conditionally show progress count')
+  // Tooltip content computed
+  assert.equal(source.includes('processingButtonTooltip'), true, 'must have tooltip property')
+  assert.equal(source.includes('题目处理中'), true, 'running tooltip must mention processing')
+})
+
+test('polling stops at terminal stages but button remains visible', () => {
+  // Polling still stops at ready_for_review / failed / ''
+  assert.equal(source.includes("stage === 'ready_for_review' || stage === 'failed' || stage === ''"), true, 'must stop polling at terminal stages')
+  // But the old banner is removed (replaced by button + drawer)
+  assert.equal(source.includes('processing-banner'), false, 'old processing-banner class must be removed')
+  assert.equal(source.includes('stageLabel(processingStatus.stage)'), false, 'old stageLabel call must be removed')
+})
