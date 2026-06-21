@@ -954,6 +954,9 @@ func (r *realKBRepo) ListKnowledgeBasesByParentID(_ context.Context, _ uint64, _
 func (r *realKBRepo) GetKnowledgeBaseByPurpose(_ context.Context, _ uint64, _ string, _ string) (*types.KnowledgeBase, error) {
 	return nil, nil
 }
+func (r *realKBRepo) RepairKnowledgeBaseEmptyIDByPurpose(_ context.Context, _ uint64, _ string, _ string, _ string) (int64, error) {
+	return 0, nil
+}
 func (r *realKBRepo) DeleteKnowledgeBase(_ context.Context, _ string) error {
 	return nil
 }

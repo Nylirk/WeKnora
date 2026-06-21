@@ -135,6 +135,34 @@ func (r *knowledgeBaseRepository) GetKnowledgeBaseByPurpose(
 	return &kb, nil
 }
 
+// RepairKnowledgeBaseEmptyIDByPurpose repairs a corrupt system-managed KB
+// whose id column is empty by setting it to newID. The WHERE clause is
+// deliberately narrow: only hidden, system_managed rows matching the given
+// (tenant, purpose, parent) and with empty id are affected.
+func (r *knowledgeBaseRepository) RepairKnowledgeBaseEmptyIDByPurpose(
+	ctx context.Context, tenantID uint64, purpose string, parentKBID string, newID string,
+) (int64, error) {
+	if newID == "" {
+		return 0, errors.New("repair: newID must not be empty")
+	}
+	result := r.db.WithContext(ctx).Exec(
+		`UPDATE knowledge_bases
+		 SET id = ?, updated_at = NOW()
+		 WHERE tenant_id = ?
+		   AND id = ''
+		   AND purpose = ?
+		   AND parent_knowledge_base_id = ?
+		   AND visibility = 'hidden'
+		   AND system_managed = true
+		   AND deleted_at IS NULL`,
+		newID, tenantID, purpose, parentKBID,
+	)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
+}
+
 // userKBPinRow mirrors the user_kb_pins table. Kept local to the
 // repository because it never escapes the package; callers see the
 // higher-level map[kb_id]pinned_at returned by ListUserKBPinIDs.

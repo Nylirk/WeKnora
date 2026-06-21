@@ -205,12 +205,34 @@ func (s *QuestionService) findOrCreateSyllabusKB(
 	)
 	if err == nil && existing != nil {
 		if strings.TrimSpace(existing.ID) == "" {
-			return nil, apperrors.NewInternalServerError(
-				"复用隐藏考纲知识库失败: syllabus knowledge_base ID is empty",
+			repairedID := uuid.NewString()
+			rows, repairErr := repo.RepairKnowledgeBaseEmptyIDByPurpose(
+				ctx, tenantID, types.KBPurposeQuestionBankSyllabus, parentKB.ID, repairedID,
 			)
+			if repairErr != nil {
+				return nil, apperrors.NewInternalServerError(
+					fmt.Sprintf("修复隐藏考纲知识库 ID 失败: %v", repairErr),
+				)
+			}
+			if rows == 0 {
+				// The corrupt row may have been deleted by another process.
+				// Fall through to create a fresh KB.
+				logger.Warnf(ctx,
+					"Repair of empty-ID syllabus KB affected 0 rows (parent=%s), creating fresh",
+					parentKB.ID)
+			} else {
+				existing.ID = repairedID
+				existing.NormalizeNotNullJSONB()
+				logger.Warnf(ctx,
+					"Repaired empty ID for hidden syllabus KB: parent=%s repaired_id=%s",
+					parentKB.ID, repairedID)
+			}
 		}
-		logger.Infof(ctx, "Reusing existing syllabus KB %s for parent %s", existing.ID, parentKB.ID)
-		return existing, nil
+		if strings.TrimSpace(existing.ID) != "" {
+			logger.Infof(ctx, "Reusing existing syllabus KB %s for parent %s", existing.ID, parentKB.ID)
+			return existing, nil
+		}
+		// existing.ID still empty after repair (0 rows affected) → create fresh.
 	}
 
 	// Create a new hidden syllabus KB.

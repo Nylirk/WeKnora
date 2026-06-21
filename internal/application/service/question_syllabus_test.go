@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -13,8 +15,11 @@ import (
 
 type syllabusKBRepo struct {
 	interfaces.KnowledgeBaseRepository
-	createdKB  *types.KnowledgeBase
-	purposeKBs map[string]*types.KnowledgeBase
+	createdKB          *types.KnowledgeBase
+	purposeKBs         map[string]*types.KnowledgeBase
+	repairCalled       bool
+	repairRowsAffected int64
+	repairErr          error
 }
 
 func (r *syllabusKBRepo) GetKnowledgeBaseByPurpose(_ context.Context, _ uint64, purpose string, _ string) (*types.KnowledgeBase, error) {
@@ -27,6 +32,11 @@ func (r *syllabusKBRepo) GetKnowledgeBaseByPurpose(_ context.Context, _ uint64, 
 func (r *syllabusKBRepo) CreateKnowledgeBase(_ context.Context, kb *types.KnowledgeBase) error {
 	r.createdKB = kb
 	return nil
+}
+
+func (r *syllabusKBRepo) RepairKnowledgeBaseEmptyIDByPurpose(_ context.Context, _ uint64, _ string, _ string, _ string) (int64, error) {
+	r.repairCalled = true
+	return r.repairRowsAffected, r.repairErr
 }
 
 type syllabusKBService struct {
@@ -142,33 +152,87 @@ func TestSyllabusKB_ReusesExisting(t *testing.T) {
 	}
 }
 
-// Test 2b: Existing syllabus KB with empty ID returns error.
-func TestSyllabusKB_RejectsExistingEmptyID(t *testing.T) {
+// Test 2b: Existing syllabus KB with empty ID is repaired automatically.
+func TestSyllabusKB_RepairsExistingEmptyID(t *testing.T) {
+	parentID := "parent-1"
 	existing := &types.KnowledgeBase{
-		ID:                 "",
-		Name:               "bad-existing",
-		Type:               types.KnowledgeBaseTypeDocument,
-		TenantID:           1,
-		QuestionBankConfig: &types.QuestionBankConfig{},
+		ID:                    "",
+		Name:                  "bad-existing",
+		Type:                  types.KnowledgeBaseTypeDocument,
+		TenantID:              1,
+		Visibility:            types.KBVisibilityHidden,
+		SystemManaged:         true,
+		ParentKnowledgeBaseID: &parentID,
+		Purpose:               strPtr(types.KBPurposeQuestionBankSyllabus),
+		QuestionBankConfig:    &types.QuestionBankConfig{},
 	}
 
 	repo := &syllabusKBRepo{
 		purposeKBs: map[string]*types.KnowledgeBase{
 			types.KBPurposeQuestionBankSyllabus: existing,
 		},
+		repairRowsAffected: 1,
 	}
 	kbSvc := &syllabusKBService{repo: repo}
 	svc := &QuestionService{knowledgeBaseSvc: kbSvc}
 
 	parent := &types.KnowledgeBase{
-		ID:   "parent-1",
+		ID:   parentID,
+		Name: "Test Bank",
+		Type: types.KnowledgeBaseTypeQuestionBank,
+	}
+
+	kb, err := svc.findOrCreateSyllabusKB(context.Background(), parent)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.TrimSpace(kb.ID) == "" {
+		t.Fatal("expected repaired non-empty ID")
+	}
+	if !repo.repairCalled {
+		t.Fatal("expected repair to be called for empty-ID existing KB")
+	}
+	if repo.createdKB != nil {
+		t.Fatal("must not create duplicate KB when repair succeeds")
+	}
+}
+
+// Test 2c: Repair failure returns a clear error.
+func TestSyllabusKB_RepairExistingEmptyIDError(t *testing.T) {
+	parentID := "parent-1"
+	existing := &types.KnowledgeBase{
+		ID:                    "",
+		Name:                  "bad-existing",
+		Type:                  types.KnowledgeBaseTypeDocument,
+		TenantID:              1,
+		Visibility:            types.KBVisibilityHidden,
+		SystemManaged:         true,
+		ParentKnowledgeBaseID: &parentID,
+		Purpose:               strPtr(types.KBPurposeQuestionBankSyllabus),
+		QuestionBankConfig:    &types.QuestionBankConfig{},
+	}
+
+	repo := &syllabusKBRepo{
+		purposeKBs: map[string]*types.KnowledgeBase{
+			types.KBPurposeQuestionBankSyllabus: existing,
+		},
+		repairErr: fmt.Errorf("database unreachable"),
+	}
+	kbSvc := &syllabusKBService{repo: repo}
+	svc := &QuestionService{knowledgeBaseSvc: kbSvc}
+
+	parent := &types.KnowledgeBase{
+		ID:   parentID,
 		Name: "Test Bank",
 		Type: types.KnowledgeBaseTypeQuestionBank,
 	}
 
 	_, err := svc.findOrCreateSyllabusKB(context.Background(), parent)
 	if err == nil {
-		t.Fatal("expected error when existing syllabus KB has empty ID")
+		t.Fatal("expected error when repair fails")
+	}
+	if !strings.Contains(err.Error(), "修复隐藏考纲知识库 ID 失败") {
+		t.Errorf("expected repair error message, got: %v", err)
 	}
 }
 
