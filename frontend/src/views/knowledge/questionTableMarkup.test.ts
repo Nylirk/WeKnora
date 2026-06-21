@@ -18,6 +18,7 @@ const workbenchSource = readFileSync(new URL('./QuestionImportWorkbench.vue', im
 const blockReviewSource = readFileSync(new URL('./components/BlockReviewPanel.vue', import.meta.url), 'utf8')
 const questionReviewSource = readFileSync(new URL('./components/QuestionReviewPanel.vue', import.meta.url), 'utf8')
 const routerSource = readFileSync(new URL('../../router/index.ts', import.meta.url), 'utf8')
+const kbEditorSource = readFileSync(new URL('./KnowledgeBaseEditorModal.vue', import.meta.url), 'utf8')
 
 function sourceSection(content: string, start: string, end: string): string {
   const startIndex = content.indexOf(start)
@@ -691,4 +692,18 @@ test('reprocess button disabled when running', () => {
 test('reprocessQuestionSet is exported from question API', () => {
   assert.equal(questionApiSource.includes('reprocessQuestionSet'), true, 'API module must export reprocessQuestionSet')
   assert.equal(questionApiSource.includes('QuestionProcessingReprocessScope'), true, 'API module must export scope type')
+})
+
+// ── Syllabus document upload UI ──
+
+test('syllabus uploaded state uses compact file card', () => {
+  assert.equal(kbEditorSource.includes('syllabus-file-card'), true, 'must use syllabus-file-card class')
+  assert.equal(kbEditorSource.includes('syllabus-file-main'), true, 'must use syllabus-file-main class')
+  assert.equal(kbEditorSource.includes('syllabus-file-name'), true, 'must use syllabus-file-name class')
+  assert.equal(kbEditorSource.includes('重新上传'), true, 'must keep 重新上传 button')
+})
+
+test('syllabus delete entry is removed from UI', () => {
+  assert.equal(kbEditorSource.includes('删除考纲'), false, 'must not show 删除考纲 in UI')
+  assert.equal(kbEditorSource.includes('onDeleteSyllabus'), false, 'must not reference onDeleteSyllabus handler')
 })
