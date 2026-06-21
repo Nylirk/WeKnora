@@ -379,7 +379,7 @@
       </template>
       <template #auto_tagging_status="{ row }">
         <template v-if="(row.auto_tagging_status === 'matched' || row.auto_tagging_status === 'completed') && getTopKnowledgePointCandidate(row)">
-          <t-tooltip :content="buildKnowledgeCandidateTooltip(row)" placement="top-left">
+          <t-popup placement="top-left" trigger="hover" show-arrow>
             <t-tag theme="success" variant="light" size="small" class="question-match-tag">
               <span class="question-match-tag-text">
                 {{ getTopKnowledgePointCandidate(row)?.knowledge_point }}
@@ -388,7 +388,37 @@
                 </template>
               </span>
             </t-tag>
-          </t-tooltip>
+
+            <template #content>
+              <div class="semantic-popover">
+                <div class="semantic-popover-title">知识点匹配详情</div>
+
+                <div
+                  v-for="(candidate, index) in getKnowledgePointCandidates(row)"
+                  :key="`${candidate.knowledge_point}-${index}`"
+                  class="semantic-candidate"
+                >
+                  <div class="semantic-candidate-head">
+                    <span class="semantic-candidate-name">{{ candidate.knowledge_point }}</span>
+                    <t-tag size="small" theme="success" variant="light">
+                      {{ formatConfidence(candidate.confidence) || '—' }}
+                    </t-tag>
+                  </div>
+
+                  <div class="semantic-meta-row">
+                    <span class="semantic-meta-label">分数</span>
+                    <span class="semantic-meta-value">
+                      {{ typeof candidate.score === 'number' ? candidate.score.toFixed(3) : '—' }}
+                    </span>
+                  </div>
+
+                  <div v-if="candidate.evidence_text" class="semantic-evidence">
+                    {{ candidate.evidence_text }}
+                  </div>
+                </div>
+              </div>
+            </template>
+          </t-popup>
         </template>
         <template v-else-if="row.auto_tagging_status === 'matched' || row.auto_tagging_status === 'completed'">
           <t-tag theme="default" variant="light" size="small">未匹配</t-tag>
@@ -399,15 +429,46 @@
         <t-tag v-else theme="default" variant="light" size="small">待处理</t-tag>
       </template>
       <template #syllabus_scope_result="{ row }">
-        <t-tooltip :content="buildSyllabusTooltip(row)" placement="top-left">
-          <t-tag v-if="row.syllabus_checking_status === 'failed'" theme="danger" variant="light" size="small">失败</t-tag>
-          <t-tag v-else-if="row.syllabus_checking_status === 'paused'" theme="warning" variant="light" size="small">暂停</t-tag>
-          <t-tag v-else-if="row.syllabus_checking_status === 'pending'" theme="default" variant="light" size="small">待筛选</t-tag>
-          <t-tag v-else-if="row.syllabus_scope_result === 'in_scope'" theme="success" variant="light" size="small">符合</t-tag>
-          <t-tag v-else-if="row.syllabus_scope_result === 'out_of_scope'" theme="warning" variant="light" size="small">超纲</t-tag>
-          <t-tag v-else-if="row.syllabus_scope_result === 'uncertain'" theme="default" variant="light" size="small">不确定</t-tag>
-          <span v-else class="qp-na">—</span>
-        </t-tooltip>
+        <template v-if="syllabusDisplayLabel(row) !== '—'">
+          <t-popup placement="top-left" trigger="hover" show-arrow>
+            <t-tag :theme="syllabusTagTheme(row)" variant="light" size="small">
+              {{ syllabusDisplayLabel(row) }}
+            </t-tag>
+
+            <template #content>
+              <div class="semantic-popover">
+                <div class="semantic-popover-title">考纲筛选详情</div>
+
+                <div class="semantic-meta-row">
+                  <span class="semantic-meta-label">结果</span>
+                  <span class="semantic-meta-value">{{ syllabusDisplayLabel(row) }}</span>
+                </div>
+
+                <div v-if="getSyllabusDetail(row).reason" class="semantic-meta-row">
+                  <span class="semantic-meta-label">原因</span>
+                  <span class="semantic-meta-value">{{ getSyllabusDetail(row).reason }}</span>
+                </div>
+
+                <div class="semantic-meta-row">
+                  <span class="semantic-meta-label">置信度</span>
+                  <span class="semantic-meta-value">{{ formatConfidence(getSyllabusDetail(row).confidence) || '—' }}</span>
+                </div>
+
+                <div class="semantic-meta-row">
+                  <span class="semantic-meta-label">分数</span>
+                  <span class="semantic-meta-value">
+                    {{ typeof getSyllabusDetail(row).score === 'number' ? getSyllabusDetail(row).score.toFixed(3) : '—' }}
+                  </span>
+                </div>
+
+                <div v-if="getSyllabusDetail(row).evidenceText" class="semantic-evidence">
+                  {{ getSyllabusDetail(row).evidenceText }}
+                </div>
+              </div>
+            </template>
+          </t-popup>
+        </template>
+        <span v-else class="qp-na">—</span>
       </template>
       <template #status="{ row }">
         <t-tooltip v-if="row.status === 'reviewed' && row.reviewed_at" :content="`审核人：${row.reviewed_by || '未知'}\n审核时间：${row.reviewed_at}`">
@@ -1079,20 +1140,32 @@ function statusLabel(s: string) {
   return map[s] || s
 }
 
+function getKnowledgePointCandidates(row: Question): Array<{
+  knowledge_point: string
+  confidence?: number
+  score?: number
+  evidence_text?: string
+}> {
+  const candidates = (row.extraction_metadata as any)?.auto_processing?.auto_tagging?.candidates
+  if (!Array.isArray(candidates)) return []
+
+  return candidates
+    .filter((c: any) => c && typeof c === 'object')
+    .slice(0, 3)
+    .map((c: any) => ({
+      knowledge_point: String(c.knowledge_point || '未知知识点'),
+      confidence: typeof c.confidence === 'number' ? c.confidence : undefined,
+      score: typeof c.score === 'number' ? c.score : undefined,
+      evidence_text: typeof c.evidence_text === 'string' ? c.evidence_text : undefined,
+    }))
+}
+
 function getTopKnowledgePointCandidate(row: Question): {
   knowledge_point: string
   confidence?: number
   score?: number
 } | null {
-  const candidates = (row.extraction_metadata as any)?.auto_processing?.auto_tagging?.candidates
-  if (!Array.isArray(candidates) || candidates.length === 0) return null
-  const first = candidates[0]
-  if (!first || typeof first !== 'object') return null
-  return {
-    knowledge_point: String(first.knowledge_point || ''),
-    confidence: typeof first.confidence === 'number' ? first.confidence : undefined,
-    score: typeof first.score === 'number' ? first.score : undefined,
-  }
+  return getKnowledgePointCandidates(row)[0] || null
 }
 
 function formatConfidence(value?: number): string {
@@ -1100,45 +1173,27 @@ function formatConfidence(value?: number): string {
   return `${Math.round(value * 100)}%`
 }
 
-function buildKnowledgeCandidateTooltip(row: Question): string {
-  const candidates = (row.extraction_metadata as any)?.auto_processing?.auto_tagging?.candidates
-  if (!Array.isArray(candidates) || candidates.length === 0) return ''
+function getSyllabusDetail(row: Question): {
+  label: string
+  reason?: string
+  confidence?: number
+  score?: number
+  evidenceText?: string
+} {
+  const meta = (row.extraction_metadata as any)?.auto_processing?.syllabus_checking || {}
+  const evidence = Array.isArray(meta.evidence) ? meta.evidence[0] : undefined
 
-  const lines: string[] = []
-  const max = Math.min(candidates.length, 3)
-  for (let i = 0; i < max; i++) {
-    const c = candidates[i]
-    if (!c || typeof c !== 'object') continue
-    const parts: string[] = []
-    if (c.knowledge_point) parts.push(`知识点：${c.knowledge_point}`)
-    if (typeof c.confidence === 'number') parts.push(`置信度：${Math.round(c.confidence * 100)}%`)
-    if (typeof c.score === 'number') parts.push(`分数：${c.score.toFixed(2)}`)
-    if (c.evidence_text) parts.push(`证据：${c.evidence_text}`)
-    lines.push(parts.join('\n'))
-    if (i < max - 1) lines.push('---')
+  return {
+    label: syllabusDisplayLabel(row),
+    reason: typeof meta.reason === 'string' ? meta.reason : undefined,
+    confidence: typeof meta.confidence === 'number' ? meta.confidence : undefined,
+    score: typeof meta.score === 'number'
+      ? meta.score
+      : typeof evidence?.score === 'number'
+        ? evidence.score
+        : undefined,
+    evidenceText: typeof evidence?.text === 'string' ? evidence.text : undefined,
   }
-  return lines.join('\n')
-}
-
-function buildSyllabusTooltip(row: Question): string {
-  const parts: string[] = []
-  if (row.syllabus_checking_status === 'failed') {
-    parts.push('考纲筛选：失败')
-  } else if (row.syllabus_checking_status === 'paused') {
-    parts.push('考纲筛选：暂停')
-    parts.push(`原因：${syllabusPauseReason(row)}`)
-  } else if (row.syllabus_checking_status === 'pending') {
-    parts.push('考纲筛选：待筛选')
-  } else if (row.syllabus_scope_result) {
-    parts.push(`考纲筛选：${syllabusDisplayLabel(row)}`)
-  }
-  const evidence = (row.extraction_metadata as any)?.auto_processing?.syllabus_checking?.evidence
-  if (Array.isArray(evidence) && evidence.length > 0) {
-    const e = evidence[0]
-    if (e?.score !== undefined) parts.push(`分数：${e.score}`)
-    if (e?.text) parts.push(`证据：${e.text}`)
-  }
-  return parts.join('\n')
 }
 
 function syllabusDisplayLabel(row: Question): string {
@@ -1162,6 +1217,14 @@ function syllabusPauseReason(row: Question): string {
     return '考纲已配置，当前题目尚未重新筛选'
   }
   return reason || '暂停'
+}
+
+function syllabusTagTheme(row: Question): 'success' | 'warning' | 'danger' | 'default' {
+  if (row.syllabus_checking_status === 'failed') return 'danger'
+  if (row.syllabus_checking_status === 'paused') return 'warning'
+  if (row.syllabus_scope_result === 'in_scope') return 'success'
+  if (row.syllabus_scope_result === 'out_of_scope') return 'warning'
+  return 'default'
 }
 
 // ── Syllabus unified filter ──
@@ -1242,6 +1305,82 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: middle;
+}
+
+/* Semantic popover (knowledge point & syllabus detail) */
+.semantic-popover {
+  width: 320px;
+  max-width: 360px;
+  padding: 12px;
+  color: var(--td-text-color-primary);
+  background: var(--td-bg-color-container);
+  border-radius: 8px;
+  box-shadow: var(--td-shadow-2);
+  line-height: 1.5;
+}
+
+.semantic-popover-title {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.semantic-candidate + .semantic-candidate {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--td-component-border);
+}
+
+.semantic-candidate-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.semantic-candidate-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.semantic-meta-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.semantic-meta-label {
+  flex: 0 0 48px;
+  color: var(--td-text-color-secondary);
+}
+
+.semantic-meta-value {
+  min-width: 0;
+  flex: 1;
+  color: var(--td-text-color-primary);
+  word-break: break-word;
+}
+
+.semantic-evidence {
+  margin-top: 8px;
+  padding: 8px;
+  max-height: 96px;
+  overflow: auto;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  background: var(--td-bg-color-secondarycontainer);
+  border-radius: 6px;
+  word-break: break-word;
 }
 .question-empty { padding: 48px 16px; }
 .restore-draft-copy { margin: 0; color: var(--td-text-color-secondary); line-height: 1.7; }

@@ -629,12 +629,22 @@ test('knowledge point filter includes unmatched', () => {
 
 test('knowledge point column reads extraction_metadata candidates', () => {
   assert.equal(source.includes('getTopKnowledgePointCandidate'), true, 'must use getTopKnowledgePointCandidate helper')
+  assert.equal(source.includes('getKnowledgePointCandidates'), true, 'must use getKnowledgePointCandidates helper')
   assert.equal(source.includes('auto_processing'), true, 'must reference auto_processing')
   assert.equal(source.includes('candidates'), true, 'must reference candidates')
   assert.equal(source.includes('formatConfidence'), true, 'must use formatConfidence helper')
-  assert.equal(source.includes('buildKnowledgeCandidateTooltip'), true, 'must use buildKnowledgeCandidateTooltip')
+  assert.equal(source.includes('buildKnowledgeCandidateTooltip'), false, 'must not use old string tooltip')
   assert.equal(source.includes('question-match-tag'), true, 'must use question-match-tag class')
   assert.equal(source.includes('question-match-tag-text'), true, 'must use question-match-tag-text class')
+})
+
+test('knowledge point hover uses structured popup, not string tooltip', () => {
+  assert.equal(source.includes('<t-popup'), true, 'must use t-popup for structured content')
+  assert.equal(source.includes('semantic-popover'), true, 'must use semantic-popover class')
+  assert.equal(source.includes('semantic-popover-title'), true, 'must use semantic-popover-title')
+  assert.equal(source.includes('semantic-candidate'), true, 'must use semantic-candidate blocks')
+  assert.equal(source.includes('semantic-evidence'), true, 'must use semantic-evidence for evidence text')
+  assert.equal(source.includes("join('\\n')"), false, 'must not join strings with newline')
 })
 
 test('knowledge point column shows candidate knowledge_point and confidence', () => {
@@ -661,21 +671,29 @@ test('syllabus filter distinguishes scope_result and checking_status', () => {
 })
 
 test('syllabus column checks checking_status before scope_result', () => {
-  const syllabusSlot = source.match(/<template #syllabus_scope_result="\{ row \}">([\s\S]*?)<\/template>/)?.[1] || ''
-  const failedIdx = syllabusSlot.indexOf("syllabus_checking_status === 'failed'")
-  const pausedIdx = syllabusSlot.indexOf("syllabus_checking_status === 'paused'")
-  const scopeIdx = syllabusSlot.indexOf("syllabus_scope_result === 'in_scope'")
-  assert.equal(failedIdx >= 0, true, 'syllabus column must check failed status')
-  assert.equal(pausedIdx >= 0, true, 'syllabus column must check paused status')
-  assert.equal(failedIdx < scopeIdx, true, 'failed check must precede scope_result check')
-  assert.equal(pausedIdx < scopeIdx, true, 'paused check must precede scope_result check')
+  // Status priority is now in syllabusDisplayLabel / syllabusTagTheme helpers.
+  // Verify the helpers exist and check failed/paused before scope_result values.
+  assert.equal(source.includes('function syllabusDisplayLabel'), true, 'must define syllabusDisplayLabel')
+  assert.equal(source.includes("syllabus_checking_status === 'failed'"), true, 'must check failed status in helpers')
+  assert.equal(source.includes("syllabus_checking_status === 'paused'"), true, 'must check paused status in helpers')
+  assert.equal(source.includes("syllabus_checking_status === 'pending'"), true, 'must check pending status in helpers')
+
+  // In syllabusDisplayLabel, failed/paused/pending must appear before scope_result.
+  const labelFn = source.match(/function syllabusDisplayLabel[^}]+}/)?.[0] || ''
+  const fnFailedIdx = labelFn.indexOf("'failed'")
+  const fnScopeIdx = labelFn.indexOf("syllabus_scope_result")
+  assert.equal(fnFailedIdx >= 0, true, 'syllabusDisplayLabel must check failed')
+  assert.equal(fnScopeIdx >= 0, true, 'syllabusDisplayLabel must check scope_result')
+  assert.equal(fnFailedIdx < fnScopeIdx, true, 'failed check must precede scope_result check in syllabusDisplayLabel')
 })
 
-test('syllabus column uses compact labels and tooltip', () => {
+test('syllabus column uses compact labels and structured popup', () => {
   assert.equal(source.includes('syllabusDisplayLabel'), true, 'must use syllabusDisplayLabel helper')
-  assert.equal(source.includes('buildSyllabusTooltip'), true, 'must use buildSyllabusTooltip')
+  assert.equal(source.includes('getSyllabusDetail'), true, 'must use getSyllabusDetail helper')
+  assert.equal(source.includes('syllabusTagTheme'), true, 'must use syllabusTagTheme helper')
   assert.equal(source.includes('syllabusPauseReason'), true, 'must use syllabusPauseReason helper')
   assert.equal(source.includes('考纲已配置，当前题目尚未重新筛选'), true, 'must hint re-screening needed')
+  assert.equal(source.includes('buildSyllabusTooltip'), false, 'must not use old string tooltip')
 })
 
 test('syllabus column uses short labels', () => {
