@@ -370,17 +370,23 @@
         {{ questionTypeLabel(row.question_type) }}
       </template>
       <template #stem_text="{ row }">
-        <t-tooltip :content="row.stem_text" placement="top-left">
-          <span class="question-stem-cell">{{ row.stem_text }}</span>
-        </t-tooltip>
+        <t-popup :placement="semanticPopupPlacement" trigger="hover" show-arrow attach="body">
+          <span class="question-stem-cell" @mouseenter="updateSemanticPopupPlacement">{{ row.stem_text }}</span>
+          <template #content>
+            <div class="semantic-popover semantic-popover-stem">
+              <div class="semantic-popover-title">题干</div>
+              <div class="semantic-stem-text">{{ row.stem_text || '—' }}</div>
+            </div>
+          </template>
+        </t-popup>
       </template>
       <template #difficulty="{ row }">
         {{ difficultyLabel(row.difficulty) }}
       </template>
       <template #auto_tagging_status="{ row }">
         <template v-if="(row.auto_tagging_status === 'matched' || row.auto_tagging_status === 'completed') && getTopKnowledgePointCandidate(row)">
-          <t-popup placement="top-left" trigger="hover" show-arrow>
-            <t-tag theme="success" variant="light" size="small" class="question-match-tag">
+          <t-popup :placement="semanticPopupPlacement" trigger="hover" show-arrow attach="body">
+            <t-tag theme="success" variant="light" size="small" class="question-match-tag" @mouseenter="updateSemanticPopupPlacement">
               <span class="question-match-tag-text">
                 {{ getTopKnowledgePointCandidate(row)?.knowledge_point }}
                 <template v-if="formatConfidence(getTopKnowledgePointCandidate(row)?.confidence)">
@@ -430,8 +436,8 @@
       </template>
       <template #syllabus_scope_result="{ row }">
         <template v-if="syllabusDisplayLabel(row) !== '—'">
-          <t-popup placement="top-left" trigger="hover" show-arrow>
-            <t-tag :theme="syllabusTagTheme(row)" variant="light" size="small">
+          <t-popup :placement="semanticPopupPlacement" trigger="hover" show-arrow attach="body">
+            <t-tag :theme="syllabusTagTheme(row)" variant="light" size="small" @mouseenter="updateSemanticPopupPlacement">
               {{ syllabusDisplayLabel(row) }}
             </t-tag>
 
@@ -1227,6 +1233,21 @@ function syllabusTagTheme(row: Question): 'success' | 'warning' | 'danger' | 'de
   return 'default'
 }
 
+// ── Adaptive popup placement ──
+const semanticPopupPlacement = ref<'top-left' | 'bottom-left'>('top-left')
+
+function updateSemanticPopupPlacement(e: MouseEvent) {
+  const el = e.currentTarget as HTMLElement | null
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const estimatedHeight = 220
+  const spaceAbove = rect.top
+  const spaceBelow = (window.innerHeight || document.documentElement.clientHeight) - rect.bottom
+  semanticPopupPlacement.value = spaceAbove < estimatedHeight && spaceBelow > spaceAbove
+    ? 'bottom-left'
+    : 'top-left'
+}
+
 // ── Syllabus unified filter ──
 const syllabusFilterValue = ref('')
 
@@ -1380,6 +1401,22 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
   color: var(--td-text-color-secondary);
   background: var(--td-bg-color-secondarycontainer);
   border-radius: 6px;
+  word-break: break-word;
+}
+
+/* Stem popover */
+.semantic-popover-stem {
+  width: 360px;
+  max-width: min(420px, calc(100vw - 32px));
+}
+
+.semantic-stem-text {
+  max-height: 180px;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--td-text-color-primary);
+  white-space: pre-wrap;
   word-break: break-word;
 }
 .question-empty { padding: 48px 16px; }

@@ -652,9 +652,20 @@ test('knowledge point column shows candidate knowledge_point and confidence', ()
   assert.equal(source.includes('formatConfidence(getTopKnowledgePointCandidate(row)?.confidence)'), true, 'must show confidence')
 })
 
-test('stem_text column has tooltip', () => {
+test('stem_text column uses structured popup not native tooltip', () => {
   assert.equal(source.includes('question-stem-cell'), true, 'must use question-stem-cell class')
   assert.equal(source.includes('#stem_text="{ row }"'), true, 'must have stem_text cell slot')
+  assert.equal(source.includes('<t-tooltip :content="row.stem_text"'), false, 'must not use native t-tooltip for stem_text')
+  assert.equal(source.includes('semantic-popover-stem'), true, 'must use semantic-popover-stem class')
+  assert.equal(source.includes('semantic-stem-text'), true, 'must use semantic-stem-text class')
+  assert.equal(source.includes('题干'), true, 'popover must show 题干 title')
+})
+
+test('all semantic popups use adaptive placement', () => {
+  assert.equal(source.includes('semanticPopupPlacement'), true, 'must use semanticPopupPlacement ref')
+  assert.equal(source.includes('updateSemanticPopupPlacement'), true, 'must use updateSemanticPopupPlacement handler')
+  assert.equal(source.includes('getBoundingClientRect'), true, 'must check element position for adaptive placement')
+  assert.equal(source.includes('placement="top-left"'), false, 'must not hardcode placement="top-left"')
 })
 
 test('syllabus filter includes paused / failed / pending', () => {
