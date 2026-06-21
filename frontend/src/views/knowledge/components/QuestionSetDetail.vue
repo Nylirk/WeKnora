@@ -12,7 +12,7 @@
             @click="processingDrawerVisible = true"
           >
             <template #icon>
-              <t-loading v-if="processingButton.state === 'running'" size="small" />
+              <t-loading v-if="processingButton.state === 'running' || processingButton.state === 'paused'" size="small" />
               <t-icon v-else :name="processingButtonIcon" />
             </template>
             {{ processingButtonLabel }}
@@ -65,27 +65,23 @@
         </div>
 
         <!-- Stage list -->
-        <div class="processing-stages">
+        <div class="kp-stage-list">
           <div
             v-for="stage in processingStages"
             :key="stage.key"
-            class="processing-stage-item"
-            :class="`stage-${stage.status}`"
+            class="kp-stage-row"
+            :class="[`kp-stage-${stage.status}`, { 'kp-stage-current': stage.status === 'running' || stage.status === 'paused' }]"
           >
-            <div class="stage-indicator">
-              <t-icon v-if="stage.status === 'completed'" name="check-circle-filled" size="18px" class="stage-icon-completed" />
-              <t-icon v-else-if="stage.status === 'running'" name="loading" size="18px" class="stage-icon-running" />
-              <t-icon v-else-if="stage.status === 'paused'" name="pause-circle-filled" size="18px" class="stage-icon-paused" />
-              <t-icon v-else-if="stage.status === 'failed'" name="close-circle-filled" size="18px" class="stage-icon-failed" />
-              <t-icon v-else name="time-filled" size="18px" class="stage-icon-pending" />
+            <div class="kp-stage-icon">
+              <t-loading v-if="stage.status === 'running' || stage.status === 'paused'" size="small" />
+              <t-icon v-else-if="stage.status === 'completed'" name="check-circle-filled" size="16px" class="kp-icon-done" />
+              <t-icon v-else-if="stage.status === 'failed'" name="close-circle-filled" size="16px" class="kp-icon-failed" />
+              <span v-else class="kp-dot kp-dot-pending" />
             </div>
-            <div class="stage-body">
-              <div class="stage-label">{{ stage.label }}</div>
-              <div class="stage-status" :class="`status-${stage.status}`">
-                {{ PROCESSING_STAGE_STATUS_LABELS[stage.status] || stage.status }}
-                <span v-if="stage.status === 'running'" class="stage-spinner"><t-loading size="small" /></span>
-              </div>
-              <div v-if="stage.reason" class="stage-reason">{{ stage.reason }}</div>
+            <div class="kp-stage-content">
+              <div class="kp-stage-title">{{ stage.label }}</div>
+              <div class="kp-stage-status">{{ PROCESSING_STAGE_STATUS_LABELS[stage.status] || stage.status }}</div>
+              <div v-if="stage.reason" class="kp-stage-reason">{{ stage.reason }}</div>
             </div>
           </div>
         </div>
@@ -305,7 +301,7 @@ const processingButtonIcon = computed(() => {
   const iconMap: Record<ProcessingButtonState, string> = {
     hidden: '',
     running: 'loading',
-    paused: 'pause-circle',
+    paused: 'loading',
     failed: 'close-circle',
     ready_for_review: 'check-circle',
     completed: 'check-circle',
@@ -684,29 +680,15 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .question-empty { padding: 48px 16px; }
 .restore-draft-copy { margin: 0; color: var(--td-text-color-secondary); line-height: 1.7; }
 
-/* Processing status button — compact circle, fixed to right */
-.processing-status-btn {
-  flex-shrink: 0;
-}
-
-/* Processing drawer */
-.processing-drawer-content {
+/* Processing drawer — simplified stage list matching knowledge timeline visuals */
+.kp-stage-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-.processing-error-banner {
-  /* uses t-alert, no extra styling needed */
-}
-.processing-stages {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
   border: 1px solid var(--td-component-stroke);
   border-radius: 9px;
   overflow: hidden;
 }
-.processing-stage-item {
+.kp-stage-row {
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -714,55 +696,45 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
   border-bottom: 1px solid var(--td-component-stroke);
   transition: background 0.15s ease;
 }
-.processing-stage-item:last-child {
+.kp-stage-row:last-child {
   border-bottom: none;
 }
-.stage-indicator {
+.kp-stage-icon {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   margin-top: 1px;
 }
-.stage-icon-completed { color: var(--td-success-color); }
-.stage-icon-running { color: var(--td-brand-color); animation: spin 1s linear infinite; }
-.stage-icon-paused { color: var(--td-warning-color); }
-.stage-icon-failed { color: var(--td-error-color); }
-.stage-icon-pending { color: var(--td-text-color-disabled); }
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.kp-icon-done { color: var(--td-success-color); }
+.kp-icon-failed { color: var(--td-error-color); }
+.kp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--td-text-color-placeholder);
 }
-.stage-body {
+.kp-dot-pending { background: var(--td-text-color-disabled); }
+.kp-stage-content {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.stage-label {
+.kp-stage-title {
   font-size: 14px;
   font-weight: 500;
   color: var(--td-text-color-primary);
 }
-.stage-status {
+.kp-stage-status {
   font-size: 12px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  color: var(--td-text-color-secondary);
 }
-.stage-status.status-completed { color: var(--td-success-color); }
-.stage-status.status-running { color: var(--td-brand-color); }
-.stage-status.status-paused { color: var(--td-warning-color); }
-.stage-status.status-failed { color: var(--td-error-color); }
-.stage-status.status-pending { color: var(--td-text-color-placeholder); }
-.stage-spinner {
-  display: inline-flex;
-  align-items: center;
-}
-.stage-reason {
+.kp-stage-reason {
   font-size: 12px;
   color: var(--td-warning-color);
   line-height: 1.5;

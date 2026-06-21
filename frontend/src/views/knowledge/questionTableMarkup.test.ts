@@ -454,19 +454,27 @@ test('processing helper functions are imported in QuestionSetDetail', () => {
 test('processing button is conditionally rendered based on state', () => {
   // Button must check state before rendering
   assert.equal(source.includes("processingButton.state !== 'hidden'"), true, 'must hide button when state is hidden')
-  // Running state shows loading spinner
-  assert.equal(source.includes("processingButton.state === 'running'"), true, 'must check running state for loading')
+  // Running and paused states both show t-loading spinner in icon slot
+  assert.equal(source.includes("processingButton.state === 'running' || processingButton.state === 'paused'"), true, 'must use t-loading for both running and paused')
   // Click opens drawer
   assert.equal(source.includes('processingDrawerVisible = true'), true, 'must open drawer on click')
-  // Button is circle shape with tooltip
+  // Button is round shape with tooltip
   assert.equal(source.includes('shape="round"'), true, 'must use round shape for pill button style')
   assert.equal(source.includes('processingButtonTooltip'), true, 'must use tooltip for status text')
+  // Button must NOT use t-button loading prop (that would disable click)
+  assert.equal(source.includes(':loading="processingButton.state ==='), false, 'must not use t-button loading prop')
 })
 
-test('processing drawer shows stage list with status and reason', () => {
+test('processing drawer shows kp-timeline-style stage list with status and reason', () => {
   assert.equal(source.includes('processingDrawerVisible'), true, 'must have drawer visibility state')
   assert.equal(source.includes('<t-drawer'), true, 'must have t-drawer component')
   assert.equal(source.includes('处理进度'), true, 'drawer title must be 处理进度')
+  // Uses kp-stage-list (knowledge processing timeline visual style)
+  assert.equal(source.includes('kp-stage-list'), true, 'must use kp-stage-list class')
+  assert.equal(source.includes('kp-stage-row'), true, 'must use kp-stage-row class')
+  // Old custom stage classes removed
+  assert.equal(source.includes('processing-stage-item'), false, 'old processing-stage-item class must be removed')
+  assert.equal(source.includes('stage-indicator'), false, 'old stage-indicator class must be removed')
   // Stage iteration
   assert.equal(source.includes('v-for="stage in processingStages"'), true, 'must iterate processingStages')
   // Stage reason display
@@ -475,6 +483,9 @@ test('processing drawer shows stage list with status and reason', () => {
   assert.equal(source.includes('PROCESSING_STAGE_STATUS_LABELS[stage.status]'), true, 'must use status label constants')
   // Error message for failed state
   assert.equal(source.includes("processingStatus?.stage === 'failed'"), true, 'must check failed state for error banner')
+  // Paused no longer uses pause-circle icon
+  assert.equal(source.includes('pause-circle-filled'), false, 'must not use pause-circle-filled icon')
+  assert.equal(source.includes('pause-circle'), false, 'must not use pause-circle icon')
 })
 
 test('processing drawer shows contextual hints for paused and ready_for_review', () => {
@@ -512,9 +523,11 @@ test('processing button uses dynamic theme and icon per state', () => {
   assert.equal(source.includes("running: 'primary'"), true, 'running state must use primary theme')
   assert.equal(source.includes("ready_for_review: 'success'"), true, 'ready_for_review must use success theme')
 
-  // Icon mapping distinguishes paused from failed
-  assert.equal(source.includes("paused: 'pause-circle'"), true, 'paused must use pause-circle icon')
+  // Icon mapping no longer uses pause-circle for paused
+  assert.equal(source.includes("pause-circle"), false, 'must not use pause-circle icon anywhere')
   assert.equal(source.includes("failed: 'close-circle'"), true, 'failed must use close-circle icon')
+  // Paused and running both use t-loading via template condition
+  assert.equal(source.includes("processingButton.state === 'running' || processingButton.state === 'paused'"), true, 'paused must also show t-loading')
 })
 
 test('processing button tooltip shows progress count when running', () => {
@@ -535,7 +548,7 @@ test('polling stops at terminal stages but button remains visible', () => {
   assert.equal(source.includes('stageLabel(processingStatus.stage)'), false, 'old stageLabel call must be removed')
 })
 
-test('removed standalone add-question, generate, and export controls are cleaned up', () => {
+test('removed standalone add-question, generate, export controls and old stage styles are cleaned up', () => {
   // No standalone "新增题目" button
   assert.equal(source.includes('新增题目'), false, 'standalone add-question button must be removed')
   // No generate dialog
@@ -545,4 +558,10 @@ test('removed standalone add-question, generate, and export controls are cleaned
   assert.equal(source.includes('导出评测集'), false, 'export evaluation dataset must not be referenced')
   // Import menu is the only primary action
   assert.equal(source.includes('openManualImport'), true, 'manual import must be in the import menu')
+  // Drawer uses kp-timeline style instead of old custom classes
+  assert.equal(source.includes('kp-stage-list'), true, 'drawer must use kp-stage-list')
+  assert.equal(source.includes('processing-stage-item'), false, 'old processing-stage-item must be removed')
+  assert.equal(source.includes('pause-circle'), false, 'pause-circle icon must not be used')
+  // Paused label remains "部分暂停"
+  assert.equal(questionApiSource.includes("paused: '部分暂停'"), true, 'paused button label must remain 部分暂停')
 })
