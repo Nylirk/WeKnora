@@ -224,11 +224,6 @@ type UpdateQuestionRequest struct {
 	SourceKnowledgeID *string `json:"source_knowledge_id"`
 	EvidenceChunkIDs  *JSON   `json:"evidence_chunk_ids"`
 	SortOrder         *int    `json:"sort_order"`
-	// Status is intentionally NOT a general-purpose field on the update request.
-	// To transition a question to reviewed/rejected, use the dedicated review API
-	// (approve/reject). If the caller sends reviewed or rejected here, the
-	// service layer rejects it with a 400.
-	Status *string `json:"status,omitempty"`
 }
 
 type UpdateQuestionStatusRequest struct {

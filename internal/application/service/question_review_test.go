@@ -331,113 +331,64 @@ func TestRejectReview_RequiresReason(t *testing.T) {
 	}
 }
 
-// --- UpdateQuestion rejects reviewed/rejected ---
+// --- UpdateQuestion never changes review status ---
 
-func TestUpdateQuestion_RejectsReviewedStatus(t *testing.T) {
-	repo := &reviewTestRepo{question: makeDraftQuestion("q-1")}
-	svc := newReviewService(repo)
-
-	reviewed := "reviewed"
-	_, err := svc.UpdateQuestion(reviewTestContext(), "kb-1", "set-1", "q-1", &types.UpdateQuestionRequest{
-		Status: &reviewed,
-	})
-	if err == nil {
-		t.Fatal("expected error when setting status=reviewed through UpdateQuestion, got nil")
+func TestUpdateQuestion_PreservesStatusAcrossAllReviewStates(t *testing.T) {
+	tests := []struct {
+		name    string
+		initial types.QuestionStatus
+	}{
+		{name: "draft stays draft", initial: types.QuestionStatusDraft},
+		{name: "reviewed stays reviewed", initial: types.QuestionStatusReviewed},
+		{name: "rejected stays rejected", initial: types.QuestionStatusRejected},
 	}
-	if !strings.Contains(err.Error(), "审核接口") {
-		t.Fatalf("error = %q, expected mention of 审核接口", err.Error())
-	}
-}
 
-func TestUpdateQuestion_RejectsRejectedStatus(t *testing.T) {
-	repo := &reviewTestRepo{question: makeDraftQuestion("q-1")}
-	svc := newReviewService(repo)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := makeDraftQuestion("q-1")
+			q.Status = tt.initial
+			repo := &reviewTestRepo{question: q}
+			svc := newReviewService(repo)
 
-	rejected := "rejected"
-	_, err := svc.UpdateQuestion(reviewTestContext(), "kb-1", "set-1", "q-1", &types.UpdateQuestionRequest{
-		Status: &rejected,
-	})
-	if err == nil {
-		t.Fatal("expected error when setting status=rejected through UpdateQuestion, got nil")
-	}
-}
-
-func TestUpdateQuestion_AllowsDraftStatus(t *testing.T) {
-	repo := &reviewTestRepo{question: makeDraftQuestion("q-1")}
-	svc := newReviewService(repo)
-
-	draft := "draft"
-	result, err := svc.UpdateQuestion(reviewTestContext(), "kb-1", "set-1", "q-1", &types.UpdateQuestionRequest{
-		Status: &draft,
-	})
-	if err != nil {
-		t.Fatalf("UpdateQuestion() with status=draft error = %v", err)
-	}
-	// Status should be recalculated by statusAfterStructuredEdit, not directly set.
-	// Since the question has answer text, it passes review validation and becomes reviewed.
-	if result.Status != types.QuestionStatusReviewed {
-		t.Fatalf("status = %q, want reviewed (recalculated from validation)", result.Status)
+			newStem := "新题干"
+			result, err := svc.UpdateQuestion(reviewTestContext(), "kb-1", "set-1", "q-1", &types.UpdateQuestionRequest{
+				StemText: &newStem,
+			})
+			if err != nil {
+				t.Fatalf("UpdateQuestion() error = %v", err)
+			}
+			if result.Status != tt.initial {
+				t.Fatalf("status = %q, want %q (must preserve original)", result.Status, tt.initial)
+			}
+			if result.StemText != "新题干" {
+				t.Fatalf("stem_text = %q, want 新题干", result.StemText)
+			}
+		})
 	}
 }
 
-func TestUpdateQuestion_WithoutStatusField(t *testing.T) {
-	// This is the normal edit path — no Status field at all.
+// UpdateQuestionRequest no longer has a Status field.
+// The handler layer checks raw JSON for a status key and rejects
+// reviewed/rejected before the DTO is bound. This test covers the
+// service-layer behavior: even if a frontend bug somehow passes a
+// status-like field, UpdateQuestion preserves the original status.
+
+// --- UpdateQuestionStatus rejects all status transitions ---
+
+func TestUpdateQuestionStatus_CannotMarkReviewedOrRejected(t *testing.T) {
 	repo := &reviewTestRepo{question: makeDraftQuestion("q-1")}
 	svc := newReviewService(repo)
 
-	newStem := "新题干"
-	result, err := svc.UpdateQuestion(reviewTestContext(), "kb-1", "set-1", "q-1", &types.UpdateQuestionRequest{
-		StemText: &newStem,
-	})
-	if err != nil {
-		t.Fatalf("UpdateQuestion() without status error = %v", err)
-	}
-	if result.StemText != "新题干" {
-		t.Fatalf("stem_text = %q, want 新题干", result.StemText)
-	}
-}
-
-// --- UpdateQuestionStatus rejects reviewed/rejected ---
-
-func TestUpdateQuestionStatus_RejectsReviewed(t *testing.T) {
-	repo := &reviewTestRepo{question: makeDraftQuestion("q-1")}
-	svc := newReviewService(repo)
-
-	_, err := svc.UpdateQuestionStatus(reviewTestContext(), "kb-1", "set-1", "q-1", &types.UpdateQuestionStatusRequest{
-		Status: "reviewed",
-	})
-	if err == nil {
-		t.Fatal("expected error when setting status=reviewed through UpdateQuestionStatus, got nil")
-	}
-	if !strings.Contains(err.Error(), "审核接口") {
-		t.Fatalf("error = %q, expected mention of 审核接口", err.Error())
-	}
-}
-
-func TestUpdateQuestionStatus_RejectsRejected(t *testing.T) {
-	repo := &reviewTestRepo{question: makeDraftQuestion("q-1")}
-	svc := newReviewService(repo)
-
-	_, err := svc.UpdateQuestionStatus(reviewTestContext(), "kb-1", "set-1", "q-1", &types.UpdateQuestionStatusRequest{
-		Status: "rejected",
-	})
-	if err == nil {
-		t.Fatal("expected error when setting status=rejected through UpdateQuestionStatus, got nil")
-	}
-}
-
-func TestUpdateQuestionStatus_AllowsDraft(t *testing.T) {
-	repo := &reviewTestRepo{question: makeReviewedQuestion("q-1")}
-	svc := newReviewService(repo)
-
-	result, err := svc.UpdateQuestionStatus(reviewTestContext(), "kb-1", "set-1", "q-1", &types.UpdateQuestionStatusRequest{
-		Status: "draft",
-	})
-	if err != nil {
-		t.Fatalf("UpdateQuestionStatus() with status=draft error = %v", err)
-	}
-	if result.Status != types.QuestionStatusDraft {
-		t.Fatalf("status = %q, want draft", result.Status)
+	for _, status := range []string{"draft", "reviewed", "rejected"} {
+		_, err := svc.UpdateQuestionStatus(reviewTestContext(), "kb-1", "set-1", "q-1", &types.UpdateQuestionStatusRequest{
+			Status: status,
+		})
+		if err == nil {
+			t.Fatalf("expected error for status=%q through UpdateQuestionStatus, got nil", status)
+		}
+		if !strings.Contains(err.Error(), "审核接口") {
+			t.Fatalf("error for status=%q = %q, expected mention of 审核接口", status, err.Error())
+		}
 	}
 }
 

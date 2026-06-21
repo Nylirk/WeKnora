@@ -60,13 +60,6 @@ func structuredQuestionStatus(q *types.Question) types.QuestionStatus {
 	return types.QuestionStatusReviewed
 }
 
-func statusAfterStructuredEdit(current types.QuestionStatus, q *types.Question) types.QuestionStatus {
-	if current == types.QuestionStatusRejected {
-		return current
-	}
-	return structuredQuestionStatus(q)
-}
-
 const maxQuestionSetNameLen = 40
 
 func (s *QuestionService) CreateQuestionSet(ctx context.Context, kbID string, req *types.CreateQuestionSetRequest) (*types.QuestionSet, error) {
@@ -250,7 +243,9 @@ func (s *QuestionService) CreateQuestion(ctx context.Context, kbID, setID string
 	if q.Difficulty == "" {
 		q.Difficulty = types.QuestionDifficultyMedium
 	}
-	q.Status = structuredQuestionStatus(q)
+	// All manually created questions enter draft status.
+	// Only the dedicated review API may transition to reviewed/rejected.
+	q.Status = types.QuestionStatusDraft
 	draftQ := &types.Question{QuestionType: q.QuestionType, StemText: q.StemText, QuestionBody: q.QuestionBody, AnswerBody: q.AnswerBody}
 	if errs := types.ValidateQuestionForDraft(draftQ); len(errs) > 0 {
 		return nil, apperrors.NewBadRequestError("validation failed: " + errs[0].Message)
@@ -305,14 +300,6 @@ func (s *QuestionService) UpdateQuestion(ctx context.Context, kbID, setID, quest
 	if q.KnowledgeBaseID != kbID {
 		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question does not belong to knowledge base %s", kbID))
 	}
-	// Reject attempts to transition to reviewed/rejected through the general-purpose
-	// update endpoint. Only the dedicated review API may change review state.
-	if req.Status != nil {
-		requestedStatus := types.QuestionStatus(*req.Status)
-		if requestedStatus == types.QuestionStatusReviewed || requestedStatus == types.QuestionStatusRejected {
-			return nil, apperrors.NewBadRequestError("请使用审核接口更新题目审核状态")
-		}
-	}
 	before := *q
 	if req.QuestionType != nil {
 		q.QuestionType = *req.QuestionType
@@ -353,7 +340,9 @@ func (s *QuestionService) UpdateQuestion(ctx context.Context, kbID, setID, quest
 	if req.SortOrder != nil {
 		q.SortOrder = *req.SortOrder
 	}
-	q.Status = statusAfterStructuredEdit(q.Status, q)
+	// Never change review status through general-purpose update.
+	// Only the review API (approve/reject) may transition to reviewed/rejected.
+	q.Status = before.Status
 	if err := s.validateEvidenceReferences(ctx, q.KnowledgeBaseID, q.SourceKnowledgeID, q.EvidenceChunkIDs); err != nil {
 		return nil, err
 	}
@@ -389,26 +378,9 @@ func (s *QuestionService) UpdateQuestionStatus(ctx context.Context, kbID, setID,
 	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
 		return nil, err
 	}
-	q, err := s.repository.GetQuestion(ctx, tenantID(ctx), setID, questionID)
-	if err != nil {
-		return nil, err
-	}
-	if q.KnowledgeBaseID != kbID {
-		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question does not belong to knowledge base %s", kbID))
-	}
-	newStatus := types.QuestionStatus(req.Status)
-	// Transitioning to reviewed/rejected must go through the dedicated review API
-	// so that human review metadata (knowledge_points, syllabus result, comment,
-	// rejection reason) is properly captured.
-	if newStatus == types.QuestionStatusReviewed || newStatus == types.QuestionStatusRejected {
-		return nil, apperrors.NewBadRequestError("请使用审核接口更新题目审核状态")
-	}
-	q.Status = newStatus
-	if err := s.repository.UpdateQuestion(ctx, q); err != nil {
-		return nil, err
-	}
-	s.scheduleQuestionIndex(ctx, []*types.Question{q})
-	return q, nil
+	// All status transitions must go through the dedicated review API
+	// so that human review metadata is properly captured.
+	return nil, apperrors.NewBadRequestError("请使用审核接口更新题目审核状态")
 }
 
 func (s *QuestionService) ImportQuestions(ctx context.Context, kbID, setID string, req *types.ImportQuestionsRequest) (*types.ImportQuestionsResult, error) {

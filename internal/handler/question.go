@@ -14,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"gorm.io/gorm"
 
 	servicepkg "github.com/Tencent/WeKnora/internal/application/service"
@@ -218,6 +219,19 @@ func (h *QuestionHandler) ListQuestions(c *gin.Context) {
 }
 
 func (h *QuestionHandler) UpdateQuestion(c *gin.Context) {
+	// Reject any attempt to set a review status through the general-purpose update
+	// endpoint. Only the dedicated review API (approve/reject) may change status.
+	// Use ShouldBindBodyWith to peek at raw JSON before binding to the DTO.
+	var body map[string]interface{}
+	if err := c.ShouldBindBodyWith(&body, binding.JSON); err == nil {
+		if statusVal, ok := body["status"]; ok {
+			s, isStr := statusVal.(string)
+			if isStr && (s == "reviewed" || s == "rejected") {
+				questionBadRequest(c, apperrors.NewBadRequestError("请使用审核接口更新题目审核状态"))
+				return
+			}
+		}
+	}
 	var req types.UpdateQuestionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		questionBadRequest(c, err)
