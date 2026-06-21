@@ -2134,6 +2134,8 @@ watch(
   justify-content: space-between;
   gap: 12px;
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   min-height: 40px;
   padding: 8px 12px;
   border: 1px solid var(--td-component-border);
@@ -2146,7 +2148,8 @@ watch(
   align-items: center;
   gap: 8px;
   min-width: 0;
-  flex: 1;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .syllabus-file-icon {
@@ -2156,7 +2159,6 @@ watch(
 
 .syllabus-file-name {
   min-width: 0;
-  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -701,6 +701,10 @@ test('syllabus uploaded state uses compact file card', () => {
   assert.equal(kbEditorSource.includes('syllabus-file-main'), true, 'must use syllabus-file-main class')
   assert.equal(kbEditorSource.includes('syllabus-file-name'), true, 'must use syllabus-file-name class')
   assert.equal(kbEditorSource.includes('重新上传'), true, 'must keep 重新上传 button')
+  assert.equal(kbEditorSource.includes('box-sizing: border-box'), true, 'must set box-sizing: border-box')
+  assert.equal(kbEditorSource.includes('max-width: 100%'), true, 'must set max-width: 100%')
+  assert.equal(kbEditorSource.includes('min-width: 0'), true, 'must use min-width: 0 for shrink')
+  assert.equal(kbEditorSource.includes('text-overflow: ellipsis'), true, 'must use text-overflow: ellipsis')
 })
 
 test('syllabus delete entry is removed from UI', () => {
