@@ -657,3 +657,50 @@ test('reprocess action does not introduce direct status transitions', () => {
   // reprocessQuestionSet API endpoint uses POST to /processing/reprocess (not /status)
   assert.equal(questionApiSource.includes('/processing/reprocess'), true, 'reprocess must use /processing/reprocess endpoint')
 })
+
+// ── Semantic result columns & filters ──
+
+test('question table includes semantic result columns', () => {
+  assert.equal(source.includes("colKey: 'auto_tagging_status'"), true, 'must have auto_tagging_status column')
+  assert.equal(source.includes("title: '知识点'"), true, 'must have 知识点 column title')
+  assert.equal(source.includes("colKey: 'syllabus_scope_result'"), true, 'must have syllabus_scope_result column')
+  assert.equal(source.includes("title: '考纲'"), true, 'must have 考纲 column title')
+})
+
+test('semantic slots are defined', () => {
+  assert.equal(source.includes('#auto_tagging_status="{ row }"'), true, 'must have auto_tagging_status slot')
+  assert.equal(source.includes('#syllabus_scope_result="{ row }"'), true, 'must have syllabus_scope_result slot')
+  assert.equal(source.includes('#stem_text="{ row }"'), true, 'must have stem_text slot')
+})
+
+test('semantic helper functions are present', () => {
+  assert.equal(source.includes('getKnowledgePointCandidates'), true)
+  assert.equal(source.includes('getTopKnowledgePointCandidate'), true)
+  assert.equal(source.includes('getSyllabusDetail'), true)
+  assert.equal(source.includes('syllabusDisplayLabel'), true)
+  assert.equal(source.includes('syllabusTagTheme'), true)
+  assert.equal(source.includes('onSyllabusFilterChange'), true)
+})
+
+test('semantic filters are present', () => {
+  assert.equal(source.includes('filter.auto_tagging_status'), true, 'must have auto_tagging_status filter')
+  assert.equal(source.includes('syllabusFilterValue'), true, 'must have syllabusFilterValue')
+  assert.equal(source.includes('知识点匹配'), true, 'must have 知识点匹配 placeholder')
+  assert.equal(source.includes('考纲筛选'), true, 'must have 考纲筛选 placeholder')
+})
+
+test('old review shortcuts remain removed', () => {
+  assert.equal(source.includes('reviewSingleQuestion'), false, 'reviewSingleQuestion must not be restored')
+  assert.equal(source.includes('batchReview'), false, 'batchReview must not be restored')
+  assert.equal(source.includes('批量审核'), false, '批量审核 must not be restored')
+  assert.equal(source.includes('updateQuestionStatus'), false, 'updateQuestionStatus must not be restored')
+})
+
+test('reprocess actions remain present', () => {
+  assert.equal(source.includes('重新处理'), true)
+  assert.equal(source.includes('重新处理全部'), true)
+  assert.equal(source.includes('重新匹配知识点'), true)
+  assert.equal(source.includes('重新筛选考纲'), true)
+  assert.equal(source.includes('triggerReprocess'), true)
+  assert.equal(source.includes('reprocessQuestionSet'), true)
+})
