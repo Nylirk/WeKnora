@@ -43,7 +43,20 @@ func (s *QuestionService) UploadSyllabus(
 		)
 	}
 
-	// 4. Upload the file to the syllabus KB via existing knowledge pipeline.
+	// 4. Record old knowledge IDs before uploading the new file.
+	oldKnowledge, listErr := s.knowledgeService.ListKnowledgeByKnowledgeBaseID(ctx, syllabusKB.ID)
+	var oldKnowledgeIDs []string
+	if listErr != nil {
+		logger.Warnf(ctx, "Failed to list old syllabus knowledge (continuing): %v", listErr)
+	} else {
+		for _, ok := range oldKnowledge {
+			if ok != nil && ok.ID != "" {
+				oldKnowledgeIDs = append(oldKnowledgeIDs, ok.ID)
+			}
+		}
+	}
+
+	// 5. Upload the new file to the syllabus KB.
 	knowledge, err := s.knowledgeService.CreateKnowledgeFromFile(
 		ctx, syllabusKB.ID, fileHeader, nil, nil, "", "", "", nil,
 	)
@@ -53,9 +66,25 @@ func (s *QuestionService) UploadSyllabus(
 		)
 	}
 
-	// 4. Persist syllabus KB binding via dedicated update path.
-	// This must NOT go through UpdateKnowledgeBase, which explicitly
-	// protects SyllabusKnowledgeBaseID from being overwritten.
+	// 6. Delete old syllabus knowledge, skipping the newly created one.
+	if len(oldKnowledgeIDs) > 0 {
+		toDelete := make([]string, 0, len(oldKnowledgeIDs))
+		for _, id := range oldKnowledgeIDs {
+			if id != knowledge.ID {
+				toDelete = append(toDelete, id)
+			}
+		}
+		if len(toDelete) > 0 {
+			if delErr := s.knowledgeService.DeleteKnowledgeList(ctx, toDelete); delErr != nil {
+				return nil, apperrors.NewInternalServerError(
+					fmt.Sprintf("考纲文件已上传，但旧考纲清理失败: %v", delErr),
+				)
+			}
+			logger.Infof(ctx, "Cleaned up %d old syllabus knowledge entries for KB %s", len(toDelete), kbID)
+		}
+	}
+
+	// 7. Persist syllabus KB binding via dedicated update path.
 	if err := s.knowledgeBaseSvc.UpdateQuestionBankSyllabusKnowledgeBaseID(
 		ctx, kbID, syllabusKB.ID,
 	); err != nil {

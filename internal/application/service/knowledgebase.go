@@ -1167,14 +1167,42 @@ func (s *knowledgeBaseService) deleteSystemManagedChildren(
 	if err != nil {
 		return err
 	}
+	tenantInfo, _ := types.TenantInfoFromContext(ctx)
 	for _, child := range children {
 		if child == nil || !child.SystemManaged {
 			continue
 		}
-		logger.Infof(ctx, "Soft-deleting system-managed child KB %s (purpose=%s) of parent %s",
+		logger.Infof(ctx, "Deleting system-managed child KB %s (purpose=%s) of parent %s",
 			child.ID, ptrToString(child.Purpose), parentID)
+
+		var vectorStoreSnapshot *string
+		if child.VectorStoreID != nil {
+			id := *child.VectorStoreID
+			vectorStoreSnapshot = &id
+		}
+
+		// Soft-delete the child KB row.
 		if delErr := s.repo.DeleteKnowledgeBase(ctx, child.ID); delErr != nil {
 			logger.Warnf(ctx, "Failed to soft-delete child KB %s: %v", child.ID, delErr)
+			continue
+		}
+
+		// Enqueue async cascade cleanup for the child KB (knowledge, chunks, vectors, files).
+		payload := types.KBDeletePayload{
+			TenantID:         tenantID,
+			KnowledgeBaseID:  child.ID,
+			EffectiveEngines: tenantInfo.GetEffectiveEngines(),
+			VectorStoreID:    vectorStoreSnapshot,
+		}
+		langfuse.InjectTracing(ctx, &payload)
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to marshal KB delete payload for child %s: %v", child.ID, err)
+			continue
+		}
+		task := asynq.NewTask(types.TypeKBDelete, payloadBytes, asynq.Queue("low"), asynq.MaxRetry(3))
+		if _, enqErr := s.asynqClient.Enqueue(task); enqErr != nil {
+			logger.Warnf(ctx, "Failed to enqueue KB delete task for child %s: %v", child.ID, enqErr)
 		}
 	}
 	return nil
