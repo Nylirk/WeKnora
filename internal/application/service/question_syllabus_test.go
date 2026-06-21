@@ -99,6 +99,11 @@ func TestSyllabusKB_HasNonNullQuestionBankConfig(t *testing.T) {
 	if !json.Valid(raw) {
 		t.Fatalf("question_bank_config not valid JSON: %s", string(raw))
 	}
+	// The ID must be non-empty so that subsequent UploadSyllabus can call
+	// CreateKnowledgeFromFile with a valid KB ID.
+	if len(created.ID) == 0 {
+		t.Fatal("created syllabus KB ID must not be empty")
+	}
 }
 
 // Test 2: Reuses existing syllabus KB when found.
@@ -134,6 +139,36 @@ func TestSyllabusKB_ReusesExisting(t *testing.T) {
 	}
 	if repo.createdKB != nil {
 		t.Error("must not create new KB when existing one found")
+	}
+}
+
+// Test 2b: Existing syllabus KB with empty ID returns error.
+func TestSyllabusKB_RejectsExistingEmptyID(t *testing.T) {
+	existing := &types.KnowledgeBase{
+		ID:                 "",
+		Name:               "bad-existing",
+		Type:               types.KnowledgeBaseTypeDocument,
+		TenantID:           1,
+		QuestionBankConfig: &types.QuestionBankConfig{},
+	}
+
+	repo := &syllabusKBRepo{
+		purposeKBs: map[string]*types.KnowledgeBase{
+			types.KBPurposeQuestionBankSyllabus: existing,
+		},
+	}
+	kbSvc := &syllabusKBService{repo: repo}
+	svc := &QuestionService{knowledgeBaseSvc: kbSvc}
+
+	parent := &types.KnowledgeBase{
+		ID:   "parent-1",
+		Name: "Test Bank",
+		Type: types.KnowledgeBaseTypeQuestionBank,
+	}
+
+	_, err := svc.findOrCreateSyllabusKB(context.Background(), parent)
+	if err == nil {
+		t.Fatal("expected error when existing syllabus KB has empty ID")
 	}
 }
 

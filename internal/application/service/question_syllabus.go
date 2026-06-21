@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"mime/multipart"
+	"strings"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/google/uuid"
 )
 
 const syllabusKBNameTemplate = "%s-考纲"
@@ -34,7 +36,14 @@ func (s *QuestionService) UploadSyllabus(
 		return nil, err
 	}
 
-	// 3. Upload the file to the syllabus KB via existing knowledge pipeline.
+	// 3. Defensive check before calling CreateKnowledgeFromFile.
+	if syllabusKB == nil || strings.TrimSpace(syllabusKB.ID) == "" {
+		return nil, apperrors.NewInternalServerError(
+			"上传考纲文件失败: syllabus knowledge_base ID is empty",
+		)
+	}
+
+	// 4. Upload the file to the syllabus KB via existing knowledge pipeline.
 	knowledge, err := s.knowledgeService.CreateKnowledgeFromFile(
 		ctx, syllabusKB.ID, fileHeader, nil, nil, "", "", "", nil,
 	)
@@ -195,12 +204,18 @@ func (s *QuestionService) findOrCreateSyllabusKB(
 		ctx, tenantID, types.KBPurposeQuestionBankSyllabus, parentKB.ID,
 	)
 	if err == nil && existing != nil {
+		if strings.TrimSpace(existing.ID) == "" {
+			return nil, apperrors.NewInternalServerError(
+				"复用隐藏考纲知识库失败: syllabus knowledge_base ID is empty",
+			)
+		}
 		logger.Infof(ctx, "Reusing existing syllabus KB %s for parent %s", existing.ID, parentKB.ID)
 		return existing, nil
 	}
 
 	// Create a new hidden syllabus KB.
 	syllabusKB := &types.KnowledgeBase{
+		ID:                    uuid.NewString(),
 		Name:                  fmt.Sprintf(syllabusKBNameTemplate, parentKB.Name),
 		Type:                  types.KnowledgeBaseTypeDocument,
 		Description:           fmt.Sprintf("系统自动创建的考纲知识库，绑定题库：%s", parentKB.Name),
@@ -233,6 +248,11 @@ func (s *QuestionService) findOrCreateSyllabusKB(
 	if err := repo.CreateKnowledgeBase(ctx, syllabusKB); err != nil {
 		return nil, apperrors.NewInternalServerError(
 			fmt.Sprintf("创建隐藏考纲知识库失败: %v", err),
+		)
+	}
+	if strings.TrimSpace(syllabusKB.ID) == "" {
+		return nil, apperrors.NewInternalServerError(
+			"创建隐藏考纲知识库失败: generated syllabus knowledge_base ID is empty",
 		)
 	}
 
