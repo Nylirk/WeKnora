@@ -371,7 +371,7 @@
       </template>
       <template #stem_text="{ row }">
         <t-popup :placement="semanticPopupPlacement" trigger="hover" show-arrow attach="body">
-          <span class="question-stem-cell" @mouseenter="updateSemanticPopupPlacement">{{ row.stem_text }}</span>
+          <span class="question-stem-cell" @mouseenter="updateSemanticPopupPlacement($event, 260)">{{ row.stem_text }}</span>
           <template #content>
             <div class="semantic-popover semantic-popover-stem">
               <div class="semantic-popover-title">题干</div>
@@ -386,7 +386,7 @@
       <template #auto_tagging_status="{ row }">
         <template v-if="(row.auto_tagging_status === 'matched' || row.auto_tagging_status === 'completed') && getTopKnowledgePointCandidate(row)">
           <t-popup :placement="semanticPopupPlacement" trigger="hover" show-arrow attach="body">
-            <t-tag theme="success" variant="light" size="small" class="question-match-tag" @mouseenter="updateSemanticPopupPlacement">
+            <t-tag theme="success" variant="light" size="small" class="question-match-tag" @mouseenter="updateSemanticPopupPlacement($event, 280)">
               <span class="question-match-tag-text">
                 {{ getTopKnowledgePointCandidate(row)?.knowledge_point }}
                 <template v-if="formatConfidence(getTopKnowledgePointCandidate(row)?.confidence)">
@@ -437,7 +437,7 @@
       <template #syllabus_scope_result="{ row }">
         <template v-if="syllabusDisplayLabel(row) !== '—'">
           <t-popup :placement="semanticPopupPlacement" trigger="hover" show-arrow attach="body">
-            <t-tag :theme="syllabusTagTheme(row)" variant="light" size="small" @mouseenter="updateSemanticPopupPlacement">
+            <t-tag :theme="syllabusTagTheme(row)" variant="light" size="small" @mouseenter="updateSemanticPopupPlacement($event, 240)">
               {{ syllabusDisplayLabel(row) }}
             </t-tag>
 
@@ -1236,16 +1236,20 @@ function syllabusTagTheme(row: Question): 'success' | 'warning' | 'danger' | 'de
 // ── Adaptive popup placement ──
 const semanticPopupPlacement = ref<'top-left' | 'bottom-left'>('top-left')
 
-function updateSemanticPopupPlacement(e: MouseEvent) {
+function updateSemanticPopupPlacement(e: MouseEvent, estimatedHeight = 240) {
   const el = e.currentTarget as HTMLElement | null
   if (!el) return
   const rect = el.getBoundingClientRect()
-  const estimatedHeight = 220
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight
+  const margin = 16
   const spaceAbove = rect.top
-  const spaceBelow = (window.innerHeight || document.documentElement.clientHeight) - rect.bottom
-  semanticPopupPlacement.value = spaceAbove < estimatedHeight && spaceBelow > spaceAbove
-    ? 'bottom-left'
-    : 'top-left'
+  const spaceBelow = viewportHeight - rect.bottom
+
+  if (spaceAbove < estimatedHeight + margin && spaceBelow > spaceAbove) {
+    semanticPopupPlacement.value = 'bottom-left'
+    return
+  }
+  semanticPopupPlacement.value = 'top-left'
 }
 
 // ── Syllabus unified filter ──

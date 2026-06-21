@@ -666,6 +666,14 @@ test('all semantic popups use adaptive placement', () => {
   assert.equal(source.includes('updateSemanticPopupPlacement'), true, 'must use updateSemanticPopupPlacement handler')
   assert.equal(source.includes('getBoundingClientRect'), true, 'must check element position for adaptive placement')
   assert.equal(source.includes('placement="top-left"'), false, 'must not hardcode placement="top-left"')
+  assert.equal(source.includes('updateSemanticPopupPlacement($event, 260)'), true, 'stem popup must pass estimatedHeight 260')
+  assert.equal(source.includes('updateSemanticPopupPlacement($event, 280)'), true, 'knowledge popup must pass estimatedHeight 280')
+  assert.equal(source.includes('updateSemanticPopupPlacement($event, 240)'), true, 'syllabus popup must pass estimatedHeight 240')
+  assert.equal(source.includes('const margin = 16'), true, 'must use margin constant')
+  assert.equal(source.includes('estimatedHeight = 240'), true, 'must use default estimatedHeight parameter')
+  assert.equal(source.includes('event.clientY'), false, 'must not use raw mouse clientY')
+  assert.equal(source.includes('mousemove'), false, 'must not track mousemove')
+  assert.equal(source.includes('attach="body"'), true, 'must attach popup to body')
 })
 
 test('syllabus filter includes paused / failed / pending', () => {
