@@ -9,11 +9,11 @@
             :theme="processingButtonTheme"
             variant="outline"
             shape="round"
-            :loading="processingButton.state === 'running'"
             @click="processingDrawerVisible = true"
           >
-            <template v-if="processingButton.state !== 'running'" #icon>
-              <t-icon :name="processingButtonIcon" />
+            <template #icon>
+              <t-loading v-if="processingButton.state === 'running'" size="small" />
+              <t-icon v-else :name="processingButtonIcon" />
             </template>
             {{ processingButtonLabel }}
           </t-button>
@@ -233,7 +233,7 @@ import {
   resolveProcessingStages, resolveProcessingButtonState,
   PROCESSING_STAGE_STATUS_LABELS, PROCESSING_BUTTON_LABELS,
   type Question, type QuestionListFilter, type QuestionType,
-  type QuestionSetProcessingStatus, type QuestionSetProcessingStage,
+  type QuestionSetProcessingStatus,
   type ProcessingButtonState,
 } from '@/api/question'
 import type { BlockPreviewSummary, ImportBlock } from '@/api/question_block'
