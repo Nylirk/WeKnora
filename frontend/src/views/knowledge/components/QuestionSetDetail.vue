@@ -600,7 +600,7 @@ const qpFlatRows = computed<QpFlatRow[]>(() => {
       isPlaceholder: isPending || isPaused,
       durationMs: 0,
       startMs: 0,
-      formattedDur: isPaused ? '暂停' : isPending ? '—' : '—',
+      formattedDur: '—',
     })
   })
 
