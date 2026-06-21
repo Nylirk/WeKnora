@@ -39,6 +39,12 @@ func RegisterQuestionRoutes(r *gin.RouterGroup, h *handler.QuestionHandler, g *r
 				questions.POST("/import-file/block-preview", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.PreviewImportBlocks)
 				questions.POST("/import-file/parse-blocks", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.ParseImportedBlocks)
 				questions.POST("/export", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.ExportToEvaluationDataset)
+
+				// Manual review endpoints — the only path to reviewed/rejected.
+				questions.GET("/:question_id/review", g.Viewer(), g.KBAccessRead("id"), h.GetReviewDetail)
+				questions.PUT("/:question_id/review-draft", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.SaveReviewDraft)
+				questions.POST("/:question_id/review/approve", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.ApproveReview)
+				questions.POST("/:question_id/review/reject", g.OwnedKBOrAdmin(), g.KBAccessWrite("id"), h.RejectReview)
 			}
 		}
 	}

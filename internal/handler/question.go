@@ -262,6 +262,74 @@ func (h *QuestionHandler) UpdateQuestionStatus(c *gin.Context) {
 	questionOK(c, result)
 }
 
+// --- Manual review handlers ---
+
+// GetReviewDetail handles GET .../questions/:question_id/review
+func (h *QuestionHandler) GetReviewDetail(c *gin.Context) {
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	questionID := c.Param("question_id")
+	result, err := h.questionService.GetReviewDetail(c.Request.Context(), kbID, setID, questionID)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, result)
+}
+
+// SaveReviewDraft handles PUT .../questions/:question_id/review-draft
+func (h *QuestionHandler) SaveReviewDraft(c *gin.Context) {
+	var req types.ReviewDraftRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		questionBadRequest(c, err)
+		return
+	}
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	questionID := c.Param("question_id")
+	if err := h.questionService.SaveReviewDraft(c.Request.Context(), kbID, setID, questionID, &req); err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, gin.H{})
+}
+
+// ApproveReview handles POST .../questions/:question_id/review/approve
+func (h *QuestionHandler) ApproveReview(c *gin.Context) {
+	var req types.ApproveReviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		questionBadRequest(c, err)
+		return
+	}
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	questionID := c.Param("question_id")
+	result, err := h.questionService.ApproveReview(c.Request.Context(), kbID, setID, questionID, &req)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, result)
+}
+
+// RejectReview handles POST .../questions/:question_id/review/reject
+func (h *QuestionHandler) RejectReview(c *gin.Context) {
+	var req types.RejectReviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		questionBadRequest(c, err)
+		return
+	}
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	questionID := c.Param("question_id")
+	result, err := h.questionService.RejectReview(c.Request.Context(), kbID, setID, questionID, &req)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, result)
+}
+
 func (h *QuestionHandler) ImportQuestions(c *gin.Context) {
 	var req types.ImportQuestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

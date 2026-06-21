@@ -305,6 +305,14 @@ func (s *QuestionService) UpdateQuestion(ctx context.Context, kbID, setID, quest
 	if q.KnowledgeBaseID != kbID {
 		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question does not belong to knowledge base %s", kbID))
 	}
+	// Reject attempts to transition to reviewed/rejected through the general-purpose
+	// update endpoint. Only the dedicated review API may change review state.
+	if req.Status != nil {
+		requestedStatus := types.QuestionStatus(*req.Status)
+		if requestedStatus == types.QuestionStatusReviewed || requestedStatus == types.QuestionStatusRejected {
+			return nil, apperrors.NewBadRequestError("请使用审核接口更新题目审核状态")
+		}
+	}
 	before := *q
 	if req.QuestionType != nil {
 		q.QuestionType = *req.QuestionType
@@ -389,24 +397,13 @@ func (s *QuestionService) UpdateQuestionStatus(ctx context.Context, kbID, setID,
 		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question does not belong to knowledge base %s", kbID))
 	}
 	newStatus := types.QuestionStatus(req.Status)
-	if newStatus == types.QuestionStatusReviewed {
-		errs := types.ValidateQuestionForReview(q)
-		if len(errs) > 0 {
-			messages := make([]string, 0, len(errs))
-			for _, e := range errs {
-				messages = append(messages, e.Message)
-			}
-			return nil, apperrors.NewBadRequestError("review validation failed: " + strings.Join(messages, "; "))
-		}
+	// Transitioning to reviewed/rejected must go through the dedicated review API
+	// so that human review metadata (knowledge_points, syllabus result, comment,
+	// rejection reason) is properly captured.
+	if newStatus == types.QuestionStatusReviewed || newStatus == types.QuestionStatusRejected {
+		return nil, apperrors.NewBadRequestError("请使用审核接口更新题目审核状态")
 	}
 	q.Status = newStatus
-	if newStatus == types.QuestionStatusReviewed {
-		now := time.Now()
-		q.ReviewedAt = &now
-		if userID, ok := types.UserIDFromContext(ctx); ok && userID != "" && !types.IsSyntheticUserID(userID) {
-			q.ReviewedBy = userID
-		}
-	}
 	if err := s.repository.UpdateQuestion(ctx, q); err != nil {
 		return nil, err
 	}
@@ -1210,4 +1207,271 @@ func truncateError(err error) string {
 		return msg[:2000]
 	}
 	return msg
+}
+
+// --- Manual review ---
+
+// mergeManualReviewMetadata merges the manual_review data into extraction_metadata.
+// It only touches manual_review, leaving auto_processing intact.
+func mergeManualReviewMetadata(existing types.JSON, patch map[string]any) types.JSON {
+	var base map[string]any
+	if len(existing) > 0 {
+		if err := json.Unmarshal(existing, &base); err != nil {
+			base = make(map[string]any)
+		}
+	}
+	if base == nil {
+		base = make(map[string]any)
+	}
+	base["manual_review"] = patch
+	data, err := json.Marshal(base)
+	if err != nil {
+		return types.JSON([]byte("{}"))
+	}
+	return types.JSON(data)
+}
+
+// parseManualReview extracts the manual_review map from extraction_metadata.
+// Returns an empty map if manual_review is absent or unparseable.
+func parseManualReview(metadata types.JSON) map[string]any {
+	if len(metadata) == 0 {
+		return make(map[string]any)
+	}
+	var base map[string]any
+	if err := json.Unmarshal(metadata, &base); err != nil {
+		return make(map[string]any)
+	}
+	mr, _ := base["manual_review"].(map[string]any)
+	if mr == nil {
+		return make(map[string]any)
+	}
+	return mr
+}
+
+// parseAutoProcessingStage extracts a single stage's metadata from
+// extraction_metadata.auto_processing.<stage>.
+func parseAutoProcessingStage(metadata types.JSON, stage string) map[string]interface{} {
+	if len(metadata) == 0 {
+		return nil
+	}
+	var base map[string]interface{}
+	if err := json.Unmarshal(metadata, &base); err != nil {
+		return nil
+	}
+	autoProcessing, _ := base["auto_processing"].(map[string]interface{})
+	if autoProcessing == nil {
+		return nil
+	}
+	stageData, _ := autoProcessing[stage].(map[string]interface{})
+	return stageData
+}
+
+// manualReviewInfoFromMap converts a raw map to a ManualReviewInfo struct.
+func manualReviewInfoFromMap(m map[string]any) *types.ManualReviewInfo {
+	info := &types.ManualReviewInfo{}
+	if v, ok := m["status"].(string); ok {
+		info.Status = v
+	}
+	if v, ok := m["comment"].(string); ok {
+		info.Comment = v
+	}
+	if v, ok := m["rejection_reason"].(string); ok {
+		info.RejectionReason = v
+	}
+	if v, ok := m["syllabus_scope_result"].(string); ok {
+		info.SyllabusScopeResult = v
+	}
+	if v, ok := m["reviewed_by"].(string); ok {
+		info.ReviewedBy = v
+	}
+	if v, ok := m["reviewed_at"].(string); ok && v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			info.ReviewedAt = &t
+		}
+	}
+	if pts, ok := m["knowledge_points"].([]interface{}); ok {
+		info.KnowledgePoints = make([]string, 0, len(pts))
+		for _, p := range pts {
+			if s, ok := p.(string); ok {
+				info.KnowledgePoints = append(info.KnowledgePoints, s)
+			}
+		}
+	}
+	return info
+}
+
+// GetReviewDetail returns the full review context for a question, including
+// AI auto_tagging candidates, AI syllabus_checking result, and any existing
+// manual_review data.
+func (s *QuestionService) GetReviewDetail(
+	ctx context.Context, kbID, setID, questionID string,
+) (*types.ReviewDetailResponse, error) {
+	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
+		return nil, err
+	}
+	q, err := s.repository.GetQuestion(ctx, tenantID(ctx), setID, questionID)
+	if err != nil {
+		return nil, err
+	}
+	if q.KnowledgeBaseID != kbID {
+		return nil, apperrors.NewBadRequestError(
+			fmt.Sprintf("question does not belong to knowledge base %s", kbID))
+	}
+
+	autoTagging := parseAutoProcessingStage(q.ExtractionMetadata, "auto_tagging")
+	syllabusChecking := parseAutoProcessingStage(q.ExtractionMetadata, "syllabus_checking")
+	mr := manualReviewInfoFromMap(parseManualReview(q.ExtractionMetadata))
+
+	return &types.ReviewDetailResponse{
+		Question:         q,
+		AutoTagging:      autoTagging,
+		SyllabusChecking: syllabusChecking,
+		ManualReview:     mr,
+	}, nil
+}
+
+// SaveReviewDraft saves the reviewer's in-progress choices to
+// extraction_metadata.manual_review without changing question.status.
+func (s *QuestionService) SaveReviewDraft(
+	ctx context.Context, kbID, setID, questionID string, req *types.ReviewDraftRequest,
+) error {
+	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
+		return err
+	}
+	q, err := s.repository.GetQuestion(ctx, tenantID(ctx), setID, questionID)
+	if err != nil {
+		return err
+	}
+	if q.KnowledgeBaseID != kbID {
+		return apperrors.NewBadRequestError(
+			fmt.Sprintf("question does not belong to knowledge base %s", kbID))
+	}
+
+	mr := parseManualReview(q.ExtractionMetadata)
+	mr["status"] = "draft"
+	mr["knowledge_points"] = stringSliceToInterface(req.KnowledgePoints)
+	mr["syllabus_scope_result"] = req.SyllabusScopeResult
+	mr["comment"] = req.Comment
+
+	q.ExtractionMetadata = mergeManualReviewMetadata(q.ExtractionMetadata, mr)
+	return s.repository.UpdateQuestion(ctx, q)
+}
+
+// ApproveReview transitions a draft question to reviewed, writing human-confirmed
+// knowledge_points, syllabus result, and reviewer identity.
+func (s *QuestionService) ApproveReview(
+	ctx context.Context, kbID, setID, questionID string, req *types.ApproveReviewRequest,
+) (*types.Question, error) {
+	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
+		return nil, err
+	}
+	q, err := s.repository.GetQuestion(ctx, tenantID(ctx), setID, questionID)
+	if err != nil {
+		return nil, err
+	}
+	if q.KnowledgeBaseID != kbID {
+		return nil, apperrors.NewBadRequestError(
+			fmt.Sprintf("question does not belong to knowledge base %s", kbID))
+	}
+	if q.Status != types.QuestionStatusDraft {
+		return nil, apperrors.NewBadRequestError("只有草稿状态的题目可以审核")
+	}
+	if len(req.KnowledgePoints) == 0 {
+		return nil, apperrors.NewBadRequestError("审核通过时必须指定知识点")
+	}
+
+	now := time.Now()
+	q.Status = types.QuestionStatusReviewed
+	q.ReviewedAt = &now
+	if userID, ok := types.UserIDFromContext(ctx); ok && userID != "" && !types.IsSyntheticUserID(userID) {
+		q.ReviewedBy = userID
+	}
+	q.KnowledgePoints = normalizeJSONArray(types.JSON(marshalToJSONBytes(req.KnowledgePoints)))
+
+	// Persist human review metadata separately from auto_processing.
+	mr := parseManualReview(q.ExtractionMetadata)
+	mr["status"] = "reviewed"
+	mr["knowledge_points"] = stringSliceToInterface(req.KnowledgePoints)
+	mr["syllabus_scope_result"] = req.SyllabusScopeResult
+	mr["comment"] = req.Comment
+	mr["rejection_reason"] = ""
+	mr["reviewed_by"] = q.ReviewedBy
+	mr["reviewed_at"] = now.UTC().Format(time.RFC3339)
+
+	q.ExtractionMetadata = mergeManualReviewMetadata(q.ExtractionMetadata, mr)
+
+	if err := s.repository.UpdateQuestion(ctx, q); err != nil {
+		return nil, err
+	}
+	s.scheduleQuestionIndex(ctx, []*types.Question{q})
+	return q, nil
+}
+
+// RejectReview transitions a draft question to rejected with a mandatory reason.
+func (s *QuestionService) RejectReview(
+	ctx context.Context, kbID, setID, questionID string, req *types.RejectReviewRequest,
+) (*types.Question, error) {
+	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
+		return nil, err
+	}
+	q, err := s.repository.GetQuestion(ctx, tenantID(ctx), setID, questionID)
+	if err != nil {
+		return nil, err
+	}
+	if q.KnowledgeBaseID != kbID {
+		return nil, apperrors.NewBadRequestError(
+			fmt.Sprintf("question does not belong to knowledge base %s", kbID))
+	}
+	if q.Status != types.QuestionStatusDraft {
+		return nil, apperrors.NewBadRequestError("只有草稿状态的题目可以审核")
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		return nil, apperrors.NewBadRequestError("拒绝题目时必须填写原因")
+	}
+
+	now := time.Now()
+	q.Status = types.QuestionStatusRejected
+	q.ReviewedAt = &now
+	if userID, ok := types.UserIDFromContext(ctx); ok && userID != "" && !types.IsSyntheticUserID(userID) {
+		q.ReviewedBy = userID
+	}
+
+	// Persist human review metadata separately from auto_processing.
+	mr := parseManualReview(q.ExtractionMetadata)
+	mr["status"] = "rejected"
+	mr["rejection_reason"] = strings.TrimSpace(req.Reason)
+	mr["comment"] = req.Comment
+	mr["knowledge_points"] = []interface{}{}
+	mr["syllabus_scope_result"] = ""
+	mr["reviewed_by"] = q.ReviewedBy
+	mr["reviewed_at"] = now.UTC().Format(time.RFC3339)
+
+	q.ExtractionMetadata = mergeManualReviewMetadata(q.ExtractionMetadata, mr)
+
+	if err := s.repository.UpdateQuestion(ctx, q); err != nil {
+		return nil, err
+	}
+	s.scheduleQuestionIndex(ctx, []*types.Question{q})
+	return q, nil
+}
+
+// stringSliceToInterface converts []string to []interface{} for storage in JSON maps.
+func stringSliceToInterface(ss []string) []interface{} {
+	if ss == nil {
+		return []interface{}{}
+	}
+	out := make([]interface{}, len(ss))
+	for i, s := range ss {
+		out[i] = s
+	}
+	return out
+}
+
+// marshalToJSONBytes marshals a value to JSON bytes, returning []byte("[]") on error.
+func marshalToJSONBytes(v interface{}) []byte {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return []byte("[]")
+	}
+	return data
 }

@@ -268,3 +268,53 @@ appendOptionsToStem 生成展示用题干（含选项），expandChoiceAnswerTex
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: PR #25: 题目导入后真实语义匹配与筛选
+
+**Date**: 2026-06-21
+**Task**: PR #25: 题目导入后真实语义匹配与筛选
+**Branch**: `feat/semantic-question-matching`
+
+### Summary
+
+实现题库导入后完整语义匹配能力：知识点语义匹配、考纲语义筛选、手动重新处理入口、级联删除、结构化 popover 详情展示。修复 hidden syllabus KB 空 ID 修复、配置保存后触发 reprocess、旧语义结果覆盖等 18 个 commits。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1e3b950f` | (see git log) |
+| `1f425bfa` | (see git log) |
+| `e4d119dd` | (see git log) |
+| `d5d5b1ec` | (see git log) |
+| `8643f4ba` | (see git log) |
+| `ee2d028d` | (see git log) |
+| `69113779` | (see git log) |
+| `e6b305fb` | (see git log) |
+| `7ed457f6` | (see git log) |
+| `8f0a2173` | (see git log) |
+| `13398678` | (see git log) |
+| `5ae34dbb` | (see git log) |
+| `9bb056ad` | (see git log) |
+| `34fb3d6f` | (see git log) |
+| `4f0efe8d` | (see git log) |
+| `e8681571` | (see git log) |
+| `6feadbb4` | (see git log) |
+| `3cccd25a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

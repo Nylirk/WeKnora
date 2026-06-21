@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
-- **Last Active**: 2026-06-18
+- **Total Sessions**: 8
+- **Last Active**: 2026-06-21
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~270 | Active |
+| `journal-1.md` | ~320 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-06-21 | PR #25: 题目导入后真实语义匹配与筛选 | `1e3b950f`, `1f425bfa`, `e4d119dd`, `d5d5b1ec`, `8643f4ba`, `ee2d028d`, `69113779`, `e6b305fb`, `7ed457f6`, `8f0a2173`, `13398678`, `5ae34dbb`, `9bb056ad`, `34fb3d6f`, `4f0efe8d`, `e8681571`, `6feadbb4`, `3cccd25a` | `feat/semantic-question-matching` |
 | 7 | 2026-06-18 | 修复选择题选项切分与展示：A-Z范围、顺序标签、答案展示 | `28f0519a`, `6283d681`, `9e94c440`, `eb3128db`, `0814f91b`, `d49e9666`, `9e7fc668`, `e2b1d1ae` | `fix/question-import-choice-parsing` |
 | 6 | 2026-06-18 | 实现题库 DOC/DOCX/PDF 文件导入与预览 | `d324df99`, `51bab9e1`, `4bb3216e`, `f045a189`, `f934ddab`, `a0b23a7d`, `9453d9e3`, `4d05cc2e` | `feat/document-question-import` |
 | 5 | 2026-06-16 | Align evaluation UI with knowledge base cards | `d1300a0e`, `e0e716a1`, `abb8a68a` | `-` |

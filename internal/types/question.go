@@ -224,6 +224,11 @@ type UpdateQuestionRequest struct {
 	SourceKnowledgeID *string `json:"source_knowledge_id"`
 	EvidenceChunkIDs  *JSON   `json:"evidence_chunk_ids"`
 	SortOrder         *int    `json:"sort_order"`
+	// Status is intentionally NOT a general-purpose field on the update request.
+	// To transition a question to reviewed/rejected, use the dedicated review API
+	// (approve/reject). If the caller sends reviewed or rejected here, the
+	// service layer rejects it with a 400.
+	Status *string `json:"status,omitempty"`
 }
 
 type UpdateQuestionStatusRequest struct {
@@ -318,4 +323,46 @@ type SyllabusUploadResponse struct {
 	KnowledgeCount int64  `json:"knowledge_count"`
 	ChunkCount     int64  `json:"chunk_count"`
 	Message        string `json:"message"`
+}
+
+// --- Manual review types ---
+
+// ManualReviewInfo holds the human review state stored in extraction_metadata.manual_review.
+// It is always nested under extraction_metadata.manual_review, never under auto_processing.
+type ManualReviewInfo struct {
+	Status              string     `json:"status"`
+	KnowledgePoints     []string   `json:"knowledge_points"`
+	SyllabusScopeResult string     `json:"syllabus_scope_result"`
+	Comment             string     `json:"comment"`
+	RejectionReason     string     `json:"rejection_reason"`
+	ReviewedBy          string     `json:"reviewed_by"`
+	ReviewedAt          *time.Time `json:"reviewed_at"`
+}
+
+// ReviewDetailResponse is returned by GET /review.
+type ReviewDetailResponse struct {
+	Question         *Question              `json:"question"`
+	AutoTagging      map[string]interface{} `json:"auto_tagging"`
+	SyllabusChecking map[string]interface{} `json:"syllabus_checking"`
+	ManualReview     *ManualReviewInfo      `json:"manual_review"`
+}
+
+// ReviewDraftRequest is the body for PUT /review-draft.
+type ReviewDraftRequest struct {
+	KnowledgePoints     []string `json:"knowledge_points"`
+	SyllabusScopeResult string   `json:"syllabus_scope_result"`
+	Comment             string   `json:"comment"`
+}
+
+// ApproveReviewRequest is the body for POST /review/approve.
+type ApproveReviewRequest struct {
+	KnowledgePoints     []string `json:"knowledge_points"`
+	SyllabusScopeResult string   `json:"syllabus_scope_result"`
+	Comment             string   `json:"comment"`
+}
+
+// RejectReviewRequest is the body for POST /review/reject.
+type RejectReviewRequest struct {
+	Reason  string `json:"reason"`
+	Comment string `json:"comment"`
 }

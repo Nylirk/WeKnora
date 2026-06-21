@@ -68,4 +68,11 @@ type QuestionService interface {
 	UploadSyllabus(ctx context.Context, kbID string, fileHeader *multipart.FileHeader) (*types.SyllabusUploadResponse, error)
 	GetSyllabus(ctx context.Context, kbID string) (*types.SyllabusInfo, error)
 	DeleteSyllabus(ctx context.Context, kbID string) error
+
+	// Manual review — dedicated endpoints for the human review workflow.
+	// Only these methods may transition a question to reviewed/rejected.
+	GetReviewDetail(ctx context.Context, kbID, setID, questionID string) (*types.ReviewDetailResponse, error)
+	SaveReviewDraft(ctx context.Context, kbID, setID, questionID string, req *types.ReviewDraftRequest) error
+	ApproveReview(ctx context.Context, kbID, setID, questionID string, req *types.ApproveReviewRequest) (*types.Question, error)
+	RejectReview(ctx context.Context, kbID, setID, questionID string, req *types.RejectReviewRequest) (*types.Question, error)
 }
