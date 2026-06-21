@@ -617,3 +617,48 @@ test('removed standalone add-question, generate, export controls; drawer is wate
   // Paused label remains "部分暂停"
   assert.equal(questionApiSource.includes("paused: '部分暂停'"), true, 'paused button label must remain 部分暂停')
 })
+
+// ── Semantic matching result display ──
+
+test('knowledge point filter includes unmatched', () => {
+  assert.equal(source.includes('unmatched'), true, 'filter must include unmatched option')
+  assert.equal(source.includes("value=\"unmatched\""), true, 'filter must have unmatched value')
+  assert.equal(source.includes('未匹配'), true, 'filter must show 未匹配 label')
+})
+
+test('knowledge point column reads extraction_metadata candidates', () => {
+  assert.equal(source.includes('getTopKnowledgePointCandidate'), true, 'must use getTopKnowledgePointCandidate helper')
+  assert.equal(source.includes('auto_processing'), true, 'must reference auto_processing')
+  assert.equal(source.includes('candidates'), true, 'must reference candidates')
+  assert.equal(source.includes('formatConfidence'), true, 'must use formatConfidence helper')
+})
+
+test('knowledge point column shows candidate knowledge_point and confidence', () => {
+  assert.equal(source.includes('getTopKnowledgePointCandidate(row)?.knowledge_point'), true, 'must show knowledge_point')
+  assert.equal(source.includes('formatConfidence(getTopKnowledgePointCandidate(row)?.confidence)'), true, 'must show confidence')
+})
+
+test('syllabus filter includes paused / failed / pending', () => {
+  assert.equal(source.includes('status:paused'), true, 'syllabus filter must include paused')
+  assert.equal(source.includes('status:failed'), true, 'syllabus filter must include failed')
+  assert.equal(source.includes('status:pending'), true, 'syllabus filter must include pending')
+  assert.equal(source.includes('syllabusFilterValue'), true, 'must use syllabusFilterValue for unified filter')
+  assert.equal(source.includes('onSyllabusFilterChange'), true, 'must use onSyllabusFilterChange handler')
+})
+
+test('syllabus filter distinguishes scope_result and checking_status', () => {
+  assert.equal(source.includes('syllabus_checking_status'), true, 'must reference syllabus_checking_status')
+  assert.equal(source.includes('syllabus_scope_result'), true, 'must reference syllabus_scope_result')
+})
+
+test('syllabus column checks checking_status before scope_result', () => {
+  const syllabusSlot = source.match(/<template #syllabus_scope_result="\{ row \}">([\s\S]*?)<\/template>/)?.[1] || ''
+  // failed/paused/pending must appear before in_scope/out_of_scope
+  const failedIdx = syllabusSlot.indexOf("syllabus_checking_status === 'failed'")
+  const pausedIdx = syllabusSlot.indexOf("syllabus_checking_status === 'paused'")
+  const scopeIdx = syllabusSlot.indexOf("syllabus_scope_result === 'in_scope'")
+  assert.equal(failedIdx >= 0, true, 'syllabus column must check failed status')
+  assert.equal(pausedIdx >= 0, true, 'syllabus column must check paused status')
+  assert.equal(failedIdx < scopeIdx, true, 'failed check must precede scope_result check')
+  assert.equal(pausedIdx < scopeIdx, true, 'paused check must precede scope_result check')
+})

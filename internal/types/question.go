@@ -128,7 +128,7 @@ type Question struct {
 	SourcePayload      JSON               `json:"source_payload" gorm:"type:jsonb;not null"`
 	ExtractionMetadata JSON               `json:"extraction_metadata" gorm:"type:jsonb;not null"`
 	// AutoTaggingStatus mirrors extraction_metadata.auto_processing.auto_tagging.status
-	// for fast list filtering. Values: pending, completed, paused, failed.
+	// for fast list filtering. Values: pending, matched, unmatched, paused, failed.
 	AutoTaggingStatus string `json:"auto_tagging_status" gorm:"type:varchar(16);not null;default:'pending'"`
 	// SyllabusCheckingStatus mirrors extraction_metadata.auto_processing.syllabus_checking.status.
 	// Values: pending, completed, paused, failed.

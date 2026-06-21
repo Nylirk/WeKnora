@@ -54,12 +54,16 @@ func (s *QuestionService) RunKnowledgePointMatching(
 		}
 
 		candidates := buildKnowledgePointCandidates(results)
+		statusValue := "matched"
+		if len(candidates) == 0 {
+			statusValue = "unmatched"
+		}
 		meta := map[string]any{
-			"status":     "completed",
+			"status":     statusValue,
 			"matched_at": time.Now().UTC().Format(time.RFC3339),
 			"candidates": candidates,
 		}
-		s.writeSingleQuestionMetadata(ctx, q, "auto_tagging", meta, "completed", "")
+		s.writeSingleQuestionMetadata(ctx, q, "auto_tagging", meta, statusValue, "")
 	}
 
 	return nil

@@ -295,16 +295,20 @@
       </t-select>
       <t-select v-model="filter.auto_tagging_status" placeholder="知识点匹配" clearable style="width: 120px" @change="reloadFromFirstPage">
         <t-option value="" label="全部" />
-        <t-option value="completed" label="已匹配" />
+        <t-option value="matched" label="已匹配" />
+        <t-option value="unmatched" label="未匹配" />
         <t-option value="paused" label="暂停" />
         <t-option value="failed" label="失败" />
         <t-option value="pending" label="待处理" />
       </t-select>
-      <t-select v-model="filter.syllabus_scope_result" placeholder="考纲结果" clearable style="width: 110px" @change="reloadFromFirstPage">
+      <t-select v-model="syllabusFilterValue" placeholder="考纲筛选" clearable style="width: 120px" @change="onSyllabusFilterChange">
         <t-option value="" label="全部" />
-        <t-option value="in_scope" label="符合考纲" />
-        <t-option value="out_of_scope" label="疑似超纲" />
-        <t-option value="uncertain" label="不确定" />
+        <t-option value="scope:in_scope" label="符合考纲" />
+        <t-option value="scope:out_of_scope" label="疑似超纲" />
+        <t-option value="scope:uncertain" label="不确定" />
+        <t-option value="status:paused" label="暂停" />
+        <t-option value="status:failed" label="失败" />
+        <t-option value="status:pending" label="待处理" />
       </t-select>
       <t-input v-model="filter.knowledge_point" placeholder="知识点" clearable style="width: 140px" @clear="reloadFromFirstPage" @enter="reloadFromFirstPage" />
       <t-input v-model="filter.tag" placeholder="标签" clearable style="width: 120px" @clear="reloadFromFirstPage" @enter="reloadFromFirstPage" />
@@ -340,13 +344,30 @@
         {{ difficultyLabel(row.difficulty) }}
       </template>
       <template #auto_tagging_status="{ row }">
-        <t-tag v-if="row.auto_tagging_status === 'completed'" theme="success" variant="light" size="small">已匹配</t-tag>
+        <template v-if="row.auto_tagging_status === 'matched' || row.auto_tagging_status === 'completed'">
+          <t-tag
+            v-if="getTopKnowledgePointCandidate(row)"
+            theme="success"
+            variant="light"
+            size="small"
+          >
+            {{ getTopKnowledgePointCandidate(row)?.knowledge_point }}
+            <template v-if="formatConfidence(getTopKnowledgePointCandidate(row)?.confidence)">
+              · {{ formatConfidence(getTopKnowledgePointCandidate(row)?.confidence) }}
+            </template>
+          </t-tag>
+          <t-tag v-else theme="default" variant="light" size="small">未匹配</t-tag>
+        </template>
+        <t-tag v-else-if="row.auto_tagging_status === 'unmatched'" theme="default" variant="light" size="small">未匹配</t-tag>
         <t-tag v-else-if="row.auto_tagging_status === 'paused'" theme="warning" variant="light" size="small">暂停</t-tag>
         <t-tag v-else-if="row.auto_tagging_status === 'failed'" theme="danger" variant="light" size="small">失败</t-tag>
         <t-tag v-else theme="default" variant="light" size="small">待处理</t-tag>
       </template>
       <template #syllabus_scope_result="{ row }">
-        <t-tag v-if="row.syllabus_scope_result === 'in_scope'" theme="success" variant="light" size="small">符合考纲</t-tag>
+        <t-tag v-if="row.syllabus_checking_status === 'failed'" theme="danger" variant="light" size="small">失败</t-tag>
+        <t-tag v-else-if="row.syllabus_checking_status === 'paused'" theme="warning" variant="light" size="small">暂停</t-tag>
+        <t-tag v-else-if="row.syllabus_checking_status === 'pending'" theme="default" variant="light" size="small">待处理</t-tag>
+        <t-tag v-else-if="row.syllabus_scope_result === 'in_scope'" theme="success" variant="light" size="small">符合考纲</t-tag>
         <t-tag v-else-if="row.syllabus_scope_result === 'out_of_scope'" theme="warning" variant="light" size="small">疑似超纲</t-tag>
         <t-tag v-else-if="row.syllabus_scope_result === 'uncertain'" theme="default" variant="light" size="small">不确定</t-tag>
         <span v-else class="qp-na">—</span>
@@ -998,6 +1019,45 @@ function difficultyLabel(d: string) {
 function statusLabel(s: string) {
   const map: Record<string, string> = { draft: '草稿', reviewed: '已审', rejected: '已拒' }
   return map[s] || s
+}
+
+function getTopKnowledgePointCandidate(row: Question): {
+  knowledge_point: string
+  confidence?: number
+  score?: number
+} | null {
+  const candidates = (row.extraction_metadata as any)?.auto_processing?.auto_tagging?.candidates
+  if (!Array.isArray(candidates) || candidates.length === 0) return null
+  const first = candidates[0]
+  if (!first || typeof first !== 'object') return null
+  return {
+    knowledge_point: String(first.knowledge_point || ''),
+    confidence: typeof first.confidence === 'number' ? first.confidence : undefined,
+    score: typeof first.score === 'number' ? first.score : undefined,
+  }
+}
+
+function formatConfidence(value?: number): string {
+  if (typeof value !== 'number') return ''
+  return `${Math.round(value * 100)}%`
+}
+
+// ── Syllabus unified filter ──
+const syllabusFilterValue = ref('')
+
+function onSyllabusFilterChange() {
+  const v = syllabusFilterValue.value
+  if (v.startsWith('scope:')) {
+    filter.value.syllabus_scope_result = v.slice(6)
+    filter.value.syllabus_checking_status = undefined
+  } else if (v.startsWith('status:')) {
+    filter.value.syllabus_scope_result = undefined
+    filter.value.syllabus_checking_status = v.slice(7)
+  } else {
+    filter.value.syllabus_scope_result = undefined
+    filter.value.syllabus_checking_status = undefined
+  }
+  reloadFromFirstPage()
 }
 
 // Guard: if any import dialog opens, close the popup menu

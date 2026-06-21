@@ -85,8 +85,8 @@ func TestSyllabusFiltering_Paused_WhenNoKB(t *testing.T) {
 	}
 }
 
-// Test 3: High-score knowledge point chunk → candidates written
-func TestAutoTagging_Completed_WithHighScore(t *testing.T) {
+// Test 3: High-score knowledge point chunk → candidates written, status = matched
+func TestAutoTagging_Matched_WithHighScore(t *testing.T) {
 	results := []*types.SearchResult{
 		{
 			ID:             "chunk1",
@@ -105,8 +105,8 @@ func TestAutoTagging_Completed_WithHighScore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if q.AutoTaggingStatus != "completed" {
-		t.Errorf("expected auto_tagging_status=completed, got %s", q.AutoTaggingStatus)
+	if q.AutoTaggingStatus != "matched" {
+		t.Errorf("expected auto_tagging_status=matched, got %s", q.AutoTaggingStatus)
 	}
 
 	// Verify metadata contains candidates.
@@ -122,12 +122,26 @@ func TestAutoTagging_Completed_WithHighScore(t *testing.T) {
 	if !ok {
 		t.Fatal("auto_tagging missing")
 	}
-	if tagging["status"] != "completed" {
-		t.Errorf("expected status=completed, got %v", tagging["status"])
+	if tagging["status"] != "matched" {
+		t.Errorf("expected status=matched, got %v", tagging["status"])
 	}
 	candidates, ok := tagging["candidates"].([]any)
 	if !ok || len(candidates) == 0 {
 		t.Fatal("expected candidates to be present")
+	}
+	// Verify candidate structure.
+	c0, ok := candidates[0].(map[string]any)
+	if !ok {
+		t.Fatal("candidate[0] is not a map")
+	}
+	if c0["knowledge_point"] == nil || c0["knowledge_point"] == "" {
+		t.Error("candidate missing knowledge_point")
+	}
+	if c0["confidence"] == nil {
+		t.Error("candidate missing confidence")
+	}
+	if c0["evidence_chunk_id"] == nil || c0["evidence_chunk_id"] == "" {
+		t.Error("candidate missing evidence_chunk_id")
 	}
 }
 
@@ -263,5 +277,82 @@ func TestNoAutoReviewOrReject(t *testing.T) {
 	}
 	if q.Status == types.QuestionStatusReviewed || q.Status == types.QuestionStatusRejected {
 		t.Errorf("question should not be auto-reviewed or auto-rejected, got %s", q.Status)
+	}
+}
+
+// Test 9: Empty search results → auto_tagging_status = unmatched
+func TestAutoTagging_Unmatched_WhenEmptyResults(t *testing.T) {
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService([]*types.SearchResult{}, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp_kb"}
+	q := makeTestQuestion("q9")
+
+	err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q.AutoTaggingStatus != "unmatched" {
+		t.Errorf("expected auto_tagging_status=unmatched, got %s", q.AutoTaggingStatus)
+	}
+
+	// Verify metadata status is "unmatched".
+	var meta map[string]any
+	if err := json.Unmarshal(q.ExtractionMetadata, &meta); err != nil {
+		t.Fatalf("failed to parse extraction_metadata: %v", err)
+	}
+	autoProc := meta["auto_processing"].(map[string]any)
+	tagging := autoProc["auto_tagging"].(map[string]any)
+	if tagging["status"] != "unmatched" {
+		t.Errorf("expected metadata status=unmatched, got %v", tagging["status"])
+	}
+	candidates := tagging["candidates"].([]any)
+	if len(candidates) != 0 {
+		t.Errorf("expected empty candidates, got %d", len(candidates))
+	}
+}
+
+// Test 10: Matched status stays matched, not overwritten by later calls.
+func TestAutoTagging_Matched_StaysMatched(t *testing.T) {
+	results := []*types.SearchResult{
+		{
+			ID:             "chunk10",
+			Content:        "Geography lesson",
+			KnowledgeID:    "know10",
+			KnowledgeTitle: "Geography",
+			Score:          0.75,
+		},
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp_kb"}
+	q := makeTestQuestion("q10")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q.AutoTaggingStatus != "matched" {
+		t.Errorf("expected auto_tagging_status=matched, got %s", q.AutoTaggingStatus)
+	}
+	// Still draft after matched.
+	if q.Status != types.QuestionStatusDraft {
+		t.Errorf("expected status=draft, got %s", q.Status)
+	}
+}
+
+// Test 11: Paused status from missing config is still preserved.
+func TestAutoTagging_Paused_Preserved(t *testing.T) {
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(nil, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: ""}
+	q := makeTestQuestion("q11")
+	// Pre-set a value to ensure it gets overwritten to paused.
+	q.AutoTaggingStatus = "pending"
+
+	err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q.AutoTaggingStatus != "paused" {
+		t.Errorf("expected auto_tagging_status=paused when KB missing, got %s", q.AutoTaggingStatus)
 	}
 }
