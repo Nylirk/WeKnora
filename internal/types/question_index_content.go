@@ -133,6 +133,41 @@ func BuildQuestionSemanticQuery(q *Question) string {
 	return builder.String()
 }
 
+// BuildKnowledgePointMatchingQuery builds a query string dedicated to
+// knowledge-point semantic matching against a linked knowledge point KB.
+// It intentionally excludes answer, analysis, and grading fields to prevent
+// answer text from polluting knowledge-point matches. This is kept separate
+// from BuildQuestionSemanticQuery so the knowledge-point matching path can
+// evolve independently from the syllabus filtering path.
+func BuildKnowledgePointMatchingQuery(q *Question) string {
+	if q == nil {
+		return ""
+	}
+	fields := []struct {
+		name  string
+		value string
+	}{
+		{name: "question_type", value: strings.TrimSpace(q.QuestionType)},
+		{name: "difficulty", value: strings.TrimSpace(string(q.Difficulty))},
+		{name: "stem_text", value: strings.TrimSpace(q.StemText)},
+		{name: "question_body", value: readableQuestionJSON(q.QuestionBody)},
+	}
+
+	var builder strings.Builder
+	for _, field := range fields {
+		if field.value == "" || field.value == "{}" || field.value == "[]" {
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteByte('\n')
+		}
+		builder.WriteString(field.name)
+		builder.WriteString(": ")
+		builder.WriteString(field.value)
+	}
+	return builder.String()
+}
+
 func isQuestionIndexForbiddenKey(key string) bool {
 	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), "-", "_"))
 	return strings.Contains(normalized, "answer") ||

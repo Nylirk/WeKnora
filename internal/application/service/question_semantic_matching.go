@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -13,6 +14,12 @@ const (
 	syllabusDefaultTopK        = 3
 	SyllabusInScopeThreshold   = 0.70
 	SyllabusUncertainThreshold = 0.50
+
+	KnowledgePointDefaultTopK     = 20
+	KnowledgePointCandidateLimit  = 5
+	KnowledgePointMinScore        = 0.68
+	KnowledgePointMinMargin       = 0.08
+	KnowledgePointAlgorithmVersion = "kp_match_v1"
 )
 
 // RunKnowledgePointMatching performs semantic matching of draft questions against
@@ -33,7 +40,7 @@ func (s *QuestionService) RunKnowledgePointMatching(
 		if q == nil {
 			continue
 		}
-		query := types.BuildQuestionSemanticQuery(q)
+		query := types.BuildKnowledgePointMatchingQuery(q)
 		if query == "" {
 			logger.Warnf(ctx, "[auto_tagging] empty query for question %s, skipping", q.ID)
 			s.writeSingleQuestionMetadata(ctx, q, "auto_tagging", map[string]any{
@@ -43,7 +50,7 @@ func (s *QuestionService) RunKnowledgePointMatching(
 			continue
 		}
 
-		results, err := s.semanticSearchInKB(ctx, cfg.KnowledgePointKnowledgeBaseID, query, defaultTopK)
+		results, err := s.semanticSearchKnowledgePoints(ctx, cfg.KnowledgePointKnowledgeBaseID, query, KnowledgePointDefaultTopK)
 		if err != nil {
 			logger.Warnf(ctx, "[auto_tagging] search failed for question %s: %v", q.ID, err)
 			s.writeSingleQuestionMetadata(ctx, q, "auto_tagging", map[string]any{
@@ -53,15 +60,22 @@ func (s *QuestionService) RunKnowledgePointMatching(
 			continue
 		}
 
-		candidates := buildKnowledgePointCandidates(results)
-		statusValue := "matched"
-		if len(candidates) == 0 {
-			statusValue = "unmatched"
-		}
+		statusValue, topScore, secondScore := classifyKnowledgePointResult(results)
+		candidates := buildKnowledgePointCandidates(results, KnowledgePointCandidateLimit)
 		meta := map[string]any{
-			"status":     statusValue,
-			"matched_at": time.Now().UTC().Format(time.RFC3339),
-			"candidates": candidates,
+			"status":             statusValue,
+			"matched_at":         time.Now().UTC().Format(time.RFC3339),
+			"algorithm_version":  KnowledgePointAlgorithmVersion,
+			"query":              query,
+			"min_score":          KnowledgePointMinScore,
+			"min_margin":         KnowledgePointMinMargin,
+			"candidates":         candidates,
+		}
+		if topScore > 0 {
+			meta["top_score"] = topScore
+		}
+		if secondScore > 0 {
+			meta["second_score"] = secondScore
 		}
 		s.writeSingleQuestionMetadata(ctx, q, "auto_tagging", meta, statusValue, "")
 	}
@@ -136,6 +150,46 @@ func (s *QuestionService) semanticSearchInKB(
 	return s.knowledgeBaseSvc.HybridSearch(ctx, targetKBID, params)
 }
 
+// semanticSearchKnowledgePoints performs hybrid (vector + keyword) search in the
+// knowledge point KB. Unlike semanticSearchInKB, it does not disable keyword
+// matching, allowing lexical recall to complement vector similarity for
+// knowledge-point matching against unstructured text KBs.
+func (s *QuestionService) semanticSearchKnowledgePoints(
+	ctx context.Context,
+	targetKBID string,
+	query string,
+	topK int,
+) ([]*types.SearchResult, error) {
+	params := types.SearchParams{
+		QueryText:  query,
+		MatchCount: topK,
+	}
+	return s.knowledgeBaseSvc.HybridSearch(ctx, targetKBID, params)
+}
+
+// classifyKnowledgePointResult applies score and margin gates to determine
+// the auto_tagging status. Returns (status, topScore, secondScore).
+//   - unmatched: no results or top1 < KnowledgePointMinScore
+//   - uncertain: top1 >= KnowledgePointMinScore but margin < KnowledgePointMinMargin
+//   - matched:   top1 >= KnowledgePointMinScore and margin >= KnowledgePointMinMargin
+func classifyKnowledgePointResult(results []*types.SearchResult) (string, float64, float64) {
+	if len(results) == 0 {
+		return "unmatched", 0, 0
+	}
+	topScore := results[0].Score
+	secondScore := 0.0
+	if len(results) > 1 {
+		secondScore = results[1].Score
+	}
+	if topScore < KnowledgePointMinScore {
+		return "unmatched", topScore, secondScore
+	}
+	if topScore-KnowledgePointMinMargin < secondScore {
+		return "uncertain", topScore, secondScore
+	}
+	return "matched", topScore, secondScore
+}
+
 // writePausedMetadata writes paused status metadata to all given questions.
 func (s *QuestionService) writePausedMetadata(
 	ctx context.Context,
@@ -202,23 +256,49 @@ func (s *QuestionService) syncQuestionStatusFromStage(
 	}
 }
 
-// buildKnowledgePointCandidates converts search results to candidate structures.
-func buildKnowledgePointCandidates(results []*types.SearchResult) []map[string]any {
-	candidates := make([]map[string]any, 0, len(results))
+// buildKnowledgePointCandidates converts search results to candidate structures,
+// capped at limit. Each candidate includes a knowledge_point label, confidence,
+// score, source identifiers, evidence text, and a reason explaining how the
+// label was derived ("knowledge_title" or "inferred_from_content").
+func buildKnowledgePointCandidates(results []*types.SearchResult, limit int) []map[string]any {
+	if limit <= 0 {
+		return []map[string]any{}
+	}
+	candidates := make([]map[string]any, 0, limit)
 	for _, r := range results {
 		if r == nil {
 			continue
 		}
+		if len(candidates) >= limit {
+			break
+		}
+		label, reason := knowledgePointLabel(r)
+		if label == "" {
+			continue
+		}
 		candidates = append(candidates, map[string]any{
-			"knowledge_point":    firstNonEmpty(r.KnowledgeTitle, truncateText(r.Content, 100)),
-			"confidence":         r.Score,
-			"score":              r.Score,
+			"knowledge_point":     label,
+			"confidence":          r.Score,
+			"score":               r.Score,
 			"source_knowledge_id": r.KnowledgeID,
-			"evidence_chunk_id":  r.ID,
-			"evidence_text":      truncateText(r.Content, 500),
+			"evidence_chunk_id":   r.ID,
+			"evidence_text":       truncateText(r.Content, 500),
+			"reason":              reason,
 		})
 	}
 	return candidates
+}
+
+// knowledgePointLabel derives a short knowledge-point label from a search result.
+// Prefers KnowledgeTitle; falls back to a short truncation of chunk content.
+func knowledgePointLabel(r *types.SearchResult) (string, string) {
+	if title := strings.TrimSpace(r.KnowledgeTitle); title != "" {
+		return title, "knowledge_title"
+	}
+	if content := strings.TrimSpace(r.Content); content != "" {
+		return truncateText(content, 60), "inferred_from_content"
+	}
+	return "", ""
 }
 
 // classifySyllabusResult determines the scope result from search scores.
