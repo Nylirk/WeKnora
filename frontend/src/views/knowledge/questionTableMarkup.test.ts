@@ -46,7 +46,8 @@ test('renders only spaced edit and delete row actions', () => {
   assert.equal(operationSlot.includes('openEditDialog(row)'), true)
   assert.equal(operationSlot.includes('removeQuestion(row)'), true)
   assert.equal(operationSlot.includes('reviewQuestion(row)'), false)
-  assert.equal(source.includes('updateQuestionStatus'), true)
+  // updateQuestionStatus removed — only review API can change review state
+  assert.equal(source.includes('updateQuestionStatus'), false)
 })
 
 test('syncs question totals to the selected set', () => {
@@ -274,16 +275,19 @@ test('question table has row selection and batch actions', () => {
   assert.equal(source.includes("type: 'multiple'"), true)
   assert.equal(source.includes('selectedRowKeys'), true)
   assert.equal(source.includes('onSelectChange'), true)
-  assert.equal(source.includes('batchReview'), true)
+  // batchReview / 批量审核 removed — only review API can change review state
+  assert.equal(source.includes('batchReview'), false)
+  assert.equal(source.includes('批量审核'), false)
   assert.equal(source.includes('batchDelete'), true)
-  assert.equal(source.includes('批量审核'), true)
   assert.equal(source.includes('批量删除'), true)
   assert.equal(source.includes('清空选择'), true)
 })
 
-test('draft status is clickable for single question review', () => {
-  assert.equal(source.includes('reviewSingleQuestion'), true)
-  assert.equal(source.includes('updateQuestionStatus'), true)
+test('draft status is display-only, no direct review click', () => {
+  // reviewSingleQuestion and updateQuestionStatus removed — only review API can change state
+  assert.equal(source.includes('reviewSingleQuestion'), false)
+  assert.equal(source.includes('updateQuestionStatus'), false)
+  // Draft tag still rendered
   assert.equal(source.includes("row.status === 'draft'"), true)
   // No old review button in operation column
   assert.equal(source.includes('reviewQuestion(row)'), false)

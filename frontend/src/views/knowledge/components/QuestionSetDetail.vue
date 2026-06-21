@@ -330,7 +330,6 @@
     <!-- Batch action bar -->
     <div v-if="selectedRowKeys.length" class="batch-actions">
       <span class="batch-label">已选择 {{ selectedRowKeys.length }} 题</span>
-      <t-button size="small" variant="outline" @click="batchReview">批量审核</t-button>
       <t-popconfirm content="确定要删除选中题目？此操作不可撤销。" @confirm="batchDelete">
         <t-button size="small" variant="outline" theme="danger">批量删除</t-button>
       </t-popconfirm>
@@ -359,9 +358,7 @@
         <t-tooltip v-if="row.status === 'reviewed' && row.reviewed_at" :content="`审核人：${row.reviewed_by || '未知'}\n审核时间：${row.reviewed_at}`">
           <t-tag theme="success" size="small">{{ statusLabel(row.status) }}</t-tag>
         </t-tooltip>
-        <t-link v-else-if="row.status === 'draft'" theme="primary" hover="color" @click="reviewSingleQuestion(row)">
-          <t-tag theme="default" size="small" class="draft-review-tag">{{ statusLabel(row.status) }}</t-tag>
-        </t-link>
+        <t-tag v-else-if="row.status === 'draft'" theme="default" size="small">{{ statusLabel(row.status) }}</t-tag>
         <t-tag v-else :theme="row.status === 'rejected' ? 'danger' : 'default'" size="small">
           {{ statusLabel(row.status) }}
         </t-tag>
@@ -432,7 +429,7 @@ import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import {
   getQuestionSet, listQuestions, deleteQuestion as apiDeleteQuestion,
-  updateQuestionStatus, getQuestionSetProcessingStatus,
+  getQuestionSetProcessingStatus,
   reprocessQuestionSet,
   resolveProcessingStages, resolveProcessingButtonState,
   PROCESSING_STAGE_STATUS_LABELS, PROCESSING_BUTTON_LABELS,
@@ -764,38 +761,6 @@ function reloadFromFirstPage() {
   currentPage.value = 1
   selectedRowKeys.value = []
   loadQuestions()
-}
-
-async function reviewSingleQuestion(row: Question) {
-  if (row.status !== 'draft') return
-  try {
-    await updateQuestionStatus(props.knowledgeBaseId, props.setId, row.id, { status: 'reviewed' })
-    MessagePlugin.success('审核成功')
-    await refreshAfterMutation()
-  } catch (e: any) {
-    MessagePlugin.error(e?.message || '审核失败')
-  }
-}
-
-async function batchReview() {
-  const draftIds = selectedRowKeys.value.filter(id => {
-    const q = questions.value.find(q => q.id === id)
-    return q?.status === 'draft'
-  })
-  if (!draftIds.length) {
-    MessagePlugin.warning('没有可审核的草稿题目')
-    return
-  }
-  let done = 0; let failed = 0
-  for (const id of draftIds) {
-    try {
-      await updateQuestionStatus(props.knowledgeBaseId, props.setId, id, { status: 'reviewed' })
-      done++
-    } catch { failed++ }
-  }
-  MessagePlugin.success(`审核完成：成功 ${done} 题` + (failed ? `，失败 ${failed} 题` : ''))
-  selectedRowKeys.value = []
-  await refreshAfterMutation()
 }
 
 async function batchDelete() {
