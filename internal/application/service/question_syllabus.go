@@ -222,7 +222,13 @@ func (s *QuestionService) findOrCreateSyllabusKB(
 		id := *parentKB.VectorStoreID
 		syllabusKB.VectorStoreID = &id
 	}
+
 	syllabusKB.EnsureDefaults()
+	// EnsureDefaults sets QuestionBankConfig=nil for non-QuestionBank KBs,
+	// but the DB column is NOT NULL DEFAULT '{}'. Force a valid empty config.
+	if syllabusKB.QuestionBankConfig == nil {
+		syllabusKB.QuestionBankConfig = &types.QuestionBankConfig{}
+	}
 
 	if err := repo.CreateKnowledgeBase(ctx, syllabusKB); err != nil {
 		return nil, apperrors.NewInternalServerError(

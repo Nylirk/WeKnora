@@ -107,6 +107,7 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		kb.CreatorID = uid
 	}
 	kb.EnsureDefaults()
+	kb.NormalizeNotNullJSONB()
 	if strings.TrimSpace(kb.Name) == "" {
 		return nil, apperrors.NewBadRequestError("知识库名称不能为空")
 	}
