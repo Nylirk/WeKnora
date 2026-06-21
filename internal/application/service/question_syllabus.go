@@ -105,7 +105,7 @@ func (s *QuestionService) UploadSyllabus(
 		ParseStatus:    knowledge.ParseStatus,
 		KnowledgeCount: 0,
 		ChunkCount:     0,
-		Message:        "考纲上传成功，正在后台解析处理",
+		Message:        "考纲上传成功",
 	}, nil
 }
 
