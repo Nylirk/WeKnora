@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
@@ -169,17 +170,30 @@ func (s *QuestionService) semanticSearchKnowledgePoints(
 
 // classifyKnowledgePointResult applies score and margin gates to determine
 // the auto_tagging status. Returns (status, topScore, secondScore).
-//   - unmatched: no results or top1 < KnowledgePointMinScore
+// Only results with a valid knowledge-point label participate in scoring.
+//   - unmatched: no valid candidates or top1 < KnowledgePointMinScore
 //   - uncertain: top1 >= KnowledgePointMinScore but margin < KnowledgePointMinMargin
 //   - matched:   top1 >= KnowledgePointMinScore and margin >= KnowledgePointMinMargin
 func classifyKnowledgePointResult(results []*types.SearchResult) (string, float64, float64) {
-	if len(results) == 0 {
+	scores := make([]float64, 0, len(results))
+	for _, r := range results {
+		if r == nil {
+			continue
+		}
+		label, _ := knowledgePointLabel(r)
+		if label == "" {
+			continue
+		}
+		scores = append(scores, r.Score)
+	}
+	if len(scores) == 0 {
 		return "unmatched", 0, 0
 	}
-	topScore := results[0].Score
+	sort.Float64s(scores)
+	topScore := scores[len(scores)-1]
 	secondScore := 0.0
-	if len(results) > 1 {
-		secondScore = results[1].Score
+	if len(scores) > 1 {
+		secondScore = scores[len(scores)-2]
 	}
 	if topScore < KnowledgePointMinScore {
 		return "unmatched", topScore, secondScore
@@ -338,16 +352,13 @@ func buildSyllabusEvidence(results []*types.SearchResult) []map[string]any {
 }
 
 func truncateText(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	if maxLen <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= maxLen {
 		return s
 	}
-	return s[:maxLen]
-}
-
-func firstNonEmpty(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
+	return string(r[:maxLen])
 }
 

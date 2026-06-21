@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -610,7 +611,8 @@ func TestKnowledgePoint_CandidatesCappedAtLimit(t *testing.T) {
 	}
 }
 
-// Test 20: knowledge-point search must NOT set DisableKeywordsMatch=true.
+// Test 20: knowledge-point search must NOT set DisableKeywordsMatch=true,
+// and must use KnowledgePointDefaultTopK as MatchCount.
 func TestKnowledgePoint_SearchDoesNotDisableKeywords(t *testing.T) {
 	results := []*types.SearchResult{
 		{ID: "c20", Content: "content", KnowledgeID: "k20", KnowledgeTitle: "KP20", Score: 0.85},
@@ -630,6 +632,9 @@ func TestKnowledgePoint_SearchDoesNotDisableKeywords(t *testing.T) {
 	for i, p := range kbSvc.capturedParams {
 		if p.DisableKeywordsMatch {
 			t.Errorf("HybridSearch[%d] DisableKeywordsMatch=true, want false for knowledge-point matching", i)
+		}
+		if p.MatchCount != KnowledgePointDefaultTopK {
+			t.Errorf("HybridSearch[%d] MatchCount=%d, want %d", i, p.MatchCount, KnowledgePointDefaultTopK)
 		}
 	}
 }
@@ -660,5 +665,94 @@ func TestKnowledgePoint_CandidateInferredFromContent(t *testing.T) {
 	}
 	if c0["knowledge_point"] == nil || c0["knowledge_point"] == "" {
 		t.Error("expected non-empty inferred knowledge_point")
+	}
+}
+
+// Test 22: All results have high scores but nil or empty title/content → unmatched.
+func TestKnowledgePoint_Unmatched_WhenOnlyInvalidCandidates(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c22a", Content: "", KnowledgeID: "k22a", KnowledgeTitle: "", Score: 0.90},
+		nil,
+		{ID: "c22b", Content: "   ", KnowledgeID: "k22b", KnowledgeTitle: "  ", Score: 0.85},
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q22")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q.AutoTaggingStatus != "unmatched" {
+		t.Errorf("expected auto_tagging_status=unmatched, got %s", q.AutoTaggingStatus)
+	}
+	var meta map[string]any
+	json.Unmarshal(q.ExtractionMetadata, &meta)
+	tagging := meta["auto_processing"].(map[string]any)["auto_tagging"].(map[string]any)
+	candidates := tagging["candidates"].([]any)
+	if len(candidates) != 0 {
+		t.Errorf("expected empty candidates, got %d", len(candidates))
+	}
+}
+
+// Test 23: Unsorted results — classification uses highest scores regardless of order.
+func TestKnowledgePoint_UsesHighestScoresWhenResultsUnsorted(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c23a", Content: "content a", KnowledgeID: "k23a", KnowledgeTitle: "KP-A", Score: 0.60},
+		{ID: "c23b", Content: "content b", KnowledgeID: "k23b", KnowledgeTitle: "KP-B", Score: 0.90},
+		{ID: "c23c", Content: "content c", KnowledgeID: "k23c", KnowledgeTitle: "KP-C", Score: 0.70},
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q23")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q.AutoTaggingStatus != "matched" {
+		t.Errorf("expected auto_tagging_status=matched (0.90 vs 0.70), got %s", q.AutoTaggingStatus)
+	}
+	var meta map[string]any
+	json.Unmarshal(q.ExtractionMetadata, &meta)
+	tagging := meta["auto_processing"].(map[string]any)["auto_tagging"].(map[string]any)
+	if tagging["top_score"] != 0.90 {
+		t.Errorf("expected top_score=0.90, got %v", tagging["top_score"])
+	}
+	if tagging["second_score"] != 0.70 {
+		t.Errorf("expected second_score=0.70, got %v", tagging["second_score"])
+	}
+}
+
+// Test 24: nil results in slice must not panic; valid high-score candidate still matched.
+func TestKnowledgePoint_IgnoresNilResults(t *testing.T) {
+	results := []*types.SearchResult{
+		nil,
+		{ID: "c24", Content: "valid content", KnowledgeID: "k24", KnowledgeTitle: "KP-Valid", Score: 0.90},
+		nil,
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q24")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q.AutoTaggingStatus != "matched" {
+		t.Errorf("expected auto_tagging_status=matched, got %s", q.AutoTaggingStatus)
+	}
+}
+
+// Test 25: truncateText must produce valid UTF-8 for Chinese input.
+func TestTruncateText_PreservesUTF8(t *testing.T) {
+	input := "这是一段中文文本用于测试截断功能是否正确处理UTF8字符"
+	result := truncateText(input, 5)
+	if !utf8.ValidString(result) {
+		t.Errorf("truncateText result is not valid UTF-8: %q", result)
+	}
+	r := []rune(result)
+	if len(r) != 5 {
+		t.Errorf("expected 5 runes, got %d", len(r))
 	}
 }
