@@ -208,6 +208,11 @@ type KnowledgeBaseRepository interface {
 	// GetKnowledgeBaseByPurpose returns the first KB matching a purpose (optionally scoped to parent).
 	GetKnowledgeBaseByPurpose(ctx context.Context, tenantID uint64, purpose string, parentKBID string) (*types.KnowledgeBase, error)
 
+	// RepairKnowledgeBaseEmptyIDByPurpose repairs a corrupt system-managed KB
+	// that has an empty ID, matching by (tenant, purpose, parent, visibility, system_managed).
+	// Returns the number of rows affected (0 or 1 under normal conditions).
+	RepairKnowledgeBaseEmptyIDByPurpose(ctx context.Context, tenantID uint64, purpose string, parentKBID string, newID string) (int64, error)
+
 	// UpdateKnowledgeBase updates a knowledge base record
 	// Parameters:
 	//   - ctx: Context information

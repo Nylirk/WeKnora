@@ -168,6 +168,33 @@ func (h *QuestionHandler) GetQuestionSetProcessingStatus(c *gin.Context) {
 	questionOK(c, result)
 }
 
+// ReprocessQuestionSet re-runs semantic matching for all draft questions.
+// POST /knowledge-bases/:id/question-sets/:set_id/processing/reprocess
+func (h *QuestionHandler) ReprocessQuestionSet(c *gin.Context) {
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	var req struct {
+		Scope string `json:"scope"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Allow empty body — default to "all".
+		req.Scope = ""
+	}
+	if req.Scope == "" {
+		req.Scope = "all"
+	}
+	if req.Scope != "all" && req.Scope != "auto_tagging" && req.Scope != "syllabus_checking" {
+		questionBadRequest(c, apperrors.NewBadRequestError("invalid scope: must be all, auto_tagging, or syllabus_checking"))
+		return
+	}
+	err := h.questionService.ReprocessQuestionSet(c.Request.Context(), kbID, setID, req.Scope)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, gin.H{"message": "重新处理已启动", "scope": req.Scope})
+}
+
 func (h *QuestionHandler) CreateQuestion(c *gin.Context) {
 	var req types.CreateQuestionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

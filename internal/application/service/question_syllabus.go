@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"mime/multipart"
+	"strings"
+	"time"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/google/uuid"
 )
 
 const syllabusKBNameTemplate = "%s-考纲"
@@ -34,7 +37,27 @@ func (s *QuestionService) UploadSyllabus(
 		return nil, err
 	}
 
-	// 3. Upload the file to the syllabus KB via existing knowledge pipeline.
+	// 3. Defensive check before calling CreateKnowledgeFromFile.
+	if syllabusKB == nil || strings.TrimSpace(syllabusKB.ID) == "" {
+		return nil, apperrors.NewInternalServerError(
+			"上传考纲文件失败: syllabus knowledge_base ID is empty",
+		)
+	}
+
+	// 4. Record old knowledge IDs before uploading the new file.
+	oldKnowledge, listErr := s.knowledgeService.ListKnowledgeByKnowledgeBaseID(ctx, syllabusKB.ID)
+	var oldKnowledgeIDs []string
+	if listErr != nil {
+		logger.Warnf(ctx, "Failed to list old syllabus knowledge (continuing): %v", listErr)
+	} else {
+		for _, ok := range oldKnowledge {
+			if ok != nil && ok.ID != "" {
+				oldKnowledgeIDs = append(oldKnowledgeIDs, ok.ID)
+			}
+		}
+	}
+
+	// 5. Upload the new file to the syllabus KB.
 	knowledge, err := s.knowledgeService.CreateKnowledgeFromFile(
 		ctx, syllabusKB.ID, fileHeader, nil, nil, "", "", "", nil,
 	)
@@ -44,9 +67,25 @@ func (s *QuestionService) UploadSyllabus(
 		)
 	}
 
-	// 4. Persist syllabus KB binding via dedicated update path.
-	// This must NOT go through UpdateKnowledgeBase, which explicitly
-	// protects SyllabusKnowledgeBaseID from being overwritten.
+	// 6. Delete old syllabus knowledge, skipping the newly created one.
+	if len(oldKnowledgeIDs) > 0 {
+		toDelete := make([]string, 0, len(oldKnowledgeIDs))
+		for _, id := range oldKnowledgeIDs {
+			if id != knowledge.ID {
+				toDelete = append(toDelete, id)
+			}
+		}
+		if len(toDelete) > 0 {
+			if delErr := s.knowledgeService.DeleteKnowledgeList(ctx, toDelete); delErr != nil {
+				return nil, apperrors.NewInternalServerError(
+					fmt.Sprintf("考纲文件已上传，但旧考纲清理失败: %v", delErr),
+				)
+			}
+			logger.Infof(ctx, "Cleaned up %d old syllabus knowledge entries for KB %s", len(toDelete), kbID)
+		}
+	}
+
+	// 7. Persist syllabus KB binding via dedicated update path.
 	if err := s.knowledgeBaseSvc.UpdateQuestionBankSyllabusKnowledgeBaseID(
 		ctx, kbID, syllabusKB.ID,
 	); err != nil {
@@ -56,13 +95,19 @@ func (s *QuestionService) UploadSyllabus(
 	logger.Infof(ctx, "Syllabus uploaded for KB %s: file=%s, syllabusKB=%s, knowledge=%s",
 		kbID, fileHeader.Filename, syllabusKB.ID, knowledge.ID)
 
+	// 8. Schedule syllabus_checking AFTER the new syllabus knowledge has been
+	// parsed and indexed, so semantic search returns up-to-date results.
+	s.scheduleSyllabusReprocessAfterSyllabusReady(
+		logger.CloneContext(ctx), kbID, syllabusKB.ID, knowledge.ID,
+	)
+
 	return &types.SyllabusUploadResponse{
 		SyllabusKBID:   syllabusKB.ID,
 		FileName:       knowledge.FileName,
 		ParseStatus:    knowledge.ParseStatus,
 		KnowledgeCount: 0,
 		ChunkCount:     0,
-		Message:        "考纲上传成功，正在后台解析处理",
+		Message:        "考纲上传成功",
 	}, nil
 }
 
@@ -195,12 +240,40 @@ func (s *QuestionService) findOrCreateSyllabusKB(
 		ctx, tenantID, types.KBPurposeQuestionBankSyllabus, parentKB.ID,
 	)
 	if err == nil && existing != nil {
-		logger.Infof(ctx, "Reusing existing syllabus KB %s for parent %s", existing.ID, parentKB.ID)
-		return existing, nil
+		if strings.TrimSpace(existing.ID) == "" {
+			repairedID := uuid.NewString()
+			rows, repairErr := repo.RepairKnowledgeBaseEmptyIDByPurpose(
+				ctx, tenantID, types.KBPurposeQuestionBankSyllabus, parentKB.ID, repairedID,
+			)
+			if repairErr != nil {
+				return nil, apperrors.NewInternalServerError(
+					fmt.Sprintf("修复隐藏考纲知识库 ID 失败: %v", repairErr),
+				)
+			}
+			if rows == 0 {
+				// The corrupt row may have been deleted by another process.
+				// Fall through to create a fresh KB.
+				logger.Warnf(ctx,
+					"Repair of empty-ID syllabus KB affected 0 rows (parent=%s), creating fresh",
+					parentKB.ID)
+			} else {
+				existing.ID = repairedID
+				existing.NormalizeNotNullJSONB()
+				logger.Warnf(ctx,
+					"Repaired empty ID for hidden syllabus KB: parent=%s repaired_id=%s",
+					parentKB.ID, repairedID)
+			}
+		}
+		if strings.TrimSpace(existing.ID) != "" {
+			logger.Infof(ctx, "Reusing existing syllabus KB %s for parent %s", existing.ID, parentKB.ID)
+			return existing, nil
+		}
+		// existing.ID still empty after repair (0 rows affected) → create fresh.
 	}
 
 	// Create a new hidden syllabus KB.
 	syllabusKB := &types.KnowledgeBase{
+		ID:                    uuid.NewString(),
 		Name:                  fmt.Sprintf(syllabusKBNameTemplate, parentKB.Name),
 		Type:                  types.KnowledgeBaseTypeDocument,
 		Description:           fmt.Sprintf("系统自动创建的考纲知识库，绑定题库：%s", parentKB.Name),
@@ -222,16 +295,127 @@ func (s *QuestionService) findOrCreateSyllabusKB(
 		id := *parentKB.VectorStoreID
 		syllabusKB.VectorStoreID = &id
 	}
+
 	syllabusKB.EnsureDefaults()
+	// EnsureDefaults sets QuestionBankConfig=nil for non-QuestionBank KBs,
+	// but the DB column is NOT NULL DEFAULT '{}'. Force a valid empty config.
+	if syllabusKB.QuestionBankConfig == nil {
+		syllabusKB.QuestionBankConfig = &types.QuestionBankConfig{}
+	}
 
 	if err := repo.CreateKnowledgeBase(ctx, syllabusKB); err != nil {
 		return nil, apperrors.NewInternalServerError(
 			fmt.Sprintf("创建隐藏考纲知识库失败: %v", err),
 		)
 	}
+	if strings.TrimSpace(syllabusKB.ID) == "" {
+		return nil, apperrors.NewInternalServerError(
+			"创建隐藏考纲知识库失败: generated syllabus knowledge_base ID is empty",
+		)
+	}
 
 	logger.Infof(ctx, "Created hidden syllabus KB %s for parent %s", syllabusKB.ID, parentKB.ID)
 	return syllabusKB, nil
+}
+
+// scheduleSyllabusReprocessForKB triggers syllabus_checking for all draft questions
+// in all question sets under the given question bank KB. Runs in a background goroutine.
+func (s *QuestionService) scheduleSyllabusReprocessForKB(ctx context.Context, kbID string) {
+	go s.reprocessSyllabusForAllSets(ctx, kbID)
+}
+
+// reprocessSyllabusForAllSets is the synchronous inner logic for
+// scheduleSyllabusReprocessForKB. It is safe to call from an existing goroutine.
+func (s *QuestionService) reprocessSyllabusForAllSets(ctx context.Context, kbID string) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf(ctx, "panic in syllabus reprocess scheduler for KB %s: %v", kbID, r)
+		}
+	}()
+
+	page := &types.Pagination{Page: 1, PageSize: 100}
+	for {
+		result, err := s.repository.ListQuestionSets(ctx, tenantID(ctx), kbID, page)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to list question sets for KB %s during syllabus reprocess: %v", kbID, err)
+			return
+		}
+		sets, ok := result.Data.([]*types.QuestionSet)
+		if !ok || len(sets) == 0 {
+			return
+		}
+		for _, qs := range sets {
+			if qs == nil {
+				continue
+			}
+			if err := s.ReprocessQuestionSet(ctx, kbID, qs.ID, "syllabus_checking"); err != nil {
+				logger.Warnf(ctx, "Failed to schedule syllabus_checking for set %s: %v", qs.ID, err)
+			}
+		}
+		if len(sets) < page.PageSize {
+			return
+		}
+		page.Page++
+	}
+}
+
+// scheduleSyllabusReprocessAfterSyllabusReady waits for the given syllabus knowledge
+// to become searchable (parse_status=completed), then triggers reprocess.
+func (s *QuestionService) scheduleSyllabusReprocessAfterSyllabusReady(
+	ctx context.Context,
+	questionBankKBID string,
+	syllabusKBID string,
+	syllabusKnowledgeID string,
+) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf(ctx, "panic in syllabus ready scheduler for KB %s: %v", questionBankKBID, r)
+			}
+		}()
+
+		if err := s.waitForSyllabusKnowledgeReady(ctx, syllabusKBID, syllabusKnowledgeID); err != nil {
+			logger.Warnf(ctx, "syllabus knowledge not ready for KB %s: %v", questionBankKBID, err)
+			return
+		}
+
+		s.reprocessSyllabusForAllSets(ctx, questionBankKBID)
+	}()
+}
+
+// waitForSyllabusKnowledgeReady polls the knowledge parse_status until it is
+// completed, failed, or cancelled, or the 5-minute timeout expires.
+func (s *QuestionService) waitForSyllabusKnowledgeReady(
+	ctx context.Context,
+	syllabusKBID string,
+	syllabusKnowledgeID string,
+) error {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	timeout := time.NewTimer(5 * time.Minute)
+	defer timeout.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeout.C:
+			return fmt.Errorf("timeout waiting for syllabus knowledge %s to become searchable", syllabusKnowledgeID)
+		case <-ticker.C:
+			knowledge, err := s.knowledgeService.GetKnowledgeByID(ctx, syllabusKnowledgeID)
+			if err != nil {
+				return err
+			}
+
+			switch knowledge.ParseStatus {
+			case types.ParseStatusCompleted:
+				return nil
+			case types.ParseStatusFailed, types.ParseStatusCancelled:
+				return fmt.Errorf("syllabus knowledge parse ended with status %s", knowledge.ParseStatus)
+			}
+		}
+	}
 }
 
 func strPtr(s string) *string {

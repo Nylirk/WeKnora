@@ -110,6 +110,9 @@ func (r *fakeKBRepo) ListKnowledgeBasesByParentID(_ context.Context, _ uint64, _
 func (r *fakeKBRepo) GetKnowledgeBaseByPurpose(_ context.Context, _ uint64, _ string, _ string) (*types.KnowledgeBase, error) {
 	return nil, nil
 }
+func (r *fakeKBRepo) RepairKnowledgeBaseEmptyIDByPurpose(_ context.Context, _ uint64, _ string, _ string, _ string) (int64, error) {
+	return 0, nil
+}
 func (r *fakeKBRepo) DeleteKnowledgeBase(_ context.Context, _ string) error { return nil }
 func (r *fakeKBRepo) TogglePinKnowledgeBase(_ context.Context, _ string, _ uint64) (*types.KnowledgeBase, error) {
 	return nil, nil

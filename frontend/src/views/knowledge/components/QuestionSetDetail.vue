@@ -76,6 +76,35 @@
                   {{ qpHeaderStatusText }}
                 </t-tag>
                 <div class="kp-head-actions">
+                  <t-popup
+                    v-model:visible="reprocessMenuVisible"
+                    trigger="click"
+                    placement="bottom-right"
+                    :disabled="processingButton.state === 'running'"
+                  >
+                    <t-button
+                      size="small"
+                      variant="outline"
+                      theme="default"
+                      :disabled="processingButton.state === 'running'"
+                      :loading="reprocessLoading"
+                    >
+                      重新处理
+                    </t-button>
+                    <template #content>
+                      <div class="reprocess-menu">
+                        <button type="button" class="reprocess-item" @click="triggerReprocess('all')">
+                          重新处理全部
+                        </button>
+                        <button type="button" class="reprocess-item" @click="triggerReprocess('auto_tagging')">
+                          重新匹配知识点
+                        </button>
+                        <button type="button" class="reprocess-item" @click="triggerReprocess('syllabus_checking')">
+                          重新筛选考纲
+                        </button>
+                      </div>
+                    </template>
+                  </t-popup>
                   <button type="button" class="kp-icon-btn" :title="'关闭'" @click="processingDrawerVisible = false">
                     <t-icon name="close" size="16px" />
                   </button>
@@ -293,6 +322,23 @@
         <t-option value="medium" :label="$t('questionBank.medium', '中等')" />
         <t-option value="hard" :label="$t('questionBank.hard', '困难')" />
       </t-select>
+      <t-select v-model="filter.auto_tagging_status" placeholder="知识点匹配" clearable style="width: 120px" @change="reloadFromFirstPage">
+        <t-option value="" label="全部" />
+        <t-option value="matched" label="已匹配" />
+        <t-option value="unmatched" label="未匹配" />
+        <t-option value="paused" label="暂停" />
+        <t-option value="failed" label="失败" />
+        <t-option value="pending" label="待处理" />
+      </t-select>
+      <t-select v-model="syllabusFilterValue" placeholder="考纲筛选" clearable style="width: 120px" @change="onSyllabusFilterChange">
+        <t-option value="" label="全部" />
+        <t-option value="scope:in_scope" label="符合考纲" />
+        <t-option value="scope:out_of_scope" label="疑似超纲" />
+        <t-option value="scope:uncertain" label="不确定" />
+        <t-option value="status:paused" label="暂停" />
+        <t-option value="status:failed" label="失败" />
+        <t-option value="status:pending" label="待处理" />
+      </t-select>
       <t-input v-model="filter.knowledge_point" placeholder="知识点" clearable style="width: 140px" @clear="reloadFromFirstPage" @enter="reloadFromFirstPage" />
       <t-input v-model="filter.tag" placeholder="标签" clearable style="width: 120px" @clear="reloadFromFirstPage" @enter="reloadFromFirstPage" />
       <t-input v-model="filter.keyword" :placeholder="$t('questionBank.searchPlaceholder', '搜索题干...')" clearable style="width: 180px" @clear="reloadFromFirstPage" @enter="reloadFromFirstPage" />
@@ -323,8 +369,106 @@
       <template #question_type="{ row }">
         {{ questionTypeLabel(row.question_type) }}
       </template>
+      <template #stem_text="{ row }">
+        <t-popup :placement="semanticPopupPlacement" trigger="hover" show-arrow attach="body">
+          <span class="question-stem-cell" @mouseenter="updateSemanticPopupPlacement($event, 260)">{{ row.stem_text }}</span>
+          <template #content>
+            <div class="semantic-popover semantic-popover-stem">
+              <div class="semantic-popover-title">题干</div>
+              <div class="semantic-stem-text">{{ row.stem_text || '—' }}</div>
+            </div>
+          </template>
+        </t-popup>
+      </template>
       <template #difficulty="{ row }">
         {{ difficultyLabel(row.difficulty) }}
+      </template>
+      <template #auto_tagging_status="{ row }">
+        <template v-if="(row.auto_tagging_status === 'matched' || row.auto_tagging_status === 'completed') && getTopKnowledgePointCandidate(row)">
+          <t-popup :placement="semanticPopupPlacement" trigger="hover" show-arrow attach="body">
+            <t-tag theme="success" variant="light" size="small" class="question-match-tag" @mouseenter="updateSemanticPopupPlacement($event, 280)">
+              <span class="question-match-tag-text">
+                {{ getTopKnowledgePointCandidate(row)?.knowledge_point }}
+                <template v-if="formatConfidence(getTopKnowledgePointCandidate(row)?.confidence)">
+                  · {{ formatConfidence(getTopKnowledgePointCandidate(row)?.confidence) }}
+                </template>
+              </span>
+            </t-tag>
+
+            <template #content>
+              <div class="semantic-popover">
+                <div class="semantic-popover-title">知识点匹配详情</div>
+
+                <div
+                  v-for="(candidate, index) in getKnowledgePointCandidates(row)"
+                  :key="`${candidate.knowledge_point}-${index}`"
+                  class="semantic-candidate"
+                >
+                  <div class="semantic-candidate-head">
+                    <span class="semantic-candidate-name">{{ candidate.knowledge_point }}</span>
+                    <t-tag size="small" theme="success" variant="light">
+                      {{ formatConfidence(candidate.confidence) || '—' }}
+                    </t-tag>
+                  </div>
+
+                  <div class="semantic-meta-row">
+                    <span class="semantic-meta-label">分数</span>
+                    <span class="semantic-meta-value">
+                      {{ typeof candidate.score === 'number' ? candidate.score.toFixed(3) : '—' }}
+                    </span>
+                  </div>
+
+                </div>
+              </div>
+            </template>
+          </t-popup>
+        </template>
+        <template v-else-if="row.auto_tagging_status === 'matched' || row.auto_tagging_status === 'completed'">
+          <t-tag theme="default" variant="light" size="small">未匹配</t-tag>
+        </template>
+        <t-tag v-else-if="row.auto_tagging_status === 'unmatched'" theme="default" variant="light" size="small">未匹配</t-tag>
+        <t-tag v-else-if="row.auto_tagging_status === 'paused'" theme="warning" variant="light" size="small">暂停</t-tag>
+        <t-tag v-else-if="row.auto_tagging_status === 'failed'" theme="danger" variant="light" size="small">失败</t-tag>
+        <t-tag v-else theme="default" variant="light" size="small">待处理</t-tag>
+      </template>
+      <template #syllabus_scope_result="{ row }">
+        <template v-if="syllabusDisplayLabel(row) !== '—'">
+          <t-popup :placement="semanticPopupPlacement" trigger="hover" show-arrow attach="body">
+            <t-tag :theme="syllabusTagTheme(row)" variant="light" size="small" @mouseenter="updateSemanticPopupPlacement($event, 240)">
+              {{ syllabusDisplayLabel(row) }}
+            </t-tag>
+
+            <template #content>
+              <div class="semantic-popover">
+                <div class="semantic-popover-title">考纲筛选详情</div>
+
+                <div class="semantic-meta-row">
+                  <span class="semantic-meta-label">结果</span>
+                  <span class="semantic-meta-value">{{ syllabusDisplayLabel(row) }}</span>
+                </div>
+
+                <div v-if="getSyllabusDetail(row).reason" class="semantic-meta-row">
+                  <span class="semantic-meta-label">原因</span>
+                  <span class="semantic-meta-value">{{ getSyllabusDetail(row).reason }}</span>
+                </div>
+
+                <div class="semantic-meta-row">
+                  <span class="semantic-meta-label">置信度</span>
+                  <span class="semantic-meta-value">{{ formatConfidence(getSyllabusDetail(row).confidence) || '—' }}</span>
+                </div>
+
+                <div class="semantic-meta-row">
+                  <span class="semantic-meta-label">分数</span>
+                  <span class="semantic-meta-value">
+                    {{ typeof getSyllabusDetail(row).score === 'number' ? getSyllabusDetail(row).score.toFixed(3) : '—' }}
+                  </span>
+                </div>
+
+              </div>
+            </template>
+          </t-popup>
+        </template>
+        <span v-else class="qp-na">—</span>
       </template>
       <template #status="{ row }">
         <t-tooltip v-if="row.status === 'reviewed' && row.reviewed_at" :content="`审核人：${row.reviewed_by || '未知'}\n审核时间：${row.reviewed_at}`">
@@ -406,9 +550,11 @@ import {
   updateQuestionStatus, getQuestionSetProcessingStatus,
   resolveProcessingStages, resolveProcessingButtonState,
   PROCESSING_STAGE_STATUS_LABELS, PROCESSING_BUTTON_LABELS,
+  reprocessQuestionSet,
   type Question, type QuestionListFilter, type QuestionType,
   type QuestionSetProcessingStatus,
   type ProcessingButtonState,
+  type QuestionProcessingReprocessScope,
 } from '@/api/question'
 import type { BlockPreviewSummary, ImportBlock } from '@/api/question_block'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
@@ -671,13 +817,34 @@ function stopProcessingPolling() {
   }
 }
 
+// ── Reprocess trigger ──
+const reprocessMenuVisible = ref(false)
+const reprocessLoading = ref(false)
+
+async function triggerReprocess(scope: QuestionProcessingReprocessScope) {
+  reprocessMenuVisible.value = false
+  reprocessLoading.value = true
+  try {
+    await reprocessQuestionSet(props.knowledgeBaseId, props.setId, scope)
+    MessagePlugin.success('重新处理已启动')
+    await fetchProcessingStatus()
+    startProcessingPolling()
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || '重新处理失败')
+  } finally {
+    reprocessLoading.value = false
+  }
+}
+
 const questionTypes: QuestionType[] = ['single_choice', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer', 'essay', 'composite']
 const questionColumns = computed(() => [
   { colKey: 'row-select', type: 'multiple' as const, width: 50 },
-  { colKey: 'question_type', title: '类型', width: 100, cell: 'question_type' },
-  { colKey: 'stem_text', title: '题干', ellipsis: true },
-  { colKey: 'difficulty', title: '难度', width: 80, cell: 'difficulty' },
-  { colKey: 'status', title: '状态', width: 90, cell: 'status' },
+  { colKey: 'question_type', title: '类型', width: 80, cell: 'question_type' },
+  { colKey: 'stem_text', title: '题干', minWidth: 360, ellipsis: true, cell: 'stem_text' },
+  { colKey: 'difficulty', title: '难度', width: 72, cell: 'difficulty' },
+  { colKey: 'auto_tagging_status', title: '知识点', width: 170, cell: 'auto_tagging_status' },
+  { colKey: 'syllabus_scope_result', title: '考纲', width: 100, cell: 'syllabus_scope_result' },
+  { colKey: 'status', title: '状态', width: 80, cell: 'status' },
   { colKey: 'operation', title: '操作', width: 120, fixed: 'right', cell: 'operation' },
 ])
 const fetchedSetName = ref('')
@@ -973,6 +1140,126 @@ function statusLabel(s: string) {
   return map[s] || s
 }
 
+function getKnowledgePointCandidates(row: Question): Array<{
+  knowledge_point: string
+  confidence?: number
+  score?: number
+}> {
+  const candidates = (row.extraction_metadata as any)?.auto_processing?.auto_tagging?.candidates
+  if (!Array.isArray(candidates)) return []
+
+  return candidates
+    .filter((c: any) => c && typeof c === 'object')
+    .slice(0, 3)
+    .map((c: any) => ({
+      knowledge_point: String(c.knowledge_point || '未知知识点'),
+      confidence: typeof c.confidence === 'number' ? c.confidence : undefined,
+      score: typeof c.score === 'number' ? c.score : undefined,
+    }))
+}
+
+function getTopKnowledgePointCandidate(row: Question): {
+  knowledge_point: string
+  confidence?: number
+  score?: number
+} | null {
+  return getKnowledgePointCandidates(row)[0] || null
+}
+
+function formatConfidence(value?: number): string {
+  if (typeof value !== 'number') return ''
+  return `${Math.round(value * 100)}%`
+}
+
+function getSyllabusDetail(row: Question): {
+  label: string
+  reason?: string
+  confidence?: number
+  score?: number
+} {
+  const meta = (row.extraction_metadata as any)?.auto_processing?.syllabus_checking || {}
+  const evidence = Array.isArray(meta.evidence) ? meta.evidence[0] : undefined
+
+  return {
+    label: syllabusDisplayLabel(row),
+    reason: typeof meta.reason === 'string' ? meta.reason : undefined,
+    confidence: typeof meta.confidence === 'number' ? meta.confidence : undefined,
+    score: typeof meta.score === 'number'
+      ? meta.score
+      : typeof evidence?.score === 'number'
+        ? evidence.score
+        : undefined,
+  }
+}
+
+function syllabusDisplayLabel(row: Question): string {
+  if (row.syllabus_checking_status === 'failed') return '失败'
+  if (row.syllabus_checking_status === 'paused') return '暂停'
+  if (row.syllabus_checking_status === 'pending') return '待筛选'
+  if (row.syllabus_scope_result === 'in_scope') return '符合'
+  if (row.syllabus_scope_result === 'out_of_scope') return '超纲'
+  if (row.syllabus_scope_result === 'uncertain') return '不确定'
+  return '—'
+}
+
+function syllabusPauseReason(row: Question): string {
+  const reason = (row.extraction_metadata as any)?.auto_processing?.syllabus_checking?.reason
+  if (row.syllabus_checking_status === 'paused' && typeof reason === 'string') {
+    if (reason.includes('未配置考纲') || reason.includes('未关联')) {
+      return '未配置考纲'
+    }
+  }
+  if (row.syllabus_checking_status === 'paused') {
+    return '考纲已配置，当前题目尚未重新筛选'
+  }
+  return reason || '暂停'
+}
+
+function syllabusTagTheme(row: Question): 'success' | 'warning' | 'danger' | 'default' {
+  if (row.syllabus_checking_status === 'failed') return 'danger'
+  if (row.syllabus_checking_status === 'paused') return 'warning'
+  if (row.syllabus_scope_result === 'in_scope') return 'success'
+  if (row.syllabus_scope_result === 'out_of_scope') return 'warning'
+  return 'default'
+}
+
+// ── Adaptive popup placement ──
+const semanticPopupPlacement = ref<'top-left' | 'bottom-left'>('top-left')
+
+function updateSemanticPopupPlacement(e: MouseEvent, estimatedHeight = 240) {
+  const el = e.currentTarget as HTMLElement | null
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight
+  const margin = 16
+  const spaceAbove = rect.top
+  const spaceBelow = viewportHeight - rect.bottom
+
+  if (spaceAbove < estimatedHeight + margin && spaceBelow > spaceAbove) {
+    semanticPopupPlacement.value = 'bottom-left'
+    return
+  }
+  semanticPopupPlacement.value = 'top-left'
+}
+
+// ── Syllabus unified filter ──
+const syllabusFilterValue = ref('')
+
+function onSyllabusFilterChange() {
+  const v = syllabusFilterValue.value
+  if (v.startsWith('scope:')) {
+    filter.value.syllabus_scope_result = v.slice(6)
+    filter.value.syllabus_checking_status = undefined
+  } else if (v.startsWith('status:')) {
+    filter.value.syllabus_scope_result = undefined
+    filter.value.syllabus_checking_status = v.slice(7)
+  } else {
+    filter.value.syllabus_scope_result = undefined
+    filter.value.syllabus_checking_status = undefined
+  }
+  reloadFromFirstPage()
+}
+
 // Guard: if any import dialog opens, close the popup menu
 watch(fileImportVisible, (fileVisible) => {
   if (fileVisible) {
@@ -1010,6 +1297,110 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .batch-label { font-size: 13px; color: var(--td-text-color-secondary); margin-right: 8px; }
 .draft-review-tag { cursor: pointer; }
 .draft-review-tag:hover { color: var(--td-brand-color); }
+.qp-na { color: var(--td-text-color-placeholder); font-size: 12px; }
+
+/* Question table cell styles */
+.question-stem-cell {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.question-match-tag {
+  max-width: 150px;
+}
+
+.question-match-tag-text {
+  display: inline-block;
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Semantic popover (knowledge point & syllabus detail) */
+.semantic-popover {
+  width: 320px;
+  max-width: 360px;
+  padding: 12px;
+  color: var(--td-text-color-primary);
+  background: var(--td-bg-color-container);
+  border-radius: 8px;
+  box-shadow: var(--td-shadow-2);
+  line-height: 1.5;
+}
+
+.semantic-popover-title {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.semantic-candidate + .semantic-candidate {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--td-component-border);
+}
+
+.semantic-candidate-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.semantic-candidate-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.semantic-meta-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.semantic-meta-label {
+  flex: 0 0 48px;
+  color: var(--td-text-color-secondary);
+}
+
+.semantic-meta-value {
+  min-width: 0;
+  flex: 1;
+  color: var(--td-text-color-primary);
+  word-break: break-word;
+}
+
+/* Stem popover */
+.semantic-popover-stem {
+  width: 360px;
+  max-width: min(420px, calc(100vw - 32px));
+}
+
+.semantic-stem-text {
+  max-height: 180px;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--td-text-color-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .question-empty { padding: 48px 16px; }
 .restore-draft-copy { margin: 0; color: var(--td-text-color-secondary); line-height: 1.7; }
 
@@ -1417,6 +1808,11 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .import-type-help { color: var(--td-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .import-type-item:disabled .import-type-description,
 .import-type-item:disabled .import-type-help { color: var(--td-text-color-disabled); }
+
+/* Reprocess menu in waterfall drawer */
+.reprocess-menu { width: 180px; padding: 6px; }
+.reprocess-item { width: 100%; display: flex; align-items: center; padding: 8px 12px; border: 0; border-radius: 6px; color: var(--td-text-color-primary); background: transparent; text-align: left; cursor: pointer; font-size: 13px; }
+.reprocess-item:hover { background: var(--td-bg-color-container-hover); }
 </style>
 
 <style>

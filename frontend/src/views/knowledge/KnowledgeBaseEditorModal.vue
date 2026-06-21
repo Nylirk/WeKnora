@@ -202,27 +202,32 @@
                               未上传考纲文档，导入题目后不会启用自动考纲筛选。
                             </p>
                           </div>
-                          <!-- Syllabus uploaded: show status -->
-                          <div v-else-if="syllabusInfo" class="syllabus-status">
-                            <div class="syllabus-file-row">
-                              <t-icon name="file" />
-                              <span class="syllabus-file-name">{{ syllabusInfo.file_name || '考纲文档' }}</span>
+                          <!-- Syllabus uploaded: compact card -->
+                          <div v-else-if="syllabusInfo" class="syllabus-file-card">
+                            <div class="syllabus-file-main">
+                              <t-icon name="file" size="18" class="syllabus-file-icon" />
+                              <span class="syllabus-file-name" :title="syllabusInfo.file_name">
+                                {{ syllabusInfo.file_name || '考纲文档' }}
+                              </span>
                               <t-tag
-                                :theme="syllabusParseStatusTheme"
-                                variant="light"
+                                v-if="syllabusInfo.parse_status"
                                 size="small"
+                                variant="light"
+                                :theme="syllabusParseStatusTheme"
+                                class="syllabus-status-tag"
                               >
                                 {{ syllabusParseStatusLabel }}
                               </t-tag>
                             </div>
-                            <div class="syllabus-actions">
-                              <t-button size="small" variant="text" theme="primary" @click="triggerSyllabusFileInput">
-                                重新上传
-                              </t-button>
-                              <t-button size="small" variant="text" theme="danger" @click="onDeleteSyllabus">
-                                删除考纲
-                              </t-button>
-                            </div>
+                            <t-button
+                              size="small"
+                              variant="outline"
+                              theme="primary"
+                              :loading="syllabusUploading"
+                              @click="triggerSyllabusFileInput"
+                            >
+                              重新上传
+                            </t-button>
                           </div>
                           <!-- Uploading indicator -->
                           <div v-else class="syllabus-status">
@@ -476,7 +481,7 @@ import KbCreateContextualGuide from '@/components/KbCreateContextualGuide.vue'
 import { KB_EDITOR_FOCUS_SECTION_EVENT, markContextualGuideDone } from '@/config/contextualGuides'
 import { MessagePlugin, DialogPlugin } from 'tdesign-vue-next'
 import { createKnowledgeBase, getKnowledgeBaseById, listKnowledgeFiles, listKnowledgeBases, updateKnowledgeBase, rebuildKBIndex } from '@/api/knowledge-base'
-import { uploadSyllabus, getSyllabus, deleteSyllabus } from '@/api/question'
+import { uploadSyllabus, getSyllabus } from '@/api/question'
 import { updateKBConfig, type KBModelConfigRequest } from '@/api/initialization'
 import { type ModelConfig } from '@/api/model'
 import { useChatResourcesStore } from '@/stores/chatResources'
@@ -893,7 +898,7 @@ const fetchSyllabus = async () => {
 	  try {
 	    const result = await uploadSyllabus(props.kbId!, file)
 	    if (result) {
-	      MessagePlugin.success(result.message || '考纲文档上传成功')
+	      MessagePlugin.success('考纲上传成功')
 	      await fetchSyllabus()
 	    }
 	  } catch (err: any) {
@@ -903,17 +908,7 @@ const fetchSyllabus = async () => {
 	  }
 	}
 
-	const onDeleteSyllabus = async () => {
-	  if (!props.kbId) return
-	  try {
-	    await deleteSyllabus(props.kbId)
-	    syllabusInfo.value = null
-	    pendingSyllabusFile.value = null
-	    MessagePlugin.success('考纲已删除')
-	  } catch (err: any) {
-	    MessagePlugin.error(err?.message || '删除考纲失败')
-	  }
-	}
+
 
 // 加载知识库数据（编辑模式）
 const loadKBData = async () => {
@@ -2132,5 +2127,46 @@ watch(
   }
 }
 .kb-hint { margin: 4px 0 0; color: var(--td-text-color-placeholder); font-size: 12px; }
+/* Syllabus file card */
+.syllabus-file-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--td-component-border);
+  border-radius: 6px;
+  background: var(--td-bg-color-container);
+}
+
+.syllabus-file-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.syllabus-file-icon {
+  flex: 0 0 auto;
+  color: var(--td-text-color-secondary);
+}
+
+.syllabus-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--td-text-color-primary);
+}
+
+.syllabus-status-tag {
+  flex: 0 0 auto;
+}
 </style>
 

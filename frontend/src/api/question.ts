@@ -194,11 +194,17 @@ export interface Question {
   source_payload: Record<string, unknown>; extraction_metadata: Record<string, unknown>
   sort_order: number; created_at: string; updated_at: string
   reviewed_by?: string; reviewed_at?: string
+  auto_tagging_status?: string
+  syllabus_checking_status?: string
+  syllabus_scope_result?: string
 }
 
 export interface QuestionListFilter {
   question_type?: QuestionType; difficulty?: QuestionDifficulty
   status?: QuestionStatus; knowledge_point?: string; tag?: string; keyword?: string
+  auto_tagging_status?: string
+  syllabus_checking_status?: string
+  syllabus_scope_result?: string
 }
 
 export interface ImportQuestionItem {
@@ -244,6 +250,9 @@ export const listQuestions = (kbId: string, setId: string, filter?: QuestionList
     if (filter.keyword) params.set('keyword', filter.keyword)
     if (filter.knowledge_point) params.set('knowledge_point', filter.knowledge_point)
     if (filter.tag) params.set('tag', filter.tag)
+    if (filter.auto_tagging_status) params.set('auto_tagging_status', filter.auto_tagging_status)
+    if (filter.syllabus_checking_status) params.set('syllabus_checking_status', filter.syllabus_checking_status)
+    if (filter.syllabus_scope_result) params.set('syllabus_scope_result', filter.syllabus_scope_result)
   }
   return get(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions?${params}`).then(unwrap<PageResult<Question>>)
 }
@@ -268,6 +277,11 @@ export const importQuestions = (kbId: string, setId: string, data: ImportQuestio
 
 export const getQuestionSetProcessingStatus = (kbId: string, setId: string) =>
   get(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/processing-status`).then(unwrap<QuestionSetProcessingStatus>)
+
+export type QuestionProcessingReprocessScope = 'all' | 'auto_tagging' | 'syllabus_checking'
+
+export const reprocessQuestionSet = (kbId: string, setId: string, scope: QuestionProcessingReprocessScope) =>
+  post(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/processing/reprocess`, { scope })
 
 export const exportToEvaluationDataset = (kbId: string, setId: string, data: { name: string; description?: string }) =>
   post(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/export`, data).then(unwrap<any>)

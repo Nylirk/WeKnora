@@ -647,6 +647,18 @@ func (kb *KnowledgeBase) EnsureDefaults() {
 	}
 }
 
+// NormalizeNotNullJSONB ensures all jsonb NOT NULL columns have non-nil Go values
+// so that GORM does not emit SQL NULL, which would violate the DB constraint.
+// Call this after EnsureDefaults() before persisting a KnowledgeBase.
+func (kb *KnowledgeBase) NormalizeNotNullJSONB() {
+	if kb == nil {
+		return
+	}
+	if kb.QuestionBankConfig == nil {
+		kb.QuestionBankConfig = &QuestionBankConfig{}
+	}
+}
+
 func (kb *KnowledgeBase) IsQuestionBank() bool {
 	return kb != nil && kb.Type == KnowledgeBaseTypeQuestionBank
 }
