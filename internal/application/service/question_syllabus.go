@@ -94,6 +94,11 @@ func (s *QuestionService) UploadSyllabus(
 	logger.Infof(ctx, "Syllabus uploaded for KB %s: file=%s, syllabusKB=%s, knowledge=%s",
 		kbID, fileHeader.Filename, syllabusKB.ID, knowledge.ID)
 
+	// 8. Schedule syllabus_checking for all draft questions in all question sets
+	// under this KB — AFTER the new syllabus config is persisted. Use a fresh
+	// background context so the async task is not cancelled by the HTTP request.
+	s.scheduleSyllabusReprocessForKB(logger.CloneContext(ctx), kbID)
+
 	return &types.SyllabusUploadResponse{
 		SyllabusKBID:   syllabusKB.ID,
 		FileName:       knowledge.FileName,
@@ -309,6 +314,44 @@ func (s *QuestionService) findOrCreateSyllabusKB(
 
 	logger.Infof(ctx, "Created hidden syllabus KB %s for parent %s", syllabusKB.ID, parentKB.ID)
 	return syllabusKB, nil
+}
+
+// scheduleSyllabusReprocessForKB triggers syllabus_checking for all draft questions
+// in all question sets under the given question bank KB. Runs in background goroutines
+// and does not block the caller.
+func (s *QuestionService) scheduleSyllabusReprocessForKB(ctx context.Context, kbID string) {
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf(ctx, "panic in syllabus reprocess scheduler for KB %s: %v", kbID, r)
+			}
+		}()
+
+		page := &types.Pagination{Page: 1, PageSize: 100}
+		for {
+			result, err := s.repository.ListQuestionSets(ctx, tenantID(ctx), kbID, page)
+			if err != nil {
+				logger.Warnf(ctx, "Failed to list question sets for KB %s during syllabus reprocess: %v", kbID, err)
+				return
+			}
+			sets, ok := result.Data.([]*types.QuestionSet)
+			if !ok || len(sets) == 0 {
+				return
+			}
+			for _, qs := range sets {
+				if qs == nil {
+					continue
+				}
+				if err := s.ReprocessQuestionSet(ctx, kbID, qs.ID, "syllabus_checking"); err != nil {
+					logger.Warnf(ctx, "Failed to schedule syllabus_checking for set %s: %v", qs.ID, err)
+				}
+			}
+			if int64(len(sets)) < result.Total && len(sets) < page.PageSize {
+				return
+			}
+			page.Page++
+		}
+	}()
 }
 
 func strPtr(s string) *string {
