@@ -40,17 +40,6 @@ export interface QuestionBankConfig {
   syllabus_knowledge_base_id: string
 }
 
-export type QuestionSetProcessingStage = '' | 'draft_imported' | 'indexing' | 'auto_tagging' | 'syllabus_checking' | 'ready_for_review' | 'failed'
-
-export interface QuestionSetProcessingStatus {
-  stage: QuestionSetProcessingStage
-  error_message: string
-  skipped_auto_tagging_reason?: string
-  skipped_syllabus_reason?: string
-  auto_tagging_enabled: boolean
-  syllabus_check_enabled: boolean
-}
-
 export interface Question {
   id: string; tenant_id: number; question_set_id: string; knowledge_base_id: string
   question_type: QuestionType; schema_version: string
