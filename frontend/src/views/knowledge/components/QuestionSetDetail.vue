@@ -124,13 +124,15 @@
                         <span class="kp-name-text" :class="{ 'kp-name-root': row.isRoot, 'kp-name-mono': !row.isRoot }">
                           {{ row.label }}
                         </span>
-                        <span v-if="row.reason" class="kp-name-reason">{{ row.reason }}</span>
-                        <span class="kp-name-kind">{{ row.kind }}</span>
+                        <span class="kp-name-kind">{{ qpRowKindLabel(row) }}</span>
                       </div>
                     </div>
 
                     <div class="kp-cell-dur kp-mono">
-                      <template v-if="row.status === 'running'">
+                      <template v-if="row.status === 'paused'">
+                        <span class="qp-paused-duration">暂停</span>
+                      </template>
+                      <template v-else-if="row.status === 'running'">
                         <span class="kp-running-time">{{ row.formattedDur }}</span>
                       </template>
                       <template v-else>
@@ -139,18 +141,16 @@
                     </div>
 
                     <div class="kp-cell-bar">
-                      <div v-if="row.status === 'paused' || row.isPlaceholder" class="kp-bar kp-bar-placeholder" />
-                      <template v-else>
-                        <div class="kp-bar" :class="[`kp-bar-${row.status}`]" :style="qpBarStyle(row)">
-                          <span class="kp-bar-tip">
-                            <span class="kp-bar-tip-name">{{ row.label }}</span>
-                            <span class="kp-bar-tip-sep">·</span>
-                            <span class="kp-mono">{{ row.formattedDur }}</span>
-                            <span class="kp-bar-tip-sep">·</span>
-                            <span>{{ PROCESSING_STAGE_STATUS_LABELS[row.status] || row.status }}</span>
-                          </span>
-                        </div>
-                      </template>
+                      <div v-if="row.status === 'paused' || row.status === 'pending' || !row.durationMs" class="kp-bar kp-bar-placeholder" />
+                      <div v-else class="kp-bar" :class="[`kp-bar-${row.status}`]" :style="qpBarStyle(row)">
+                        <span class="kp-bar-tip">
+                          <span class="kp-bar-tip-name">{{ row.label }}</span>
+                          <span class="kp-bar-tip-sep">·</span>
+                          <span class="kp-mono">{{ row.formattedDur }}</span>
+                          <span class="kp-bar-tip-sep">·</span>
+                          <span>{{ PROCESSING_STAGE_STATUS_LABELS[row.status] || row.status }}</span>
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -521,6 +521,22 @@ function qpRowJson(row: QpFlatRow): string {
   }
 }
 
+const qpRootStatusLabel = computed(() => {
+  switch (processingButton.value.state) {
+    case 'running': return '进行中'
+    case 'paused': return '部分暂停'
+    case 'failed': return '处理失败'
+    case 'ready_for_review': return '待人工审核'
+    case 'completed': return '已完成'
+    default: return '未开始'
+  }
+})
+
+function qpRowKindLabel(row: QpFlatRow): string {
+  if (row.isRoot) return qpRootStatusLabel.value
+  return row.kind.toUpperCase()
+}
+
 interface QpFlatRow {
   key: string
   depth: number
@@ -540,9 +556,6 @@ const qpFlatRows = computed<QpFlatRow[]>(() => {
   const stages = processingStages.value
   if (!stages.length) return []
 
-  const sorted = [...stages]
-  const total = Math.max(1, sorted.length * 500)
-
   const rows: QpFlatRow[] = []
 
   // ROOT row
@@ -560,16 +573,14 @@ const qpFlatRows = computed<QpFlatRow[]>(() => {
     isRoot: true,
     isStage: false,
     isPlaceholder: false,
-    durationMs: total,
+    durationMs: 0,
     startMs: 0,
-    formattedDur: formatMs(total),
+    formattedDur: '—',
   })
 
-  sorted.forEach((s, i) => {
-    const offset = i * 500
+  stages.forEach((s) => {
     const isPaused = s.status === 'paused'
     const isPending = s.status === 'pending'
-    const dur = isPending || isPaused ? 0 : s.status === 'running' ? total - offset : 500
     rows.push({
       key: s.key,
       depth: 1,
@@ -580,44 +591,20 @@ const qpFlatRows = computed<QpFlatRow[]>(() => {
       isRoot: false,
       isStage: true,
       isPlaceholder: isPending || isPaused,
-      durationMs: isPending || isPaused ? 0 : dur,
-      startMs: isPending || isPaused ? 0 : offset,
-      formattedDur: isPending || isPaused ? '—' : s.status === 'running' ? formatMs(total - offset) : '500ms',
+      durationMs: 0,
+      startMs: 0,
+      formattedDur: isPaused ? '暂停' : isPending ? '—' : '—',
     })
   })
 
   return rows
 })
 
-const qpTotalMs = computed(() => {
-  const rows = qpFlatRows.value
-  return rows.length > 0 ? rows[0].durationMs : 0
-})
+const qpFormattedTotal = computed(() => '—')
 
-function formatMs(ms: number): string {
-  if (ms <= 0) return '—'
-  if (ms < 1000) return `${ms}ms`
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
-  const m = Math.floor(ms / 60000)
-  const s = ((ms % 60000) / 1000).toFixed(1)
-  return `${m}m${s}s`
-}
+const qpShowRuler = computed(() => false)
 
-const qpFormattedTotal = computed(() => formatMs(qpTotalMs.value))
-
-const qpShowRuler = computed(() => qpTotalMs.value >= 50)
-
-const qpRulerTicks = computed(() => {
-  const total = qpTotalMs.value
-  if (!total) return []
-  return [
-    { left: '0%', label: '0ms' },
-    { left: '25%', label: formatMs(total * 0.25) },
-    { left: '50%', label: formatMs(total * 0.5) },
-    { left: '75%', label: formatMs(total * 0.75) },
-    { left: '100%', label: formatMs(total) },
-  ]
-})
+const qpRulerTicks = computed(() => [])
 
 const qpCompletedCount = computed(() =>
   processingStages.value.filter(s => s.status === 'completed').length,
@@ -642,15 +629,8 @@ const qpHeaderStatusTheme = computed(() => {
   return 'default'
 })
 
-function qpBarStyle(row: QpFlatRow): Record<string, string> {
-  const total = qpTotalMs.value
-  if (!total || row.isPlaceholder) return { display: 'none' }
-  const leftPct = (row.startMs / total) * 100
-  const widthPct = Math.max(0.4, (row.durationMs / total) * 100)
-  return {
-    left: `${Math.max(0, Math.min(100, leftPct))}%`,
-    width: `${Math.min(100 - Math.max(0, leftPct), widthPct)}%`,
-  }
+function qpBarStyle(_row: QpFlatRow): Record<string, string> {
+  return { display: 'none' }
 }
 
 // ── End waterfall timeline ──
@@ -1286,14 +1266,10 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
   50% { opacity: 0.45; transform: scale(0.8); }
 }
 
-/* Reason text between stage name and kind */
-.kp-name-reason {
-  font-size: 11px;
+/* Paused duration label */
+.qp-paused-duration {
   color: var(--td-warning-color);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex-shrink: 1;
+  font-weight: 500;
 }
 
 /* Detail panel */

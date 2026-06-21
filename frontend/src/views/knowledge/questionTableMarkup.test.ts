@@ -505,12 +505,24 @@ test('processing drawer renders waterfall timeline matching knowledge timeline s
   assert.equal(source.includes('输出'), true, 'must have 输出 tab')
   assert.equal(source.includes('原始 JSON'), true, 'must have 原始 JSON tab')
   assert.equal(source.includes('kp-body-with-detail'), true, 'must use kp-body-with-detail')
-  // kp-name-reason between stage name and kind
-  assert.equal(source.includes('kp-name-reason'), true, 'must use kp-name-reason for paused reason')
+  // kp-name-reason removed — reason only in detail panel
+  assert.equal(source.includes('kp-name-reason'), false, 'kp-name-reason must be removed')
+  // ROOT row shows aggregate status, not "ROOT"
+  assert.equal(source.includes('qpRowKindLabel'), true, 'must use qpRowKindLabel')
+  assert.equal(source.includes('qpRootStatusLabel'), true, 'must use qpRootStatusLabel')
+  assert.equal(source.includes("return '部分暂停'"), true, 'qpRootStatusLabel must include 部分暂停')
+  assert.equal(source.includes("return '进行中'"), true, 'qpRootStatusLabel must include 进行中')
+  assert.equal(source.includes("return '待人工审核'"), true, 'qpRootStatusLabel must include 待人工审核')
+  // Paused stage duration shows "暂停" instead of "—"
+  assert.equal(source.includes('qp-paused-duration'), true, 'must use qp-paused-duration for paused dur')
+  assert.equal(source.includes("row.status === 'paused'"), true, 'must check paused for duration display')
+  // No fake times
+  assert.equal(source.includes('const offset = i * 500'), false, 'must not use fake offset times')
+  assert.equal(source.includes('dur = 500'), false, 'must not use fake duration')
   // Paused loading is orange
   assert.equal(source.includes('qp-loading-warning'), true, 'must have qp-loading-warning class')
-  // Paused still shows reason text via row.reason
-  assert.equal(source.includes('row.reason'), true, 'must show row.reason for paused stages')
+  // Reason shown in detail panel, not on waterfall row
+  assert.equal(source.includes('selectedProcessingRow.reason'), true, 'reason must be in detail panel')
   // Paused icon is NOT pause-circle
   assert.equal(source.includes('pause-circle-filled'), false, 'must not use pause-circle-filled')
   assert.equal(source.includes('pause-circle'), false, 'must not use pause-circle')
