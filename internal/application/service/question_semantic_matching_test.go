@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -14,11 +15,13 @@ import (
 
 type mockKBService struct {
 	interfaces.KnowledgeBaseService
-	searchResults []*types.SearchResult
-	searchErr     error
+	searchResults  []*types.SearchResult
+	searchErr      error
+	capturedParams []types.SearchParams
 }
 
-func (m *mockKBService) HybridSearch(_ context.Context, _ string, _ types.SearchParams) ([]*types.SearchResult, error) {
+func (m *mockKBService) HybridSearch(_ context.Context, _ string, params types.SearchParams) ([]*types.SearchResult, error) {
+	m.capturedParams = append(m.capturedParams, params)
 	return m.searchResults, m.searchErr
 }
 
@@ -98,7 +101,8 @@ func TestAutoTagging_Matched_WithHighScore(t *testing.T) {
 		},
 	}
 	repo := &matchingTestRepo{}
-	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	kbSvc := makeMockKBService(results, nil)
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: kbSvc}
 	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp_kb_1"}
 	q := makeTestQuestion("q3")
 
@@ -110,7 +114,7 @@ func TestAutoTagging_Matched_WithHighScore(t *testing.T) {
 		t.Errorf("expected auto_tagging_status=matched, got %s", q.AutoTaggingStatus)
 	}
 
-	// Verify metadata contains candidates.
+	// Verify metadata contains candidates and algorithm fields.
 	var meta map[string]any
 	if err := json.Unmarshal(q.ExtractionMetadata, &meta); err != nil {
 		t.Fatalf("failed to parse extraction_metadata: %v", err)
@@ -125,6 +129,18 @@ func TestAutoTagging_Matched_WithHighScore(t *testing.T) {
 	}
 	if tagging["status"] != "matched" {
 		t.Errorf("expected status=matched, got %v", tagging["status"])
+	}
+	if tagging["algorithm_version"] != KnowledgePointAlgorithmVersion {
+		t.Errorf("expected algorithm_version=%s, got %v", KnowledgePointAlgorithmVersion, tagging["algorithm_version"])
+	}
+	if tagging["query"] == nil || tagging["query"] == "" {
+		t.Error("expected non-empty query in metadata")
+	}
+	if tagging["min_score"] != KnowledgePointMinScore {
+		t.Errorf("expected min_score=%v, got %v", KnowledgePointMinScore, tagging["min_score"])
+	}
+	if tagging["min_margin"] != KnowledgePointMinMargin {
+		t.Errorf("expected min_margin=%v, got %v", KnowledgePointMinMargin, tagging["min_margin"])
 	}
 	candidates, ok := tagging["candidates"].([]any)
 	if !ok || len(candidates) == 0 {
@@ -143,6 +159,15 @@ func TestAutoTagging_Matched_WithHighScore(t *testing.T) {
 	}
 	if c0["evidence_chunk_id"] == nil || c0["evidence_chunk_id"] == "" {
 		t.Error("candidate missing evidence_chunk_id")
+	}
+	if c0["reason"] != "knowledge_title" {
+		t.Errorf("expected reason=knowledge_title, got %v", c0["reason"])
+	}
+	if c0["evidence_text"] == nil || c0["evidence_text"] == "" {
+		t.Error("candidate missing evidence_text")
+	}
+	if c0["source_knowledge_id"] == nil || c0["source_knowledge_id"] == "" {
+		t.Error("candidate missing source_knowledge_id")
 	}
 }
 
@@ -511,5 +536,223 @@ func TestAutoTagging_NeverTouchesKnowledgePoints(t *testing.T) {
 	json.Unmarshal(q.KnowledgePoints, &kps)
 	if len(kps) != 1 || kps[0] != "人工知识点" {
 		t.Errorf("knowledge_points must not be modified by auto_tagging, got %v", kps)
+	}
+}
+
+// Test 17: Low top1 score (< KnowledgePointMinScore) → unmatched.
+func TestKnowledgePoint_Unmatched_WhenLowScore(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c17", Content: "vague content", KnowledgeID: "k17", KnowledgeTitle: "KP17", Score: 0.40},
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q17")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q.AutoTaggingStatus != "unmatched" {
+		t.Errorf("expected auto_tagging_status=unmatched, got %s", q.AutoTaggingStatus)
+	}
+}
+
+// Test 18: top1 >= min_score but margin insufficient → uncertain.
+func TestKnowledgePoint_Uncertain_WhenMarginInsufficient(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c18a", Content: "content a", KnowledgeID: "k18a", KnowledgeTitle: "KP-A", Score: 0.75},
+		{ID: "c18b", Content: "content b", KnowledgeID: "k18b", KnowledgeTitle: "KP-B", Score: 0.72},
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q18")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q.AutoTaggingStatus != "uncertain" {
+		t.Errorf("expected auto_tagging_status=uncertain, got %s", q.AutoTaggingStatus)
+	}
+	var meta map[string]any
+	json.Unmarshal(q.ExtractionMetadata, &meta)
+	tagging := meta["auto_processing"].(map[string]any)["auto_tagging"].(map[string]any)
+	if tagging["status"] != "uncertain" {
+		t.Errorf("metadata status = %v, want uncertain", tagging["status"])
+	}
+}
+
+// Test 19: candidates capped at KnowledgePointCandidateLimit (5).
+func TestKnowledgePoint_CandidatesCappedAtLimit(t *testing.T) {
+	results := make([]*types.SearchResult, 0, 10)
+	for i := 0; i < 10; i++ {
+		results = append(results, &types.SearchResult{
+			ID:             fmt.Sprintf("c%d", i),
+			Content:        fmt.Sprintf("content %d", i),
+			KnowledgeID:    fmt.Sprintf("k%d", i),
+			KnowledgeTitle: fmt.Sprintf("KP-%d", i),
+			Score:          0.90 - float64(i)*0.01,
+		})
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q19")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var meta map[string]any
+	json.Unmarshal(q.ExtractionMetadata, &meta)
+	tagging := meta["auto_processing"].(map[string]any)["auto_tagging"].(map[string]any)
+	candidates := tagging["candidates"].([]any)
+	if len(candidates) != KnowledgePointCandidateLimit {
+		t.Errorf("expected %d candidates, got %d", KnowledgePointCandidateLimit, len(candidates))
+	}
+}
+
+// Test 20: knowledge-point search must NOT set DisableKeywordsMatch=true,
+// and must use KnowledgePointDefaultTopK as MatchCount.
+func TestKnowledgePoint_SearchDoesNotDisableKeywords(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c20", Content: "content", KnowledgeID: "k20", KnowledgeTitle: "KP20", Score: 0.85},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: kbSvc}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q20")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(kbSvc.capturedParams) == 0 {
+		t.Fatal("expected at least one HybridSearch call")
+	}
+	for i, p := range kbSvc.capturedParams {
+		if p.DisableKeywordsMatch {
+			t.Errorf("HybridSearch[%d] DisableKeywordsMatch=true, want false for knowledge-point matching", i)
+		}
+		if p.MatchCount != KnowledgePointDefaultTopK {
+			t.Errorf("HybridSearch[%d] MatchCount=%d, want %d", i, p.MatchCount, KnowledgePointDefaultTopK)
+		}
+	}
+}
+
+// Test 21: candidate with no KnowledgeTitle uses inferred_from_content reason.
+func TestKnowledgePoint_CandidateInferredFromContent(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c21", Content: "This is a long paragraph about calculus and derivatives that should be truncated.", KnowledgeID: "k21", KnowledgeTitle: "", Score: 0.85},
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q21")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var meta map[string]any
+	json.Unmarshal(q.ExtractionMetadata, &meta)
+	tagging := meta["auto_processing"].(map[string]any)["auto_tagging"].(map[string]any)
+	candidates := tagging["candidates"].([]any)
+	if len(candidates) != 1 {
+		t.Fatalf("expected 1 candidate, got %d", len(candidates))
+	}
+	c0 := candidates[0].(map[string]any)
+	if c0["reason"] != "inferred_from_content" {
+		t.Errorf("expected reason=inferred_from_content, got %v", c0["reason"])
+	}
+	if c0["knowledge_point"] == nil || c0["knowledge_point"] == "" {
+		t.Error("expected non-empty inferred knowledge_point")
+	}
+}
+
+// Test 22: All results have high scores but nil or empty title/content → unmatched.
+func TestKnowledgePoint_Unmatched_WhenOnlyInvalidCandidates(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c22a", Content: "", KnowledgeID: "k22a", KnowledgeTitle: "", Score: 0.90},
+		nil,
+		{ID: "c22b", Content: "   ", KnowledgeID: "k22b", KnowledgeTitle: "  ", Score: 0.85},
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q22")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q.AutoTaggingStatus != "unmatched" {
+		t.Errorf("expected auto_tagging_status=unmatched, got %s", q.AutoTaggingStatus)
+	}
+	var meta map[string]any
+	json.Unmarshal(q.ExtractionMetadata, &meta)
+	tagging := meta["auto_processing"].(map[string]any)["auto_tagging"].(map[string]any)
+	candidates := tagging["candidates"].([]any)
+	if len(candidates) != 0 {
+		t.Errorf("expected empty candidates, got %d", len(candidates))
+	}
+}
+
+// Test 23: Unsorted results — classification uses highest scores regardless of order.
+func TestKnowledgePoint_UsesHighestScoresWhenResultsUnsorted(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c23a", Content: "content a", KnowledgeID: "k23a", KnowledgeTitle: "KP-A", Score: 0.60},
+		{ID: "c23b", Content: "content b", KnowledgeID: "k23b", KnowledgeTitle: "KP-B", Score: 0.90},
+		{ID: "c23c", Content: "content c", KnowledgeID: "k23c", KnowledgeTitle: "KP-C", Score: 0.70},
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q23")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q.AutoTaggingStatus != "matched" {
+		t.Errorf("expected auto_tagging_status=matched (0.90 vs 0.70), got %s", q.AutoTaggingStatus)
+	}
+	var meta map[string]any
+	json.Unmarshal(q.ExtractionMetadata, &meta)
+	tagging := meta["auto_processing"].(map[string]any)["auto_tagging"].(map[string]any)
+	if tagging["top_score"] != 0.90 {
+		t.Errorf("expected top_score=0.90, got %v", tagging["top_score"])
+	}
+	if tagging["second_score"] != 0.70 {
+		t.Errorf("expected second_score=0.70, got %v", tagging["second_score"])
+	}
+}
+
+// Test 24: nil results in slice must not panic; valid high-score candidate still matched.
+func TestKnowledgePoint_IgnoresNilResults(t *testing.T) {
+	results := []*types.SearchResult{
+		nil,
+		{ID: "c24", Content: "valid content", KnowledgeID: "k24", KnowledgeTitle: "KP-Valid", Score: 0.90},
+		nil,
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q24")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q.AutoTaggingStatus != "matched" {
+		t.Errorf("expected auto_tagging_status=matched, got %s", q.AutoTaggingStatus)
+	}
+}
+
+// Test 25: truncateText must produce valid UTF-8 for Chinese input.
+func TestTruncateText_PreservesUTF8(t *testing.T) {
+	input := "这是一段中文文本用于测试截断功能是否正确处理UTF8字符"
+	result := truncateText(input, 5)
+	if !utf8.ValidString(result) {
+		t.Errorf("truncateText result is not valid UTF-8: %q", result)
+	}
+	r := []rune(result)
+	if len(r) != 5 {
+		t.Errorf("expected 5 runes, got %d", len(r))
 	}
 }
