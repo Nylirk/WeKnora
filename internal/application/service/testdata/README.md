@@ -63,6 +63,38 @@ The golden set covers:
 5. **Chinese question stem** (q001, q003, q004, q005, q008).
 6. **English / mixed question stem** (q002, q006, q007).
 
+## Metric Definitions
+
+The evaluation computes the following metrics (see
+`question_semantic_matching_eval_test.go`):
+
+| Metric | Definition |
+|--------|------------|
+| `top1_accuracy` | Fraction of cases where the top-1 candidate hits `expected` or `acceptable`. **top1_accuracy measures candidate ranking quality, independent of final matched/unmatched status.** An `unmatched` case with a low-scoring candidate can still contribute to top1_accuracy if that candidate's label is correct. |
+| `recall_at_3` | Fraction of cases where any of the top-3 candidates hits `expected` or `acceptable`. |
+| `false_positive_rate` | Fraction of cases where status is `matched` AND top-1 misses all `expected`/`acceptable` or falls into `negative`. |
+| `uncertain_rate` | Fraction of cases with status `uncertain`. |
+| `unmatched_rate` | Fraction of cases with status `unmatched`. |
+| `average_candidate_count` | Mean number of candidates across all cases. |
+
+## Current Baseline Characteristics
+
+The current golden set (8 cases) is **synthetic ideal data** designed to
+verify the evaluation framework and guard against obvious regressions. The
+baseline metrics (top1_accuracy=1.0, recall_at_3=1.0, FPR=0.0) reflect this:
+the mock results are constructed so the correct knowledge point always has the
+highest score.
+
+This is a smoke-test baseline, not a strong business evaluation. To make the
+baseline more constraining for future algorithm improvements, gradually add:
+
+- Real failure cases where the wrong knowledge point outranks the correct one.
+- Cases where semantic similarity is high but the knowledge point is wrong
+  (e.g., "sin" vs "cos" confusion).
+- Cases with empty or uninformative `knowledge_title` forcing
+  `inferred_from_content` labels.
+- Cases with many distractor chunks that compete with the correct answer.
+
 ## Adding New Cases
 
 When adding new golden cases:
