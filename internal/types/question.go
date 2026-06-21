@@ -242,6 +242,40 @@ type UpdateQuestionStatusRequest struct {
 	Status string `json:"status" binding:"required"`
 }
 
+// ReviewDraftRequest is the body for saving a manual review draft.
+// It only writes extraction_metadata.manual_review and does NOT change
+// question.status, reviewed_by, or reviewed_at.
+type ReviewDraftRequest struct {
+	KnowledgePoints      []string `json:"knowledge_points"`
+	SyllabusScopeResult  string   `json:"syllabus_scope_result"`
+	Comment              string   `json:"comment"`
+}
+
+// ApproveReviewRequest is the body for approving a question review.
+// Only draft questions can be approved. KnowledgePoints must be non-empty.
+type ApproveReviewRequest struct {
+	KnowledgePoints     []string `json:"knowledge_points" binding:"required"`
+	SyllabusScopeResult string   `json:"syllabus_scope_result"`
+	Comment             string   `json:"comment"`
+}
+
+// RejectReviewRequest is the body for rejecting a question review.
+// Only draft questions can be rejected. Reason must be non-empty.
+type RejectReviewRequest struct {
+	Reason  string `json:"reason" binding:"required"`
+	Comment string `json:"comment"`
+}
+
+// ReviewDetailResponse is the response for GET review detail.
+// It returns the question plus the auto-processing and manual-review
+// sections of extraction_metadata as parsed JSON for frontend convenience.
+type ReviewDetailResponse struct {
+	Question         *Question     `json:"question"`
+	AutoTagging       JSON         `json:"auto_tagging"`
+	SyllabusChecking  JSON         `json:"syllabus_checking"`
+	ManualReview      JSON         `json:"manual_review"`
+}
+
 type ImportQuestionItem struct {
 	LineNumber        int    `json:"line_number"`
 	QuestionType      string `json:"question_type"`

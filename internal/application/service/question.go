@@ -53,20 +53,6 @@ func NewQuestionService(
 	}
 }
 
-func structuredQuestionStatus(q *types.Question) types.QuestionStatus {
-	if len(types.ValidateQuestionForReview(q)) > 0 {
-		return types.QuestionStatusDraft
-	}
-	return types.QuestionStatusReviewed
-}
-
-func statusAfterStructuredEdit(current types.QuestionStatus, q *types.Question) types.QuestionStatus {
-	if current == types.QuestionStatusRejected {
-		return current
-	}
-	return structuredQuestionStatus(q)
-}
-
 const maxQuestionSetNameLen = 40
 
 func (s *QuestionService) CreateQuestionSet(ctx context.Context, kbID string, req *types.CreateQuestionSetRequest) (*types.QuestionSet, error) {
@@ -250,7 +236,6 @@ func (s *QuestionService) CreateQuestion(ctx context.Context, kbID, setID string
 	if q.Difficulty == "" {
 		q.Difficulty = types.QuestionDifficultyMedium
 	}
-	q.Status = structuredQuestionStatus(q)
 	draftQ := &types.Question{QuestionType: q.QuestionType, StemText: q.StemText, QuestionBody: q.QuestionBody, AnswerBody: q.AnswerBody}
 	if errs := types.ValidateQuestionForDraft(draftQ); len(errs) > 0 {
 		return nil, apperrors.NewBadRequestError("validation failed: " + errs[0].Message)
@@ -345,7 +330,7 @@ func (s *QuestionService) UpdateQuestion(ctx context.Context, kbID, setID, quest
 	if req.SortOrder != nil {
 		q.SortOrder = *req.SortOrder
 	}
-	q.Status = statusAfterStructuredEdit(q.Status, q)
+	q.Status = before.Status
 	if err := s.validateEvidenceReferences(ctx, q.KnowledgeBaseID, q.SourceKnowledgeID, q.EvidenceChunkIDs); err != nil {
 		return nil, err
 	}
@@ -378,6 +363,34 @@ func (s *QuestionService) DeleteQuestion(ctx context.Context, kbID, setID, quest
 }
 
 func (s *QuestionService) UpdateQuestionStatus(ctx context.Context, kbID, setID, questionID string, req *types.UpdateQuestionStatusRequest) (*types.Question, error) {
+	return nil, apperrors.NewBadRequestError("请使用审核接口更新题目审核状态")
+}
+
+// mergeQuestionManualReviewMetadata merges the manual_review section into the
+// existing extraction_metadata JSON value, preserving all existing fields
+// including auto_processing. A nil or empty existing value is treated as an
+// empty object.
+func mergeQuestionManualReviewMetadata(existing types.JSON, manualReview map[string]any) types.JSON {
+	var base map[string]any
+	if len(existing) > 0 {
+		if err := json.Unmarshal(existing, &base); err != nil {
+			base = make(map[string]any)
+		}
+	}
+	if base == nil {
+		base = make(map[string]any)
+	}
+	base["manual_review"] = manualReview
+	data, err := json.Marshal(base)
+	if err != nil {
+		return types.JSON([]byte("{}"))
+	}
+	return types.JSON(data)
+}
+
+// getQuestionForReview fetches a question and validates that it belongs to the
+// given question bank KB and question set.
+func (s *QuestionService) getQuestionForReview(ctx context.Context, kbID, setID, questionID string) (*types.Question, error) {
 	if err := s.ensureQuestionBankKB(ctx, kbID); err != nil {
 		return nil, err
 	}
@@ -388,29 +401,142 @@ func (s *QuestionService) UpdateQuestionStatus(ctx context.Context, kbID, setID,
 	if q.KnowledgeBaseID != kbID {
 		return nil, apperrors.NewBadRequestError(fmt.Sprintf("question does not belong to knowledge base %s", kbID))
 	}
-	newStatus := types.QuestionStatus(req.Status)
-	if newStatus == types.QuestionStatusReviewed {
-		errs := types.ValidateQuestionForReview(q)
-		if len(errs) > 0 {
-			messages := make([]string, 0, len(errs))
-			for _, e := range errs {
-				messages = append(messages, e.Message)
+	return q, nil
+}
+
+// reviewerUserID extracts a real (non-synthetic) user ID from the context, or
+// empty string when the caller is a synthetic API-key user.
+func reviewerUserID(ctx context.Context) string {
+	if userID, ok := types.UserIDFromContext(ctx); ok && userID != "" && !types.IsSyntheticUserID(userID) {
+		return userID
+	}
+	return ""
+}
+
+// GetReviewDetail returns the review detail for a question: the question itself,
+// the auto-processing suggestions (auto_tagging + syllabus_checking), and the
+// manual review result, all read from extraction_metadata.
+func (s *QuestionService) GetReviewDetail(ctx context.Context, kbID, setID, questionID string) (*types.ReviewDetailResponse, error) {
+	q, err := s.getQuestionForReview(ctx, kbID, setID, questionID)
+	if err != nil {
+		return nil, err
+	}
+	var base map[string]any
+	if len(q.ExtractionMetadata) > 0 {
+		_ = json.Unmarshal(q.ExtractionMetadata, &base)
+	}
+	if base == nil {
+		base = make(map[string]any)
+	}
+	resp := &types.ReviewDetailResponse{Question: q}
+	if auto, ok := base["auto_processing"].(map[string]any); ok {
+		if v, ok := auto["auto_tagging"]; ok {
+			if b, err := json.Marshal(v); err == nil {
+				resp.AutoTagging = types.JSON(b)
 			}
-			return nil, apperrors.NewBadRequestError("review validation failed: " + strings.Join(messages, "; "))
+		}
+		if v, ok := auto["syllabus_checking"]; ok {
+			if b, err := json.Marshal(v); err == nil {
+				resp.SyllabusChecking = types.JSON(b)
+			}
 		}
 	}
-	q.Status = newStatus
-	if newStatus == types.QuestionStatusReviewed {
-		now := time.Now()
-		q.ReviewedAt = &now
-		if userID, ok := types.UserIDFromContext(ctx); ok && userID != "" && !types.IsSyntheticUserID(userID) {
-			q.ReviewedBy = userID
+	if v, ok := base["manual_review"]; ok {
+		if b, err := json.Marshal(v); err == nil {
+			resp.ManualReview = types.JSON(b)
 		}
 	}
+	return resp, nil
+}
+
+// SaveReviewDraft saves a manual review draft into extraction_metadata.manual_review
+// without changing question.status, reviewed_by, or reviewed_at.
+func (s *QuestionService) SaveReviewDraft(ctx context.Context, kbID, setID, questionID string, req *types.ReviewDraftRequest) (*types.Question, error) {
+	q, err := s.getQuestionForReview(ctx, kbID, setID, questionID)
+	if err != nil {
+		return nil, err
+	}
+	manualReview := map[string]any{
+		"status":                string(q.Status),
+		"knowledge_points":      req.KnowledgePoints,
+		"syllabus_scope_result": req.SyllabusScopeResult,
+		"comment":               req.Comment,
+	}
+	q.ExtractionMetadata = mergeQuestionManualReviewMetadata(q.ExtractionMetadata, manualReview)
+	if err := s.repository.UpdateQuestion(ctx, q); err != nil {
+		return nil, err
+	}
+	return q, nil
+}
+
+// ApproveReview marks a draft question as reviewed, recording the reviewer and
+// syncing the human-confirmed knowledge_points onto the question.
+func (s *QuestionService) ApproveReview(ctx context.Context, kbID, setID, questionID string, req *types.ApproveReviewRequest) (*types.Question, error) {
+	q, err := s.getQuestionForReview(ctx, kbID, setID, questionID)
+	if err != nil {
+		return nil, err
+	}
+	if q.Status != types.QuestionStatusDraft {
+		return nil, apperrors.NewBadRequestError("只允许 draft 题目审核通过")
+	}
+	if len(req.KnowledgePoints) == 0 {
+		return nil, apperrors.NewBadRequestError("knowledge_points 不能为空")
+	}
+	kpJSON, err := json.Marshal(req.KnowledgePoints)
+	if err != nil {
+		return nil, apperrors.NewBadRequestError("invalid knowledge_points: " + err.Error())
+	}
+	now := time.Now()
+	reviewer := reviewerUserID(ctx)
+	q.Status = types.QuestionStatusReviewed
+	q.ReviewedBy = reviewer
+	q.ReviewedAt = &now
+	q.KnowledgePoints = types.JSON(kpJSON)
+	manualReview := map[string]any{
+		"status":                string(types.QuestionStatusReviewed),
+		"knowledge_points":      req.KnowledgePoints,
+		"syllabus_scope_result": req.SyllabusScopeResult,
+		"comment":               req.Comment,
+		"reviewed_by":           reviewer,
+		"reviewed_at":           now.UTC().Format(time.RFC3339),
+	}
+	q.ExtractionMetadata = mergeQuestionManualReviewMetadata(q.ExtractionMetadata, manualReview)
 	if err := s.repository.UpdateQuestion(ctx, q); err != nil {
 		return nil, err
 	}
 	s.scheduleQuestionIndex(ctx, []*types.Question{q})
+	return q, nil
+}
+
+// RejectReview marks a draft question as rejected, recording the reviewer and
+// the rejection reason.
+func (s *QuestionService) RejectReview(ctx context.Context, kbID, setID, questionID string, req *types.RejectReviewRequest) (*types.Question, error) {
+	q, err := s.getQuestionForReview(ctx, kbID, setID, questionID)
+	if err != nil {
+		return nil, err
+	}
+	if q.Status != types.QuestionStatusDraft {
+		return nil, apperrors.NewBadRequestError("只允许 draft 题目审核拒绝")
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		return nil, apperrors.NewBadRequestError("reason 不能为空")
+	}
+	now := time.Now()
+	reviewer := reviewerUserID(ctx)
+	q.Status = types.QuestionStatusRejected
+	q.ReviewedBy = reviewer
+	q.ReviewedAt = &now
+	manualReview := map[string]any{
+		"status":           string(types.QuestionStatusRejected),
+		"rejection_reason": req.Reason,
+		"comment":          req.Comment,
+		"reviewed_by":      reviewer,
+		"reviewed_at":      now.UTC().Format(time.RFC3339),
+	}
+	q.ExtractionMetadata = mergeQuestionManualReviewMetadata(q.ExtractionMetadata, manualReview)
+	if err := s.repository.UpdateQuestion(ctx, q); err != nil {
+		return nil, err
+	}
 	return q, nil
 }
 

@@ -31,14 +31,17 @@ func (s *reprocessKBService) HybridSearch(_ context.Context, _ string, _ types.S
 
 type reprocessTestRepo struct {
 	interfaces.QuestionRepository
-	draftQuestions []*types.Question
-	listError      error
+	draftQuestions   []*types.Question
+	listError        error
+	requestedFilters []*types.QuestionListFilter
+	updatedQuestions []*types.Question
 }
 
 func (r *reprocessTestRepo) ListQuestions(_ context.Context, _ uint64, _ string, filter *types.QuestionListFilter, _ *types.Pagination) (*types.PageResult, error) {
 	if r.listError != nil {
 		return nil, r.listError
 	}
+	r.requestedFilters = append(r.requestedFilters, filter)
 	if filter != nil && filter.Status == string(types.QuestionStatusDraft) {
 		return types.NewPageResult(int64(len(r.draftQuestions)), &types.Pagination{Page: 1, PageSize: 500}, r.draftQuestions), nil
 	}
@@ -46,6 +49,7 @@ func (r *reprocessTestRepo) ListQuestions(_ context.Context, _ uint64, _ string,
 }
 
 func (r *reprocessTestRepo) UpdateQuestion(_ context.Context, q *types.Question) error {
+	r.updatedQuestions = append(r.updatedQuestions, q)
 	return nil
 }
 
@@ -175,8 +179,8 @@ func TestReprocess_ScopeAll(t *testing.T) {
 	}
 }
 
-// Test 5: Only draft questions; reviewed/rejected untouched.
-func TestReprocess_OnlyDraftQuestions(t *testing.T) {
+// Test 5: Only draft questions are processed; all ListQuestions calls use draft filter.
+func TestReprocessQuestionSet_OnlyProcessesDraftQuestions(t *testing.T) {
 	drafts := []*types.Question{makeReprocessDraftQ("q-draft")}
 	repo := &reprocessTestRepo{draftQuestions: drafts}
 	kbSvc := makeReprocessKBService(&types.QuestionBankConfig{
@@ -184,17 +188,66 @@ func TestReprocess_OnlyDraftQuestions(t *testing.T) {
 	})
 
 	svc := &QuestionService{repository: repo, knowledgeBaseSvc: kbSvc}
-	reviewed := makeReprocessDraftQ("q-reviewed")
-	reviewed.Status = types.QuestionStatusReviewed
-
 	err := svc.ReprocessQuestionSet(reprocessCtx(), "kb-1", "set-1", "auto_tagging")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	time.Sleep(200 * time.Millisecond)
 
+	for i, f := range repo.requestedFilters {
+		if f == nil || f.Status != string(types.QuestionStatusDraft) {
+			t.Fatalf("ListQuestions[%d] filter status = %v, want %q", i, f, types.QuestionStatusDraft)
+		}
+	}
+	for i, q := range repo.updatedQuestions {
+		if q.Status != types.QuestionStatusDraft {
+			t.Fatalf("UpdateQuestion[%d] question status = %q, want draft", i, q.Status)
+		}
+	}
+}
+
+// Test 5b: reviewed/rejected questions are not overwritten by reprocess.
+func TestReprocessQuestionSet_DoesNotOverwriteReviewedOrRejected(t *testing.T) {
+	draft := makeReprocessDraftQ("q-draft")
+	draft.KnowledgePoints = types.JSON(`[]`)
+
+	reviewed := makeReprocessDraftQ("q-reviewed")
+	reviewed.Status = types.QuestionStatusReviewed
+	reviewed.KnowledgePoints = types.JSON(`["reviewed-kp"]`)
+
+	rejected := makeReprocessDraftQ("q-rejected")
+	rejected.Status = types.QuestionStatusRejected
+	rejected.KnowledgePoints = types.JSON(`["rejected-kp"]`)
+
+	repo := &reprocessTestRepo{draftQuestions: []*types.Question{draft}}
+	kbSvc := makeReprocessKBService(&types.QuestionBankConfig{
+		KnowledgePointKnowledgeBaseID: "kp-kb-1",
+		SyllabusKnowledgeBaseID:       "syl-kb-1",
+	})
+
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: kbSvc}
+	err := svc.ReprocessQuestionSet(reprocessCtx(), "kb-1", "set-1", "all")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+
 	if reviewed.Status != types.QuestionStatusReviewed {
-		t.Errorf("reviewed question status changed to %s", reviewed.Status)
+		t.Errorf("reviewed status changed to %s", reviewed.Status)
+	}
+	if rejected.Status != types.QuestionStatusRejected {
+		t.Errorf("rejected status changed to %s", rejected.Status)
+	}
+	if string(reviewed.KnowledgePoints) != `["reviewed-kp"]` {
+		t.Errorf("reviewed knowledge_points changed to %s", reviewed.KnowledgePoints)
+	}
+	if string(rejected.KnowledgePoints) != `["rejected-kp"]` {
+		t.Errorf("rejected knowledge_points changed to %s", rejected.KnowledgePoints)
+	}
+	for i, q := range repo.updatedQuestions {
+		if q.ID == "q-reviewed" || q.ID == "q-rejected" {
+			t.Fatalf("UpdateQuestion[%d] called on non-draft question %s", i, q.ID)
+		}
 	}
 }
 

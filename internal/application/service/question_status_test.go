@@ -157,59 +157,13 @@ func questionStatusContext() context.Context {
 	return context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
 }
 
-func TestStructuredQuestionStatusUsesReviewValidation(t *testing.T) {
-	tests := []struct {
-		name     string
-		question *types.Question
-		want     types.QuestionStatus
-	}{
-		{
-			name: "valid short answer is reviewed",
-			question: &types.Question{
-				QuestionType: string(types.QuestionTypeShortAnswer),
-				StemText:     "题干",
-				AnswerText:   "答案",
-			},
-			want: types.QuestionStatusReviewed,
-		},
-		{
-			name: "blank short answer remains draft",
-			question: &types.Question{
-				QuestionType: string(types.QuestionTypeShortAnswer),
-				StemText:     "题干",
-			},
-			want: types.QuestionStatusDraft,
-		},
-		{
-			name: "choice with answer text but invalid body remains draft",
-			question: &types.Question{
-				QuestionType: string(types.QuestionTypeSingleChoice),
-				StemText:     "题干",
-				AnswerText:   "A",
-				QuestionBody: types.JSON(`{}`),
-				AnswerBody:   types.JSON(`{"selected_index":0}`),
-			},
-			want: types.QuestionStatusDraft,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := structuredQuestionStatus(tt.question); got != tt.want {
-				t.Fatalf("structuredQuestionStatus() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestCreateQuestionUsesReviewValidation(t *testing.T) {
+func TestCreateQuestion_AlwaysDraft(t *testing.T) {
 	tests := []struct {
 		name       string
 		answerText string
-		want       types.QuestionStatus
 	}{
-		{name: "complete manual question", answerText: "答案", want: types.QuestionStatusReviewed},
-		{name: "incomplete manual question", answerText: "", want: types.QuestionStatusDraft},
+		{name: "complete manual question stays draft", answerText: "答案"},
+		{name: "incomplete manual question stays draft", answerText: ""},
 	}
 
 	for _, tt := range tests {
@@ -224,8 +178,8 @@ func TestCreateQuestionUsesReviewValidation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CreateQuestion() error = %v", err)
 			}
-			if question.Status != tt.want {
-				t.Fatalf("CreateQuestion() status = %q, want %q", question.Status, tt.want)
+			if question.Status != types.QuestionStatusDraft {
+				t.Fatalf("CreateQuestion() status = %q, want %q", question.Status, types.QuestionStatusDraft)
 			}
 		})
 	}
@@ -323,18 +277,90 @@ func TestImportQuestionsPropagatesQuestionSetUpdateErrors(t *testing.T) {
 	}
 }
 
-func TestUpdateQuestionRecalculatesStatusWithReviewValidation(t *testing.T) {
-	tests := []struct {
-		name       string
-		current    types.QuestionStatus
-		answerText string
-		want       types.QuestionStatus
-	}{
-		{name: "complete a draft", current: types.QuestionStatusDraft, answerText: "答案", want: types.QuestionStatusReviewed},
-		{name: "remove reviewed answer", current: types.QuestionStatusReviewed, answerText: "", want: types.QuestionStatusDraft},
-		{name: "preserve rejected", current: types.QuestionStatusRejected, answerText: "答案", want: types.QuestionStatusRejected},
+func TestUpdateQuestion_DoesNotChangeDraftStatus(t *testing.T) {
+	repository := &questionStatusRepository{
+		question: &types.Question{
+			ID:              "question-1",
+			QuestionSetID:   "set-1",
+			KnowledgeBaseID: "kb-1",
+			QuestionType:    string(types.QuestionTypeShortAnswer),
+			StemText:        "题干",
+			Status:          types.QuestionStatusDraft,
+		},
 	}
+	service := newQuestionStatusService(repository)
+	answer := "答案"
+	question, err := service.UpdateQuestion(questionStatusContext(), "kb-1", "set-1", "question-1", &types.UpdateQuestionRequest{
+		AnswerText: &answer,
+	})
+	if err != nil {
+		t.Fatalf("UpdateQuestion() error = %v", err)
+	}
+	if question.Status != types.QuestionStatusDraft {
+		t.Fatalf("UpdateQuestion() status = %q, want %q", question.Status, types.QuestionStatusDraft)
+	}
+}
 
+func TestUpdateQuestion_DoesNotChangeReviewedStatus(t *testing.T) {
+	repository := &questionStatusRepository{
+		question: &types.Question{
+			ID:              "question-1",
+			QuestionSetID:   "set-1",
+			KnowledgeBaseID: "kb-1",
+			QuestionType:    string(types.QuestionTypeShortAnswer),
+			StemText:        "题干",
+			AnswerText:      "答案",
+			Status:          types.QuestionStatusReviewed,
+		},
+	}
+	service := newQuestionStatusService(repository)
+	answer := "新答案"
+	question, err := service.UpdateQuestion(questionStatusContext(), "kb-1", "set-1", "question-1", &types.UpdateQuestionRequest{
+		AnswerText: &answer,
+	})
+	if err != nil {
+		t.Fatalf("UpdateQuestion() error = %v", err)
+	}
+	if question.Status != types.QuestionStatusReviewed {
+		t.Fatalf("UpdateQuestion() status = %q, want %q", question.Status, types.QuestionStatusReviewed)
+	}
+}
+
+func TestUpdateQuestion_DoesNotChangeRejectedStatus(t *testing.T) {
+	repository := &questionStatusRepository{
+		question: &types.Question{
+			ID:              "question-1",
+			QuestionSetID:   "set-1",
+			KnowledgeBaseID: "kb-1",
+			QuestionType:    string(types.QuestionTypeShortAnswer),
+			StemText:        "题干",
+			AnswerText:      "答案",
+			Status:          types.QuestionStatusRejected,
+		},
+	}
+	service := newQuestionStatusService(repository)
+	answer := "新答案"
+	question, err := service.UpdateQuestion(questionStatusContext(), "kb-1", "set-1", "question-1", &types.UpdateQuestionRequest{
+		AnswerText: &answer,
+	})
+	if err != nil {
+		t.Fatalf("UpdateQuestion() error = %v", err)
+	}
+	if question.Status != types.QuestionStatusRejected {
+		t.Fatalf("UpdateQuestion() status = %q, want %q", question.Status, types.QuestionStatusRejected)
+	}
+}
+
+func TestUpdateQuestionStatus_AlwaysRejected(t *testing.T) {
+	tests := []struct {
+		name   string
+		status string
+	}{
+		{name: "draft rejected", status: "draft"},
+		{name: "reviewed rejected", status: "reviewed"},
+		{name: "rejected rejected", status: "rejected"},
+		{name: "invalid status rejected", status: "not_a_real_status"},
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repository := &questionStatusRepository{
@@ -342,20 +368,15 @@ func TestUpdateQuestionRecalculatesStatusWithReviewValidation(t *testing.T) {
 					ID:              "question-1",
 					QuestionSetID:   "set-1",
 					KnowledgeBaseID: "kb-1",
-					QuestionType:    string(types.QuestionTypeShortAnswer),
-					StemText:        "题干",
-					Status:          tt.current,
+					Status:          types.QuestionStatusDraft,
 				},
 			}
 			service := newQuestionStatusService(repository)
-			question, err := service.UpdateQuestion(questionStatusContext(), "kb-1", "set-1", "question-1", &types.UpdateQuestionRequest{
-				AnswerText: &tt.answerText,
+			_, err := service.UpdateQuestionStatus(questionStatusContext(), "kb-1", "set-1", "question-1", &types.UpdateQuestionStatusRequest{
+				Status: tt.status,
 			})
-			if err != nil {
-				t.Fatalf("UpdateQuestion() error = %v", err)
-			}
-			if question.Status != tt.want {
-				t.Fatalf("UpdateQuestion() status = %q, want %q", question.Status, tt.want)
+			if err == nil {
+				t.Fatal("UpdateQuestionStatus() error = nil, want error")
 			}
 		})
 	}
@@ -698,18 +719,19 @@ func TestCreateAndRelevantUpdateScheduleQuestionIndex(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("answer-only UpdateQuestion() error = %v", err)
 	}
-	// The answer made this question reviewed, so the retrieval enabled state changed.
-	if len(indexService.indexed) != 2 {
-		t.Fatalf("status-changing answer update index calls = %d", len(indexService.indexed))
+	// Answer text is not part of index content and status no longer auto-changes,
+	// so an answer-only update does NOT trigger a reindex.
+	if len(indexService.indexed) != 1 {
+		t.Fatalf("answer-only update index calls = %d, want 1 (no reindex)", len(indexService.indexed))
 	}
 	secondAnswer := "另一个答案"
 	if _, err := service.UpdateQuestion(questionStatusContext(), "kb-1", "set-1", "q-1", &types.UpdateQuestionRequest{
 		AnswerText: &secondAnswer,
 	}); err != nil {
-		t.Fatalf("answer-only reviewed UpdateQuestion() error = %v", err)
+		t.Fatalf("answer-only UpdateQuestion() error = %v", err)
 	}
-	if len(indexService.indexed) != 2 {
-		t.Fatalf("non-index answer update index calls = %d", len(indexService.indexed))
+	if len(indexService.indexed) != 1 {
+		t.Fatalf("second answer-only update index calls = %d, want 1 (no reindex)", len(indexService.indexed))
 	}
 
 	newStem := "新题干"
@@ -718,8 +740,8 @@ func TestCreateAndRelevantUpdateScheduleQuestionIndex(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("stem UpdateQuestion() error = %v", err)
 	}
-	if len(indexService.indexed) != 3 {
-		t.Fatalf("stem update index calls = %d", len(indexService.indexed))
+	if len(indexService.indexed) != 2 {
+		t.Fatalf("stem update index calls = %d, want 2 (stem is in index content)", len(indexService.indexed))
 	}
 }
 
