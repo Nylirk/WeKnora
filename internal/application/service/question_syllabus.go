@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"strings"
+	"time"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -94,10 +95,11 @@ func (s *QuestionService) UploadSyllabus(
 	logger.Infof(ctx, "Syllabus uploaded for KB %s: file=%s, syllabusKB=%s, knowledge=%s",
 		kbID, fileHeader.Filename, syllabusKB.ID, knowledge.ID)
 
-	// 8. Schedule syllabus_checking for all draft questions in all question sets
-	// under this KB — AFTER the new syllabus config is persisted. Use a fresh
-	// background context so the async task is not cancelled by the HTTP request.
-	s.scheduleSyllabusReprocessForKB(logger.CloneContext(ctx), kbID)
+	// 8. Schedule syllabus_checking AFTER the new syllabus knowledge has been
+	// parsed and indexed, so semantic search returns up-to-date results.
+	s.scheduleSyllabusReprocessAfterSyllabusReady(
+		logger.CloneContext(ctx), kbID, syllabusKB.ID, knowledge.ID,
+	)
 
 	return &types.SyllabusUploadResponse{
 		SyllabusKBID:   syllabusKB.ID,
@@ -317,41 +319,103 @@ func (s *QuestionService) findOrCreateSyllabusKB(
 }
 
 // scheduleSyllabusReprocessForKB triggers syllabus_checking for all draft questions
-// in all question sets under the given question bank KB. Runs in background goroutines
-// and does not block the caller.
+// in all question sets under the given question bank KB. Runs in a background goroutine.
 func (s *QuestionService) scheduleSyllabusReprocessForKB(ctx context.Context, kbID string) {
+	go s.reprocessSyllabusForAllSets(ctx, kbID)
+}
+
+// reprocessSyllabusForAllSets is the synchronous inner logic for
+// scheduleSyllabusReprocessForKB. It is safe to call from an existing goroutine.
+func (s *QuestionService) reprocessSyllabusForAllSets(ctx context.Context, kbID string) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf(ctx, "panic in syllabus reprocess scheduler for KB %s: %v", kbID, r)
+		}
+	}()
+
+	page := &types.Pagination{Page: 1, PageSize: 100}
+	for {
+		result, err := s.repository.ListQuestionSets(ctx, tenantID(ctx), kbID, page)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to list question sets for KB %s during syllabus reprocess: %v", kbID, err)
+			return
+		}
+		sets, ok := result.Data.([]*types.QuestionSet)
+		if !ok || len(sets) == 0 {
+			return
+		}
+		for _, qs := range sets {
+			if qs == nil {
+				continue
+			}
+			if err := s.ReprocessQuestionSet(ctx, kbID, qs.ID, "syllabus_checking"); err != nil {
+				logger.Warnf(ctx, "Failed to schedule syllabus_checking for set %s: %v", qs.ID, err)
+			}
+		}
+		if len(sets) < page.PageSize {
+			return
+		}
+		page.Page++
+	}
+}
+
+// scheduleSyllabusReprocessAfterSyllabusReady waits for the given syllabus knowledge
+// to become searchable (parse_status=completed), then triggers reprocess.
+func (s *QuestionService) scheduleSyllabusReprocessAfterSyllabusReady(
+	ctx context.Context,
+	questionBankKBID string,
+	syllabusKBID string,
+	syllabusKnowledgeID string,
+) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Errorf(ctx, "panic in syllabus reprocess scheduler for KB %s: %v", kbID, r)
+				logger.Errorf(ctx, "panic in syllabus ready scheduler for KB %s: %v", questionBankKBID, r)
 			}
 		}()
 
-		page := &types.Pagination{Page: 1, PageSize: 100}
-		for {
-			result, err := s.repository.ListQuestionSets(ctx, tenantID(ctx), kbID, page)
-			if err != nil {
-				logger.Warnf(ctx, "Failed to list question sets for KB %s during syllabus reprocess: %v", kbID, err)
-				return
-			}
-			sets, ok := result.Data.([]*types.QuestionSet)
-			if !ok || len(sets) == 0 {
-				return
-			}
-			for _, qs := range sets {
-				if qs == nil {
-					continue
-				}
-				if err := s.ReprocessQuestionSet(ctx, kbID, qs.ID, "syllabus_checking"); err != nil {
-					logger.Warnf(ctx, "Failed to schedule syllabus_checking for set %s: %v", qs.ID, err)
-				}
-			}
-			if int64(len(sets)) < result.Total && len(sets) < page.PageSize {
-				return
-			}
-			page.Page++
+		if err := s.waitForSyllabusKnowledgeReady(ctx, syllabusKBID, syllabusKnowledgeID); err != nil {
+			logger.Warnf(ctx, "syllabus knowledge not ready for KB %s: %v", questionBankKBID, err)
+			return
 		}
+
+		s.reprocessSyllabusForAllSets(ctx, questionBankKBID)
 	}()
+}
+
+// waitForSyllabusKnowledgeReady polls the knowledge parse_status until it is
+// completed, failed, or cancelled, or the 5-minute timeout expires.
+func (s *QuestionService) waitForSyllabusKnowledgeReady(
+	ctx context.Context,
+	syllabusKBID string,
+	syllabusKnowledgeID string,
+) error {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	timeout := time.NewTimer(5 * time.Minute)
+	defer timeout.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeout.C:
+			return fmt.Errorf("timeout waiting for syllabus knowledge %s to become searchable", syllabusKnowledgeID)
+		case <-ticker.C:
+			knowledge, err := s.knowledgeService.GetKnowledgeByID(ctx, syllabusKnowledgeID)
+			if err != nil {
+				return err
+			}
+
+			switch knowledge.ParseStatus {
+			case types.ParseStatusCompleted:
+				return nil
+			case types.ParseStatusFailed, types.ParseStatusCancelled:
+				return fmt.Errorf("syllabus knowledge parse ended with status %s", knowledge.ParseStatus)
+			}
+		}
+	}
 }
 
 func strPtr(s string) *string {

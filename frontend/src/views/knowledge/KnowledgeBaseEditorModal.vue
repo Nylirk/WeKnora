@@ -898,7 +898,7 @@ const fetchSyllabus = async () => {
 	  try {
 	    const result = await uploadSyllabus(props.kbId!, file)
 	    if (result) {
-	      MessagePlugin.success(result.message || '考纲上传成功')
+	      MessagePlugin.success('考纲上传成功')
 	      await fetchSyllabus()
 	    }
 	  } catch (err: any) {
