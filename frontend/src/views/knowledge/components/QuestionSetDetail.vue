@@ -129,15 +129,9 @@
                     </div>
 
                     <div class="kp-cell-dur kp-mono">
-                      <template v-if="row.status === 'paused'">
-                        <span class="qp-paused-duration">暂停</span>
-                      </template>
-                      <template v-else-if="row.status === 'running'">
-                        <span class="kp-running-time">{{ row.formattedDur }}</span>
-                      </template>
-                      <template v-else>
-                        {{ row.formattedDur }}
-                      </template>
+                      <span :class="{ 'qp-paused-duration': row.isStage && row.status === 'paused' }">
+                        {{ qpDurationLabel(row) }}
+                      </span>
                     </div>
 
                     <div class="kp-cell-bar">
@@ -535,6 +529,11 @@ const qpRootStatusLabel = computed(() => {
 function qpRowKindLabel(row: QpFlatRow): string {
   if (row.isRoot) return qpRootStatusLabel.value
   return row.kind.toUpperCase()
+}
+
+function qpDurationLabel(row: QpFlatRow): string {
+  if (row.isStage && row.status === 'paused') return '暂停'
+  return row.formattedDur || '—'
 }
 
 interface QpFlatRow {

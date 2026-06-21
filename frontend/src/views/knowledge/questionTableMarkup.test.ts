@@ -513,9 +513,11 @@ test('processing drawer renders waterfall timeline matching knowledge timeline s
   assert.equal(source.includes("return '部分暂停'"), true, 'qpRootStatusLabel must include 部分暂停')
   assert.equal(source.includes("return '进行中'"), true, 'qpRootStatusLabel must include 进行中')
   assert.equal(source.includes("return '待人工审核'"), true, 'qpRootStatusLabel must include 待人工审核')
-  // Paused stage duration shows "暂停" instead of "—"
-  assert.equal(source.includes('qp-paused-duration'), true, 'must use qp-paused-duration for paused dur')
-  assert.equal(source.includes("row.status === 'paused'"), true, 'must check paused for duration display')
+  // Paused stage duration shows "暂停"; ROOT paused does NOT show "暂停"
+  assert.equal(source.includes('qp-paused-duration'), true, 'must use qp-paused-duration')
+  assert.equal(source.includes("row.isStage && row.status === 'paused'"), true, 'must guard paused dur with isStage check')
+  assert.equal(source.includes('function qpDurationLabel'), true, 'must use qpDurationLabel helper')
+  assert.equal(source.includes("formattedDur: processingButton.value.state === 'paused' ? '暂停'"), false, 'ROOT paused must not show 暂停 in duration')
   // No fake times
   assert.equal(source.includes('const offset = i * 500'), false, 'must not use fake offset times')
   assert.equal(source.includes('dur = 500'), false, 'must not use fake duration')
