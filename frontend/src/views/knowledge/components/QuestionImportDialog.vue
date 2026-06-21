@@ -252,7 +252,7 @@ async function doImport() {
     backendErrors.value = Array.isArray(result?.errors) ? result.errors : []
     const created = result?.created || 0
     if (created > 0) {
-      MessagePlugin.success(`已导入 ${created} 道题目为草稿，正在启动后台处理...`)
+      MessagePlugin.success(`已导入 ${created} 道题目为草稿，系统正在进行自动处理。处理完成后请人工确认。`)
       const missingAnswerCount = items.filter(item => !item.answer_text.trim()).length
       if (missingAnswerCount) {
         MessagePlugin.warning(`${missingAnswerCount} 道题缺少答案，审核或导出前需要补全`)
