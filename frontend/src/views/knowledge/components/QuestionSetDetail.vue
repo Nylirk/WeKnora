@@ -369,23 +369,29 @@
       <template #question_type="{ row }">
         {{ questionTypeLabel(row.question_type) }}
       </template>
+      <template #stem_text="{ row }">
+        <t-tooltip :content="row.stem_text" placement="top-left">
+          <span class="question-stem-cell">{{ row.stem_text }}</span>
+        </t-tooltip>
+      </template>
       <template #difficulty="{ row }">
         {{ difficultyLabel(row.difficulty) }}
       </template>
       <template #auto_tagging_status="{ row }">
-        <template v-if="row.auto_tagging_status === 'matched' || row.auto_tagging_status === 'completed'">
-          <t-tag
-            v-if="getTopKnowledgePointCandidate(row)"
-            theme="success"
-            variant="light"
-            size="small"
-          >
-            {{ getTopKnowledgePointCandidate(row)?.knowledge_point }}
-            <template v-if="formatConfidence(getTopKnowledgePointCandidate(row)?.confidence)">
-              · {{ formatConfidence(getTopKnowledgePointCandidate(row)?.confidence) }}
-            </template>
-          </t-tag>
-          <t-tag v-else theme="default" variant="light" size="small">未匹配</t-tag>
+        <template v-if="(row.auto_tagging_status === 'matched' || row.auto_tagging_status === 'completed') && getTopKnowledgePointCandidate(row)">
+          <t-tooltip :content="buildKnowledgeCandidateTooltip(row)" placement="top-left">
+            <t-tag theme="success" variant="light" size="small" class="question-match-tag">
+              <span class="question-match-tag-text">
+                {{ getTopKnowledgePointCandidate(row)?.knowledge_point }}
+                <template v-if="formatConfidence(getTopKnowledgePointCandidate(row)?.confidence)">
+                  · {{ formatConfidence(getTopKnowledgePointCandidate(row)?.confidence) }}
+                </template>
+              </span>
+            </t-tag>
+          </t-tooltip>
+        </template>
+        <template v-else-if="row.auto_tagging_status === 'matched' || row.auto_tagging_status === 'completed'">
+          <t-tag theme="default" variant="light" size="small">未匹配</t-tag>
         </template>
         <t-tag v-else-if="row.auto_tagging_status === 'unmatched'" theme="default" variant="light" size="small">未匹配</t-tag>
         <t-tag v-else-if="row.auto_tagging_status === 'paused'" theme="warning" variant="light" size="small">暂停</t-tag>
@@ -393,13 +399,15 @@
         <t-tag v-else theme="default" variant="light" size="small">待处理</t-tag>
       </template>
       <template #syllabus_scope_result="{ row }">
-        <t-tag v-if="row.syllabus_checking_status === 'failed'" theme="danger" variant="light" size="small">失败</t-tag>
-        <t-tag v-else-if="row.syllabus_checking_status === 'paused'" theme="warning" variant="light" size="small">暂停</t-tag>
-        <t-tag v-else-if="row.syllabus_checking_status === 'pending'" theme="default" variant="light" size="small">待处理</t-tag>
-        <t-tag v-else-if="row.syllabus_scope_result === 'in_scope'" theme="success" variant="light" size="small">符合考纲</t-tag>
-        <t-tag v-else-if="row.syllabus_scope_result === 'out_of_scope'" theme="warning" variant="light" size="small">疑似超纲</t-tag>
-        <t-tag v-else-if="row.syllabus_scope_result === 'uncertain'" theme="default" variant="light" size="small">不确定</t-tag>
-        <span v-else class="qp-na">—</span>
+        <t-tooltip :content="buildSyllabusTooltip(row)" placement="top-left">
+          <t-tag v-if="row.syllabus_checking_status === 'failed'" theme="danger" variant="light" size="small">失败</t-tag>
+          <t-tag v-else-if="row.syllabus_checking_status === 'paused'" theme="warning" variant="light" size="small">暂停</t-tag>
+          <t-tag v-else-if="row.syllabus_checking_status === 'pending'" theme="default" variant="light" size="small">待筛选</t-tag>
+          <t-tag v-else-if="row.syllabus_scope_result === 'in_scope'" theme="success" variant="light" size="small">符合</t-tag>
+          <t-tag v-else-if="row.syllabus_scope_result === 'out_of_scope'" theme="warning" variant="light" size="small">超纲</t-tag>
+          <t-tag v-else-if="row.syllabus_scope_result === 'uncertain'" theme="default" variant="light" size="small">不确定</t-tag>
+          <span v-else class="qp-na">—</span>
+        </t-tooltip>
       </template>
       <template #status="{ row }">
         <t-tooltip v-if="row.status === 'reviewed' && row.reviewed_at" :content="`审核人：${row.reviewed_by || '未知'}\n审核时间：${row.reviewed_at}`">
@@ -770,11 +778,11 @@ async function triggerReprocess(scope: QuestionProcessingReprocessScope) {
 const questionTypes: QuestionType[] = ['single_choice', 'multiple_choice', 'true_false', 'fill_blank', 'short_answer', 'essay', 'composite']
 const questionColumns = computed(() => [
   { colKey: 'row-select', type: 'multiple' as const, width: 50 },
-  { colKey: 'question_type', title: '类型', width: 100, cell: 'question_type' },
-  { colKey: 'stem_text', title: '题干', ellipsis: true },
-  { colKey: 'difficulty', title: '难度', width: 80, cell: 'difficulty' },
-  { colKey: 'auto_tagging_status', title: '知识点', width: 80, cell: 'auto_tagging_status' },
-  { colKey: 'syllabus_scope_result', title: '考纲', width: 80, cell: 'syllabus_scope_result' },
+  { colKey: 'question_type', title: '类型', width: 80, cell: 'question_type' },
+  { colKey: 'stem_text', title: '题干', minWidth: 360, ellipsis: true, cell: 'stem_text' },
+  { colKey: 'difficulty', title: '难度', width: 72, cell: 'difficulty' },
+  { colKey: 'auto_tagging_status', title: '知识点', width: 170, cell: 'auto_tagging_status' },
+  { colKey: 'syllabus_scope_result', title: '考纲', width: 100, cell: 'syllabus_scope_result' },
   { colKey: 'status', title: '状态', width: 80, cell: 'status' },
   { colKey: 'operation', title: '操作', width: 120, fixed: 'right', cell: 'operation' },
 ])
@@ -1092,6 +1100,70 @@ function formatConfidence(value?: number): string {
   return `${Math.round(value * 100)}%`
 }
 
+function buildKnowledgeCandidateTooltip(row: Question): string {
+  const candidates = (row.extraction_metadata as any)?.auto_processing?.auto_tagging?.candidates
+  if (!Array.isArray(candidates) || candidates.length === 0) return ''
+
+  const lines: string[] = []
+  const max = Math.min(candidates.length, 3)
+  for (let i = 0; i < max; i++) {
+    const c = candidates[i]
+    if (!c || typeof c !== 'object') continue
+    const parts: string[] = []
+    if (c.knowledge_point) parts.push(`知识点：${c.knowledge_point}`)
+    if (typeof c.confidence === 'number') parts.push(`置信度：${Math.round(c.confidence * 100)}%`)
+    if (typeof c.score === 'number') parts.push(`分数：${c.score.toFixed(2)}`)
+    if (c.evidence_text) parts.push(`证据：${c.evidence_text}`)
+    lines.push(parts.join('\n'))
+    if (i < max - 1) lines.push('---')
+  }
+  return lines.join('\n')
+}
+
+function buildSyllabusTooltip(row: Question): string {
+  const parts: string[] = []
+  if (row.syllabus_checking_status === 'failed') {
+    parts.push('考纲筛选：失败')
+  } else if (row.syllabus_checking_status === 'paused') {
+    parts.push('考纲筛选：暂停')
+    parts.push(`原因：${syllabusPauseReason(row)}`)
+  } else if (row.syllabus_checking_status === 'pending') {
+    parts.push('考纲筛选：待筛选')
+  } else if (row.syllabus_scope_result) {
+    parts.push(`考纲筛选：${syllabusDisplayLabel(row)}`)
+  }
+  const evidence = (row.extraction_metadata as any)?.auto_processing?.syllabus_checking?.evidence
+  if (Array.isArray(evidence) && evidence.length > 0) {
+    const e = evidence[0]
+    if (e?.score !== undefined) parts.push(`分数：${e.score}`)
+    if (e?.text) parts.push(`证据：${e.text}`)
+  }
+  return parts.join('\n')
+}
+
+function syllabusDisplayLabel(row: Question): string {
+  if (row.syllabus_checking_status === 'failed') return '失败'
+  if (row.syllabus_checking_status === 'paused') return '暂停'
+  if (row.syllabus_checking_status === 'pending') return '待筛选'
+  if (row.syllabus_scope_result === 'in_scope') return '符合'
+  if (row.syllabus_scope_result === 'out_of_scope') return '超纲'
+  if (row.syllabus_scope_result === 'uncertain') return '不确定'
+  return '—'
+}
+
+function syllabusPauseReason(row: Question): string {
+  const reason = (row.extraction_metadata as any)?.auto_processing?.syllabus_checking?.reason
+  if (row.syllabus_checking_status === 'paused' && typeof reason === 'string') {
+    if (reason.includes('未配置考纲') || reason.includes('未关联')) {
+      return '未配置考纲'
+    }
+  }
+  if (row.syllabus_checking_status === 'paused') {
+    return '考纲已配置，当前题目尚未重新筛选'
+  }
+  return reason || '暂停'
+}
+
 // ── Syllabus unified filter ──
 const syllabusFilterValue = ref('')
 
@@ -1148,6 +1220,29 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .draft-review-tag { cursor: pointer; }
 .draft-review-tag:hover { color: var(--td-brand-color); }
 .qp-na { color: var(--td-text-color-placeholder); font-size: 12px; }
+
+/* Question table cell styles */
+.question-stem-cell {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.question-match-tag {
+  max-width: 150px;
+}
+
+.question-match-tag-text {
+  display: inline-block;
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
 .question-empty { padding: 48px 16px; }
 .restore-draft-copy { margin: 0; color: var(--td-text-color-secondary); line-height: 1.7; }
 

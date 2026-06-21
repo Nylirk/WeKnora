@@ -632,11 +632,19 @@ test('knowledge point column reads extraction_metadata candidates', () => {
   assert.equal(source.includes('auto_processing'), true, 'must reference auto_processing')
   assert.equal(source.includes('candidates'), true, 'must reference candidates')
   assert.equal(source.includes('formatConfidence'), true, 'must use formatConfidence helper')
+  assert.equal(source.includes('buildKnowledgeCandidateTooltip'), true, 'must use buildKnowledgeCandidateTooltip')
+  assert.equal(source.includes('question-match-tag'), true, 'must use question-match-tag class')
+  assert.equal(source.includes('question-match-tag-text'), true, 'must use question-match-tag-text class')
 })
 
 test('knowledge point column shows candidate knowledge_point and confidence', () => {
   assert.equal(source.includes('getTopKnowledgePointCandidate(row)?.knowledge_point'), true, 'must show knowledge_point')
   assert.equal(source.includes('formatConfidence(getTopKnowledgePointCandidate(row)?.confidence)'), true, 'must show confidence')
+})
+
+test('stem_text column has tooltip', () => {
+  assert.equal(source.includes('question-stem-cell'), true, 'must use question-stem-cell class')
+  assert.equal(source.includes('#stem_text="{ row }"'), true, 'must have stem_text cell slot')
 })
 
 test('syllabus filter includes paused / failed / pending', () => {
@@ -654,7 +662,6 @@ test('syllabus filter distinguishes scope_result and checking_status', () => {
 
 test('syllabus column checks checking_status before scope_result', () => {
   const syllabusSlot = source.match(/<template #syllabus_scope_result="\{ row \}">([\s\S]*?)<\/template>/)?.[1] || ''
-  // failed/paused/pending must appear before in_scope/out_of_scope
   const failedIdx = syllabusSlot.indexOf("syllabus_checking_status === 'failed'")
   const pausedIdx = syllabusSlot.indexOf("syllabus_checking_status === 'paused'")
   const scopeIdx = syllabusSlot.indexOf("syllabus_scope_result === 'in_scope'")
@@ -662,6 +669,19 @@ test('syllabus column checks checking_status before scope_result', () => {
   assert.equal(pausedIdx >= 0, true, 'syllabus column must check paused status')
   assert.equal(failedIdx < scopeIdx, true, 'failed check must precede scope_result check')
   assert.equal(pausedIdx < scopeIdx, true, 'paused check must precede scope_result check')
+})
+
+test('syllabus column uses compact labels and tooltip', () => {
+  assert.equal(source.includes('syllabusDisplayLabel'), true, 'must use syllabusDisplayLabel helper')
+  assert.equal(source.includes('buildSyllabusTooltip'), true, 'must use buildSyllabusTooltip')
+  assert.equal(source.includes('syllabusPauseReason'), true, 'must use syllabusPauseReason helper')
+  assert.equal(source.includes('考纲已配置，当前题目尚未重新筛选'), true, 'must hint re-screening needed')
+})
+
+test('syllabus column uses short labels', () => {
+  assert.equal(source.includes("'符合'"), true, 'must use 符合 (short)')
+  assert.equal(source.includes("'超纲'"), true, 'must use 超纲 (short)')
+  assert.equal(source.includes("'待筛选'"), true, 'must use 待筛选 label')
 })
 
 // ── Reprocess trigger in waterfall drawer ──
