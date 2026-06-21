@@ -19,21 +19,21 @@
           </t-button>
         </t-tooltip>
 
-        <t-button theme="primary" @click="openCreateDialog">
-          <template #icon><t-icon name="add" /></template>
-          {{ $t('questionBank.addQuestion', '新增题目') }}
-        </t-button>
         <t-popup
           v-model:visible="headerImportMenuVisible"
           trigger="click"
           placement="bottom-right"
           overlay-class-name="question-import-type-popup"
         >
-          <t-button>{{ $t('questionBank.import') }}</t-button>
+          <t-button theme="primary">{{ $t('questionBank.import') }}</t-button>
           <template #content>
             <div class="import-type-menu">
+              <button type="button" class="import-type-item" @click="openManualImport">
+                <span class="import-type-title">手动导入</span>
+                <span class="import-type-description">手动创建一道题目</span>
+              </button>
               <button type="button" class="import-type-item" @click="openSingleImport">
-                <span class="import-type-title">单个导入</span>
+                <span class="import-type-title">文件导入</span>
                 <span class="import-type-description">导入一个文件并进入题目审核工作台</span>
               </button>
               <button type="button" class="import-type-item" disabled>
@@ -194,27 +194,6 @@
       @imported="handleWorkbenchImported"
       @abandoned="handleWorkbenchAbandoned"
     />
-    <QuestionGenerateDialog
-      v-model:visible="generateVisible"
-      :knowledge-base-id="knowledgeBaseId"
-      @generated="handleGenerated"
-    />
-    <t-dialog
-      v-model:visible="exportVisible"
-      header="导出评测集"
-      :confirm-btn="{ content: '确认导出', loading: exporting }"
-      :cancel-btn="{ content: '取消', disabled: exporting }"
-      @confirm="confirmExport"
-    >
-      <t-form label-align="top">
-        <t-form-item label="评测集名称" :required="true">
-          <t-input v-model="exportName" placeholder="请输入评测集名称" />
-        </t-form-item>
-        <t-form-item label="描述">
-          <t-textarea v-model="exportDescription" placeholder="可选描述" :autosize="{ minRows: 3, maxRows: 6 }" />
-        </t-form-item>
-      </t-form>
-    </t-dialog>
     <t-dialog
       v-model:visible="restoreDraftVisible"
       header="发现未完成的导入草稿"
@@ -250,7 +229,7 @@ import { computed, ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import {
   getQuestionSet, listQuestions, deleteQuestion as apiDeleteQuestion,
-  exportToEvaluationDataset, updateQuestionStatus, getQuestionSetProcessingStatus,
+  updateQuestionStatus, getQuestionSetProcessingStatus,
   resolveProcessingStages, resolveProcessingButtonState,
   PROCESSING_STAGE_STATUS_LABELS, PROCESSING_BUTTON_LABELS,
   type Question, type QuestionListFilter, type QuestionType,
@@ -266,7 +245,7 @@ import {
 import { resolveQuestionRows, resolveQuestionTotal } from '../questionData'
 
 const props = defineProps<{ setId: string; knowledgeBaseId: string; setName?: string }>()
-const emit = defineEmits<{ generated: []; changed: [total: number] }>()
+const emit = defineEmits<{ changed: [total: number] }>()
 const workbenchStore = useImportWorkbenchStore()
 const importUI = useImportUIStore()
 
@@ -387,11 +366,6 @@ const pendingDraftTime = computed(() => pendingDraft.value
   ? new Date(pendingDraft.value.timestamp).toLocaleString()
   : '')
 const headerImportMenuVisible = ref(false)
-const generateVisible = ref(false)
-const exportVisible = ref(false)
-const exportName = ref('')
-const exportDescription = ref('')
-const exporting = ref(false)
 const editingQuestion = ref<Question | null>(null)
 const selectedRowKeys = ref<string[]>([])
 const currentPage = ref(1)
@@ -628,15 +602,9 @@ function handleWorkbenchAbandoned() {
   workbenchVisible.value = false
 }
 
-// Guard: if any import dialog opens, close the popup menu
-watch(fileImportVisible, (fileVisible) => {
-  if (fileVisible) {
-    headerImportMenuVisible.value = false
-  }
-})
-
-function handleGenerated() {
-  emit('generated')
+function openManualImport() {
+  headerImportMenuVisible.value = false
+  openCreateDialog()
 }
 
 async function refreshAfterMutation() {
@@ -660,33 +628,6 @@ async function removeQuestion(q: Question) {
   }
 }
 
-function openExportDialog() {
-  exportName.value = displaySetName.value
-  exportDescription.value = ''
-  exportVisible.value = true
-}
-
-async function confirmExport() {
-  const name = exportName.value.trim()
-  if (!name) {
-    MessagePlugin.warning('请输入评测集名称')
-    return
-  }
-  exporting.value = true
-  try {
-    await exportToEvaluationDataset(props.knowledgeBaseId, props.setId, {
-      name,
-      description: exportDescription.value.trim(),
-    })
-    MessagePlugin.success('导出成功')
-    exportVisible.value = false
-  } catch (e: any) {
-    MessagePlugin.error(e?.message || '导出失败')
-  } finally {
-    exporting.value = false
-  }
-}
-
 function questionTypeLabel(t: QuestionType) {
   const map: Record<QuestionType, string> = {
     single_choice: '单选', multiple_choice: '多选', true_false: '判断',
@@ -702,6 +643,13 @@ function statusLabel(s: string) {
   const map: Record<string, string> = { draft: '草稿', reviewed: '已审', rejected: '已拒' }
   return map[s] || s
 }
+
+// Guard: if any import dialog opens, close the popup menu
+watch(fileImportVisible, (fileVisible) => {
+  if (fileVisible) {
+    headerImportMenuVisible.value = false
+  }
+})
 
 onMounted(async () => {
   if (!props.setName) {
@@ -720,7 +668,6 @@ onBeforeUnmount(() => {
 
 import QuestionEditDialog from './QuestionEditDialog.vue'
 import QuestionFileImportDialog from './QuestionFileImportDialog.vue'
-import QuestionGenerateDialog from './QuestionGenerateDialog.vue'
 import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 </script>
 

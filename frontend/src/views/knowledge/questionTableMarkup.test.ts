@@ -91,9 +91,13 @@ test('renders the question category sidebar with document-category style markup'
   assert.equal(bankSource.includes('class="set-meta"'), false)
 })
 
-test('top-level import menu offers single and disabled batch import only', () => {
+test('top-level import menu offers manual, file, and disabled batch import', () => {
+  assert.equal(source.includes('openManualImport'), true)
+  assert.equal(source.includes('手动导入'), true)
+  assert.equal(source.includes('手动创建一道题目'), true)
   assert.equal(source.includes('openSingleImport'), true)
-  assert.equal(source.includes('单个导入'), true)
+  assert.equal(source.includes('文件导入'), true)
+  assert.equal(source.includes('导入一个文件并进入题目审核工作台'), true)
   assert.equal(source.includes('批量导入'), true)
   assert.equal(source.includes('即将支持'), true)
   assert.equal(source.includes('openJsonImport'), false)
@@ -529,4 +533,16 @@ test('polling stops at terminal stages but button remains visible', () => {
   // But the old banner is removed (replaced by button + drawer)
   assert.equal(source.includes('processing-banner'), false, 'old processing-banner class must be removed')
   assert.equal(source.includes('stageLabel(processingStatus.stage)'), false, 'old stageLabel call must be removed')
+})
+
+test('removed standalone add-question, generate, and export controls are cleaned up', () => {
+  // No standalone "新增题目" button
+  assert.equal(source.includes('新增题目'), false, 'standalone add-question button must be removed')
+  // No generate dialog
+  assert.equal(source.includes('QuestionGenerateDialog'), false, 'QuestionGenerateDialog must not be referenced')
+  // No export dialog
+  assert.equal(source.includes('exportToEvaluationDataset'), false, 'exportToEvaluationDataset must not be referenced')
+  assert.equal(source.includes('导出评测集'), false, 'export evaluation dataset must not be referenced')
+  // Import menu is the only primary action
+  assert.equal(source.includes('openManualImport'), true, 'manual import must be in the import menu')
 })
