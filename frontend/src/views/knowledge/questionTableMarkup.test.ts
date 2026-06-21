@@ -465,34 +465,50 @@ test('processing button is conditionally rendered based on state', () => {
   assert.equal(source.includes(':loading="processingButton.state ==='), false, 'must not use t-button loading prop')
 })
 
-test('processing drawer shows kp-timeline-style stage list with status and reason', () => {
+test('processing drawer renders waterfall timeline matching knowledge timeline structure', () => {
   assert.equal(source.includes('processingDrawerVisible'), true, 'must have drawer visibility state')
   assert.equal(source.includes('<t-drawer'), true, 'must have t-drawer component')
-  assert.equal(source.includes('处理进度'), true, 'drawer title must be 处理进度')
-  // Uses kp-stage-list (knowledge processing timeline visual style)
-  assert.equal(source.includes('kp-stage-list'), true, 'must use kp-stage-list class')
-  assert.equal(source.includes('kp-stage-row'), true, 'must use kp-stage-row class')
-  // Old custom stage classes removed
-  assert.equal(source.includes('processing-stage-item'), false, 'old processing-stage-item class must be removed')
-  assert.equal(source.includes('stage-indicator'), false, 'old stage-indicator class must be removed')
-  // Stage iteration
-  assert.equal(source.includes('v-for="stage in processingStages"'), true, 'must iterate processingStages')
-  // Stage reason display
-  assert.equal(source.includes('stage.reason'), true, 'must show stage.reason for paused stages')
-  // Status labels from constants
-  assert.equal(source.includes('PROCESSING_STAGE_STATUS_LABELS[stage.status]'), true, 'must use status label constants')
-  // Error message for failed state
-  assert.equal(source.includes("processingStatus?.stage === 'failed'"), true, 'must check failed state for error banner')
-  // Paused no longer uses pause-circle icon
-  assert.equal(source.includes('pause-circle-filled'), false, 'must not use pause-circle-filled icon')
-  assert.equal(source.includes('pause-circle'), false, 'must not use pause-circle icon')
+  // Secondary drawer class (wider, no header prop)
+  assert.equal(source.includes('kp-secondary-drawer'), true, 'must use kp-secondary-drawer class')
+  // Waterfall shell/head/body structure
+  assert.equal(source.includes('kp-shell'), true, 'must use kp-shell')
+  assert.equal(source.includes('kp-head'), true, 'must use kp-head')
+  assert.equal(source.includes('kp-head-toolbar'), true, 'must use kp-head-toolbar')
+  assert.equal(source.includes('kp-head-doc-title'), true, 'must use kp-head-doc-title')
+  assert.equal(source.includes('kp-head-status-tag'), true, 'must use kp-head-status-tag')
+  assert.equal(source.includes('kp-head-meta'), true, 'must use kp-head-meta')
+  assert.equal(source.includes('处理流水线'), true, 'meta must include 处理流水线')
+  // Body and ruler
+  assert.equal(source.includes('kp-body'), true, 'must use kp-body')
+  assert.equal(source.includes('kp-ruler'), true, 'must use kp-ruler')
+  assert.equal(source.includes('kp-ruler-track'), true, 'must use kp-ruler-track')
+  assert.equal(source.includes('kp-scroll'), true, 'must use kp-scroll')
+  // Rows and cells
+  assert.equal(source.includes('kp-rows'), true, 'must use kp-rows')
+  assert.equal(source.includes('kp-cell-name'), true, 'must use kp-cell-name')
+  assert.equal(source.includes('kp-cell-dur'), true, 'must use kp-cell-dur')
+  assert.equal(source.includes('kp-cell-bar'), true, 'must use kp-cell-bar')
+  assert.equal(source.includes('kp-bar'), true, 'must use kp-bar')
+  assert.equal(source.includes('kp-status-dot'), true, 'must use kp-status-dot')
+  assert.equal(source.includes('kp-name-text'), true, 'must use kp-name-text')
+  assert.equal(source.includes('kp-name-kind'), true, 'must use kp-name-kind')
+  // Old stage list classes removed
+  assert.equal(source.includes('kp-stage-list'), false, 'old kp-stage-list must be removed')
+  assert.equal(source.includes('kp-stage-row'), false, 'old kp-stage-row must be removed')
+  assert.equal(source.includes('processing-drawer-hint'), false, 'old processing-drawer-hint must be removed')
+  // Paused still shows reason text via row.reason
+  assert.equal(source.includes('row.reason'), true, 'must show row.reason for paused stages')
+  // Paused icon is NOT pause-circle
+  assert.equal(source.includes('pause-circle-filled'), false, 'must not use pause-circle-filled')
+  assert.equal(source.includes('pause-circle'), false, 'must not use pause-circle')
 })
 
-test('processing drawer shows contextual hints for paused and ready_for_review', () => {
-  assert.equal(source.includes("processingButton.state === 'paused'"), true, 'must show paused hint')
-  assert.equal(source.includes("processingButton.state === 'ready_for_review'"), true, 'must show ready_for_review hint')
-  assert.equal(source.includes('部分阶段因配置缺失已暂停'), true, 'must show paused hint text')
-  assert.equal(source.includes('自动处理已完成'), true, 'must show ready_for_review hint text')
+test('processing drawer header shows status tag for paused and ready_for_review', () => {
+  // Header status tag computed covers paused and ready_for_review
+  assert.equal(source.includes("'部分暂停'"), true, 'header status must include 部分暂停 for paused')
+  assert.equal(source.includes("'已完成'"), true, 'header status must include 已完成 for ready_for_review/completed')
+  // Old banner hint removed (waterfall shows reason per row instead)
+  assert.equal(source.includes('部分阶段因配置缺失已暂停'), false, 'old alert banner text must be removed')
 })
 
 test('processing resolve functions implement correct priority: failed > running > paused > ready_for_review', () => {
@@ -548,7 +564,7 @@ test('polling stops at terminal stages but button remains visible', () => {
   assert.equal(source.includes('stageLabel(processingStatus.stage)'), false, 'old stageLabel call must be removed')
 })
 
-test('removed standalone add-question, generate, export controls and old stage styles are cleaned up', () => {
+test('removed standalone add-question, generate, export controls; drawer is waterfall', () => {
   // No standalone "新增题目" button
   assert.equal(source.includes('新增题目'), false, 'standalone add-question button must be removed')
   // No generate dialog
@@ -558,10 +574,12 @@ test('removed standalone add-question, generate, export controls and old stage s
   assert.equal(source.includes('导出评测集'), false, 'export evaluation dataset must not be referenced')
   // Import menu is the only primary action
   assert.equal(source.includes('openManualImport'), true, 'manual import must be in the import menu')
-  // Drawer uses kp-timeline style instead of old custom classes
-  assert.equal(source.includes('kp-stage-list'), true, 'drawer must use kp-stage-list')
+  // Drawer is waterfall, not old card list
+  assert.equal(source.includes('kp-shell'), true, 'drawer must use waterfall kp-shell')
+  assert.equal(source.includes('kp-stage-list'), false, 'old kp-stage-list must be removed')
   assert.equal(source.includes('processing-stage-item'), false, 'old processing-stage-item must be removed')
   assert.equal(source.includes('pause-circle'), false, 'pause-circle icon must not be used')
+  assert.equal(source.includes('processing-drawer-hint'), false, 'old hint alert must be removed')
   // Paused label remains "部分暂停"
   assert.equal(questionApiSource.includes("paused: '部分暂停'"), true, 'paused button label must remain 部分暂停')
 })

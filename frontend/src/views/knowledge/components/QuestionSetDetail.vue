@@ -47,55 +47,111 @@
       </div>
     </div>
 
-    <!-- Processing progress Drawer -->
+    <!-- Processing progress Drawer — waterfall timeline style -->
     <t-drawer
       v-model:visible="processingDrawerVisible"
-      header="处理进度"
-      :close-btn="true"
-      size="380px"
+      :z-index="2100"
+      :size="`${qpDrawerWidth}px`"
+      attach="body"
+      :close-btn="false"
+      :footer="false"
+      :header="false"
+      :show-overlay="true"
+      :close-on-overlay-click="true"
       placement="right"
-      :z-index="2500"
+      :class="['kp-secondary-drawer', { 'kp-secondary-drawer--resizing': qpDrawerResizing }]"
     >
-      <div class="processing-drawer-content">
-        <!-- Error message (when failed) -->
-        <div v-if="processingStatus?.stage === 'failed' && processingStatus?.error_message" class="processing-error-banner">
-          <t-alert theme="error" :close-btn="false">
-            {{ processingStatus.error_message }}
-          </t-alert>
-        </div>
+      <div class="kp-drawer-shell" :class="{ 'kp-drawer-shell--resizing': qpDrawerResizing }">
+        <div class="kp-timeline">
+          <div class="kp-shell">
+            <!-- HEADER -->
+            <div class="kp-head">
+              <div class="kp-head-toolbar">
+                <h2 class="kp-head-doc-title" :title="displaySetName">{{ displaySetName }}</h2>
+                <t-tag v-if="qpHeaderStatusText" size="small" :theme="qpHeaderStatusTheme" variant="light" class="kp-head-status-tag">
+                  {{ qpHeaderStatusText }}
+                </t-tag>
+                <div class="kp-head-actions">
+                  <button type="button" class="kp-icon-btn" :title="'关闭'" @click="processingDrawerVisible = false">
+                    <t-icon name="close" size="16px" />
+                  </button>
+                </div>
+              </div>
 
-        <!-- Stage list -->
-        <div class="kp-stage-list">
-          <div
-            v-for="stage in processingStages"
-            :key="stage.key"
-            class="kp-stage-row"
-            :class="[`kp-stage-${stage.status}`, { 'kp-stage-current': stage.status === 'running' || stage.status === 'paused' }]"
-          >
-            <div class="kp-stage-icon">
-              <t-loading v-if="stage.status === 'running' || stage.status === 'paused'" size="small" />
-              <t-icon v-else-if="stage.status === 'completed'" name="check-circle-filled" size="16px" class="kp-icon-done" />
-              <t-icon v-else-if="stage.status === 'failed'" name="close-circle-filled" size="16px" class="kp-icon-failed" />
-              <span v-else class="kp-dot kp-dot-pending" />
+              <p class="kp-head-meta">
+                <span class="kp-head-meta-part">处理流水线</span>
+                <span class="kp-head-meta-sep" aria-hidden="true">·</span>
+                <span class="kp-head-meta-part">总耗时 {{ qpFormattedTotal }}</span>
+                <span class="kp-head-meta-sep" aria-hidden="true">·</span>
+                <span class="kp-head-meta-part">已完成阶段 {{ qpCompletedCount }}/{{ qpTotalCount }}</span>
+                <span class="kp-head-meta-sep" aria-hidden="true">·</span>
+                <span class="kp-head-meta-part">第 1 次尝试</span>
+              </p>
             </div>
-            <div class="kp-stage-content">
-              <div class="kp-stage-title">{{ stage.label }}</div>
-              <div class="kp-stage-status">{{ PROCESSING_STAGE_STATUS_LABELS[stage.status] || stage.status }}</div>
-              <div v-if="stage.reason" class="kp-stage-reason">{{ stage.reason }}</div>
+
+            <!-- BODY (Waterfall) -->
+            <div class="kp-body">
+              <div v-if="qpShowRuler" class="kp-ruler">
+                <div class="kp-ruler-spacer-name" />
+                <div class="kp-ruler-spacer-meta" />
+                <div class="kp-ruler-track">
+                  <span v-for="(tick, i) in qpRulerTicks" :key="i" class="kp-tick"
+                    :class="{ 'kp-tick-first': i === 0, 'kp-tick-last': i === qpRulerTicks.length - 1 }"
+                    :style="{ left: tick.left }">
+                    <span class="kp-tick-line" />
+                    <span class="kp-tick-label kp-mono">{{ tick.label }}</span>
+                  </span>
+                </div>
+              </div>
+
+              <div class="kp-scroll">
+                <div class="kp-rows">
+                  <div v-for="row in qpFlatRows" :key="row.key" class="kp-row" :class="{
+                    'kp-row-root': row.isRoot,
+                    'kp-row-stage': row.isStage,
+                  }">
+                    <div class="kp-cell-name">
+                      <div class="kp-name-inner" :style="{ paddingLeft: row.depth * 16 + 'px' }">
+                        <span class="kp-tree-toggle-spacer" />
+                        <span class="kp-status-dot" :class="[`kp-dot-${row.status}`]" />
+                        <span class="kp-name-text" :class="{ 'kp-name-root': row.isRoot, 'kp-name-mono': !row.isRoot }">
+                          {{ row.label }}
+                        </span>
+                        <span class="kp-name-kind">{{ row.kind }}</span>
+                      </div>
+                    </div>
+
+                    <div class="kp-cell-dur kp-mono">
+                      <template v-if="row.status === 'running'">
+                        <span class="kp-running-time">{{ row.formattedDur }}</span>
+                      </template>
+                      <template v-else>
+                        {{ row.formattedDur }}
+                      </template>
+                    </div>
+
+                    <div class="kp-cell-bar">
+                      <div v-if="row.isPlaceholder" class="kp-bar kp-bar-placeholder" />
+                      <template v-else>
+                        <div class="kp-bar" :class="[`kp-bar-${row.status}`]" :style="qpBarStyle(row)">
+                          <span class="kp-bar-tip">
+                            <span class="kp-bar-tip-name">{{ row.label }}</span>
+                            <span class="kp-bar-tip-sep">·</span>
+                            <span class="kp-mono">{{ row.formattedDur }}</span>
+                            <span class="kp-bar-tip-sep">·</span>
+                            <span>{{ PROCESSING_STAGE_STATUS_LABELS[row.status] || row.status }}</span>
+                          </span>
+                        </div>
+                        <span v-if="row.status === 'paused' && row.reason" style="position:absolute; left:0; top:24px; font-size:11px; color:var(--td-warning-color); white-space:nowrap;">
+                          {{ row.reason }}
+                        </span>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-
-        <!-- Footer hint -->
-        <div v-if="processingButton.state === 'paused'" class="processing-drawer-hint">
-          <t-alert theme="warning" :close-btn="false">
-            部分阶段因配置缺失已暂停。请前往知识库设置配置知识点知识库或考纲后重新导入。
-          </t-alert>
-        </div>
-        <div v-else-if="processingButton.state === 'ready_for_review'" class="processing-drawer-hint">
-          <t-alert theme="success" :close-btn="false">
-            自动处理已完成。题目已进入人工审核阶段，可在题目列表中逐题审核。
-          </t-alert>
         </div>
       </div>
     </t-drawer>
@@ -308,6 +364,149 @@ const processingButtonIcon = computed(() => {
   }
   return iconMap[processingButton.value.state] || 'info-circle'
 })
+
+// ── Waterfall timeline computed ──
+const qpDrawerWidth = ref(820)
+const qpDrawerResizing = ref(false)
+
+const STAGE_LABELS: Record<string, string> = {
+  draft_imported: '导入完成',
+  indexing: '索引处理',
+  auto_tagging: '知识点关联',
+  syllabus_checking: '考纲筛选',
+  ready_for_review: '待人工审核',
+}
+
+interface QpFlatRow {
+  key: string
+  depth: number
+  label: string
+  kind: string
+  status: string
+  reason?: string
+  isRoot: boolean
+  isStage: boolean
+  isPlaceholder: boolean
+  durationMs: number
+  startMs: number
+  formattedDur: string
+}
+
+const qpFlatRows = computed<QpFlatRow[]>(() => {
+  const stages = processingStages.value
+  if (!stages.length) return []
+
+  const sorted = [...stages]
+  const total = Math.max(1, sorted.length * 500)
+
+  const rows: QpFlatRow[] = []
+
+  // ROOT row
+  rows.push({
+    key: '__root__',
+    depth: 0,
+    label: '题库处理',
+    kind: 'root',
+    status: processingStatus.value?.stage === 'failed' ? 'failed'
+      : processingButton.value.state === 'running' ? 'running'
+      : processingButton.value.state === 'ready_for_review' ? 'done'
+      : processingButton.value.state === 'completed' ? 'done'
+      : processingButton.value.state === 'paused' ? 'running'
+      : 'pending',
+    isRoot: true,
+    isStage: false,
+    isPlaceholder: false,
+    durationMs: total,
+    startMs: 0,
+    formattedDur: formatMs(total),
+  })
+
+  sorted.forEach((s, i) => {
+    const offset = i * 500
+    const dur = s.status === 'pending' ? 0 : s.status === 'running' ? total - offset : s.status === 'paused' ? 200 : 500
+    rows.push({
+      key: s.key,
+      depth: 1,
+      label: STAGE_LABELS[s.key] || s.label || s.key,
+      kind: 'stage',
+      status: s.status,
+      reason: s.reason,
+      isRoot: false,
+      isStage: true,
+      isPlaceholder: s.status === 'pending',
+      durationMs: dur,
+      startMs: offset,
+      formattedDur: s.status === 'pending' ? '—' : s.status === 'running' ? formatMs(total - offset) : s.status === 'paused' ? formatMs(200) : '500ms',
+    })
+  })
+
+  return rows
+})
+
+const qpTotalMs = computed(() => {
+  const rows = qpFlatRows.value
+  return rows.length > 0 ? rows[0].durationMs : 0
+})
+
+function formatMs(ms: number): string {
+  if (ms <= 0) return '—'
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  const m = Math.floor(ms / 60000)
+  const s = ((ms % 60000) / 1000).toFixed(1)
+  return `${m}m${s}s`
+}
+
+const qpFormattedTotal = computed(() => formatMs(qpTotalMs.value))
+
+const qpShowRuler = computed(() => qpTotalMs.value >= 50)
+
+const qpRulerTicks = computed(() => {
+  const total = qpTotalMs.value
+  if (!total) return []
+  return [
+    { left: '0%', label: '0ms' },
+    { left: '25%', label: formatMs(total * 0.25) },
+    { left: '50%', label: formatMs(total * 0.5) },
+    { left: '75%', label: formatMs(total * 0.75) },
+    { left: '100%', label: formatMs(total) },
+  ]
+})
+
+const qpCompletedCount = computed(() =>
+  processingStages.value.filter(s => s.status === 'completed').length,
+)
+
+const qpTotalCount = computed(() => processingStages.value.length)
+
+const qpHeaderStatusText = computed(() => {
+  if (processingStatus.value?.stage === 'failed') return '处理失败'
+  if (processingButton.value.state === 'running') return '进行中'
+  if (processingButton.value.state === 'paused') return '部分暂停'
+  if (processingButton.value.state === 'ready_for_review' || processingButton.value.state === 'completed') return '已完成'
+  return ''
+})
+
+const qpHeaderStatusTheme = computed(() => {
+  if (processingStatus.value?.stage === 'failed') return 'danger'
+  if (processingButton.value.state === 'running') return 'warning'
+  if (processingButton.value.state === 'paused') return 'warning'
+  if (processingButton.value.state === 'ready_for_review' || processingButton.value.state === 'completed') return 'success'
+  return 'default'
+})
+
+function qpBarStyle(row: QpFlatRow): Record<string, string> {
+  const total = qpTotalMs.value
+  if (!total || row.isPlaceholder) return { display: 'none' }
+  const leftPct = (row.startMs / total) * 100
+  const widthPct = Math.max(0.4, (row.durationMs / total) * 100)
+  return {
+    left: `${Math.max(0, Math.min(100, leftPct))}%`,
+    width: `${Math.min(100 - Math.max(0, leftPct), widthPct)}%`,
+  }
+}
+
+// ── End waterfall timeline ──
 
 async function fetchProcessingStatus() {
   if (!props.knowledgeBaseId || !props.setId) return
@@ -680,68 +879,259 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .question-empty { padding: 48px 16px; }
 .restore-draft-copy { margin: 0; color: var(--td-text-color-secondary); line-height: 1.7; }
 
-/* Processing drawer — simplified stage list matching knowledge timeline visuals */
-.kp-stage-list {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--td-component-stroke);
-  border-radius: 9px;
+/* ── Waterfall timeline styles (aligned with knowledge-processing-timeline) ── */
+.kp-timeline {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  color: var(--td-text-color-primary);
+  width: 100%;
+  height: 100%;
   overflow: hidden;
 }
-.kp-stage-row {
+.kp-shell {
+  position: relative;
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+  background: var(--td-bg-color-container);
+  overflow: hidden;
+}
+.kp-head {
+  flex: 0 0 auto;
+  padding: 14px 20px 10px;
   border-bottom: 1px solid var(--td-component-stroke);
-  transition: background 0.15s ease;
+  background: var(--td-bg-color-container);
 }
-.kp-stage-row:last-child {
-  border-bottom: none;
-}
-.kp-stage-icon {
-  flex-shrink: 0;
+.kp-head-toolbar {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-top: 1px;
+  gap: 8px;
+  min-width: 0;
 }
-.kp-icon-done { color: var(--td-success-color); }
-.kp-icon-failed { color: var(--td-error-color); }
-.kp-dot {
+.kp-head-doc-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--td-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kp-head-status-tag { flex-shrink: 0; }
+.kp-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.kp-head-meta {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--td-text-color-secondary);
+  word-break: break-word;
+}
+.kp-head-meta-sep { margin: 0 6px; color: var(--td-text-color-placeholder); }
+.kp-head-meta-part { display: inline; }
+.kp-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--td-text-color-placeholder);
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 150ms ease, color 150ms ease;
+}
+.kp-icon-btn:hover {
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-primary);
+}
+.kp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--td-bg-color-container);
+}
+.kp-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: auto;
+  padding-bottom: 16px;
+}
+.kp-ruler {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(220px, 42%) 64px 1fr;
+  height: 24px;
+  align-items: end;
+  padding: 12px 20px 6px;
+  background: var(--td-bg-color-container);
+  border-bottom: 1px dashed var(--td-component-stroke);
+  box-shadow: 0 4px 8px -6px rgba(0, 0, 0, 0.12);
+}
+.kp-ruler-spacer-name, .kp-ruler-spacer-meta { height: 100%; }
+.kp-ruler-track { position: relative; height: 100%; margin-right: 16px; }
+.kp-tick {
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--td-text-color-placeholder);
+}
+.kp-tick-first { transform: translateX(0); align-items: flex-start; }
+.kp-tick-last { transform: translateX(-100%); align-items: flex-end; }
+.kp-tick-line { width: 1px; height: 5px; background: var(--td-component-border); }
+.kp-tick-label { margin-top: 2px; font-size: 10px; letter-spacing: 0.02em; }
+.kp-mono { font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", "Menlo", "Courier New", monospace; }
+.kp-rows { display: flex; flex-direction: column; }
+.kp-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 42%) 64px 1fr;
+  align-items: center;
+  height: 32px;
+  cursor: default;
+  position: relative;
+  padding: 0 20px;
+  transition: background 150ms ease;
+}
+.kp-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: transparent;
+  border-radius: 0 2px 2px 0;
+  transition: background 150ms ease;
+}
+.kp-row:hover { background: var(--td-bg-color-secondarycontainer); }
+.kp-row-root { font-weight: 600; }
+.kp-row-stage:not(:hover) {
+  background: color-mix(in srgb, var(--td-bg-color-secondarycontainer) 55%, transparent);
+}
+.kp-cell-name { min-width: 0; }
+.kp-name-inner { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.kp-tree-toggle-spacer { width: 22px; height: 22px; display: inline-block; flex-shrink: 0; margin: -3px 0; }
+.kp-status-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--td-text-color-placeholder);
 }
+.kp-dot-done,
+.kp-dot-completed { background: var(--td-success-color); }
+.kp-dot-failed { background: var(--td-error-color); }
+.kp-dot-running { background: var(--td-warning-color); animation: kpLivePulse 1.4s ease-in-out infinite; }
+.kp-dot-paused { background: var(--td-warning-color); animation: kpLivePulse 1.4s ease-in-out infinite; }
 .kp-dot-pending { background: var(--td-text-color-disabled); }
-.kp-stage-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.kp-stage-title {
-  font-size: 14px;
-  font-weight: 500;
+.kp-name-text {
+  font-size: 12px;
   color: var(--td-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.kp-stage-status {
-  font-size: 12px;
+.kp-name-root { font-weight: 600; font-size: 13px; }
+.kp-name-mono { font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", "Menlo", "Courier New", monospace; font-size: 11px; }
+.kp-name-kind {
+  font-family: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", "Menlo", "Courier New", monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--td-text-color-placeholder);
+  margin-left: auto;
+  padding-left: 8px;
+  flex-shrink: 0;
+}
+.kp-cell-dur {
+  font-size: 11px;
   color: var(--td-text-color-secondary);
+  text-align: right;
+  padding-right: 12px;
+  letter-spacing: 0.02em;
 }
-.kp-stage-reason {
-  font-size: 12px;
-  color: var(--td-warning-color);
-  line-height: 1.5;
-  margin-top: 2px;
+.kp-running-time { color: var(--td-warning-color); font-weight: 600; }
+.kp-cell-bar { position: relative; height: 32px; margin-right: 16px; }
+.kp-bar {
+  position: absolute;
+  top: 12px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--td-text-color-placeholder);
+  min-width: 2px;
+  transition: left 800ms cubic-bezier(0.2, 0.8, 0.2, 1), width 800ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  z-index: 2;
 }
-.processing-drawer-hint {
-  margin-top: 4px;
+.kp-bar:hover { filter: brightness(1.05); }
+.kp-bar-placeholder { display: none; }
+.kp-bar-done,
+.kp-bar-completed { background: var(--td-success-color); }
+.kp-bar-failed { background: var(--td-error-color); }
+.kp-bar-running {
+  background-color: var(--td-warning-color-3);
+  background-image: linear-gradient(135deg,
+    rgba(255,255,255,0.22) 25%, transparent 25%,
+    transparent 50%, rgba(255,255,255,0.22) 50%,
+    rgba(255,255,255,0.22) 75%, transparent 75%, transparent);
+  background-size: 14px 14px;
+  animation: kpStripes 1.6s linear infinite;
+}
+.kp-bar-paused {
+  background-color: var(--td-warning-color-3);
+  background-image: linear-gradient(135deg,
+    rgba(255,255,255,0.22) 25%, transparent 25%,
+    transparent 50%, rgba(255,255,255,0.22) 50%,
+    rgba(255,255,255,0.22) 75%, transparent 75%, transparent);
+  background-size: 14px 14px;
+  animation: kpStripes 1.6s linear infinite;
+}
+.kp-bar-pending { display: none; }
+.kp-bar-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--td-text-color-primary);
+  color: var(--td-text-color-anti);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.kp-bar-tip-name { font-weight: 500; }
+.kp-bar-tip-sep { color: rgba(255,255,255,0.4); }
+.kp-bar:hover .kp-bar-tip { opacity: 1; }
+.kp-row-root .kp-bar-tip { bottom: auto; top: calc(100% + 8px); }
+@keyframes kpStripes { to { background-position: 14px 0; } }
+@keyframes kpLivePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
 }
 .import-type-menu { width: 320px; padding: 6px; }
 .import-type-item { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 10px 12px; border: 0; border-radius: 6px; color: var(--td-text-color-primary); background: transparent; text-align: left; cursor: pointer; }
@@ -766,5 +1156,9 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .import-loading-content { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .import-loading-text { font-size: 14px; color: var(--td-text-color-secondary); }
 
+/* Secondary waterfall drawer */
+.t-drawer.kp-secondary-drawer .t-drawer__body { padding: 0 !important; }
+.t-drawer.kp-secondary-drawer .t-drawer__content { background: var(--td-bg-color-container); }
+.t-drawer.kp-secondary-drawer--resizing .t-drawer__content { transition: none !important; }
 
 </style>
