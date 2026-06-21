@@ -1,0 +1,217 @@
+[
+  {
+    "id": "q001",
+    "question_type": "single_choice",
+    "difficulty": "medium",
+    "stem_text": "已知一元二次方程 x^2 - 5x + 6 = 0 的两根为 α 和 β，求 α + β 的值。",
+    "question_body": {
+      "options": [
+        {"label": "A", "content": "5"},
+        {"label": "B", "content": "6"},
+        {"label": "C", "content": "-5"},
+        {"label": "D", "content": "-6"}
+      ]
+    },
+    "expected_knowledge_points": ["一元二次方程根与系数关系"],
+    "acceptable_knowledge_points": ["韦达定理"],
+    "negative_knowledge_points": ["一次函数"],
+    "mock_results": [
+      {
+        "id": "chunk-001",
+        "knowledge_id": "kp-001",
+        "knowledge_title": "一元二次方程根与系数关系",
+        "content": "根与系数关系，也称韦达定理，描述一元二次方程两根之和与两根之积的规律。",
+        "score": 0.91
+      },
+      {
+        "id": "chunk-002",
+        "knowledge_id": "kp-002",
+        "knowledge_title": "二次函数图像",
+        "content": "二次函数的图像是抛物线，其顶点坐标和对称轴可由配方法求得。",
+        "score": 0.72
+      }
+    ]
+  },
+  {
+    "id": "q002",
+    "question_type": "short_answer",
+    "difficulty": "easy",
+    "stem_text": "What is the derivative of f(x) = x^2?",
+    "question_body": {},
+    "expected_knowledge_points": ["导数基本公式"],
+    "acceptable_knowledge_points": ["幂函数求导"],
+    "negative_knowledge_points": ["积分公式"],
+    "mock_results": [
+      {
+        "id": "chunk-003",
+        "knowledge_id": "kp-003",
+        "knowledge_title": "导数基本公式",
+        "content": "The power rule states that the derivative of x^n is n*x^(n-1).",
+        "score": 0.93
+      }
+    ]
+  },
+  {
+    "id": "q003",
+    "question_type": "single_choice",
+    "difficulty": "hard",
+    "stem_text": "下列关于函数单调性的说法，正确的是？",
+    "question_body": {
+      "options": [
+        {"label": "A", "content": "增函数的导数恒为正"},
+        {"label": "B", "content": "减函数的导数恒为负"},
+        {"label": "C", "content": "单调函数的导数不变号"},
+        {"label": "D", "content": "以上都不对"}
+      ]
+    },
+    "expected_knowledge_points": ["函数单调性"],
+    "acceptable_knowledge_points": ["导数与单调性"],
+    "negative_knowledge_points": ["函数奇偶性"],
+    "mock_results": [
+      {
+        "id": "chunk-004",
+        "knowledge_id": "kp-004",
+        "knowledge_title": "函数单调性",
+        "content": "函数单调性描述函数值随自变量增大而增大或减小的性质，可借助导数符号判断。",
+        "score": 0.82
+      },
+      {
+        "id": "chunk-005",
+        "knowledge_id": "kp-005",
+        "knowledge_title": "导数与单调性",
+        "content": "当 f'(x) > 0 时函数单调递增，f'(x) < 0 时单调递减。",
+        "score": 0.80
+      }
+    ]
+  },
+  {
+    "id": "q004",
+    "question_type": "short_answer",
+    "difficulty": "medium",
+    "stem_text": "简述光合作用的基本过程。",
+    "question_body": {},
+    "expected_knowledge_points": ["光合作用"],
+    "acceptable_knowledge_points": ["光反应与暗反应"],
+    "negative_knowledge_points": ["呼吸作用"],
+    "mock_results": [
+      {
+        "id": "chunk-006",
+        "knowledge_id": "kp-006",
+        "knowledge_title": "光合作用",
+        "content": "光合作用是绿色植物利用光能将二氧化碳和水转化为有机物并释放氧气的过程，分为光反应和暗反应两个阶段。",
+        "score": 0.95
+      }
+    ]
+  },
+  {
+    "id": "q005",
+    "question_type": "single_choice",
+    "difficulty": "medium",
+    "stem_text": "设函数 f(x) = sin(x)，下列说法正确的是？",
+    "question_body": {
+      "options": [
+        {"label": "A", "content": "f(x) 是偶函数"},
+        {"label": "B", "content": "f(x) 是奇函数"},
+        {"label": "C", "content": "f(x) 是周期函数"},
+        {"label": "D", "content": "以上都对"}
+      ]
+    },
+    "expected_knowledge_points": ["正弦函数性质"],
+    "acceptable_knowledge_points": ["三角函数"],
+    "negative_knowledge_points": ["余弦函数"],
+    "mock_results": [
+      {
+        "id": "chunk-007",
+        "knowledge_id": "kp-007",
+        "knowledge_title": "正弦函数性质",
+        "content": "正弦函数 sin(x) 是奇函数且以 2π 为周期。",
+        "score": 0.76
+      },
+      {
+        "id": "chunk-008",
+        "knowledge_id": "kp-008",
+        "knowledge_title": "余弦函数性质",
+        "content": "余弦函数 cos(x) 是偶函数且以 2π 为周期。",
+        "score": 0.71
+      }
+    ]
+  },
+  {
+    "id": "q006",
+    "question_type": "short_answer",
+    "difficulty": "easy",
+    "stem_text": "What is the capital of France?",
+    "question_body": {},
+    "expected_knowledge_points": ["European Geography"],
+    "acceptable_knowledge_points": ["French Capitals"],
+    "negative_knowledge_points": ["Asian Capitals"],
+    "mock_results": [
+      {
+        "id": "chunk-009",
+        "knowledge_id": "kp-009",
+        "knowledge_title": "European Geography",
+        "content": "France is a country in Western Europe, its capital is Paris.",
+        "score": 0.55
+      }
+    ]
+  },
+  {
+    "id": "q007",
+    "question_type": "short_answer",
+    "difficulty": "medium",
+    "stem_text": "Explain the concept of recursion in programming.",
+    "question_body": {},
+    "expected_knowledge_points": ["Recursion"],
+    "acceptable_knowledge_points": ["Recursive Functions"],
+    "negative_knowledge_points": ["Iteration Loops"],
+    "mock_results": [
+      {
+        "id": "chunk-010",
+        "knowledge_id": "kp-010",
+        "knowledge_title": "Recursion",
+        "content": "Recursion is a programming technique where a function calls itself.",
+        "score": 0.90
+      },
+      {
+        "id": "chunk-011",
+        "knowledge_id": "kp-011",
+        "knowledge_title": "Recursive Functions",
+        "content": "A recursive function solves a problem by breaking it into smaller sub-problems.",
+        "score": 0.88
+      }
+    ]
+  },
+  {
+    "id": "q008",
+    "question_type": "single_choice",
+    "difficulty": "hard",
+    "stem_text": "关于 DNA 复制的说法，不正确的是？",
+    "question_body": {
+      "options": [
+        {"label": "A", "content": "半保留复制"},
+        {"label": "B", "content": "需要解旋酶"},
+        {"label": "C", "content": "只在细胞核中进行"},
+        {"label": "D", "content": "需要 DNA 聚合酶"}
+      ]
+    },
+    "expected_knowledge_points": ["DNA复制"],
+    "acceptable_knowledge_points": ["分子生物学基础"],
+    "negative_knowledge_points": ["蛋白质合成"],
+    "mock_results": [
+      {
+        "id": "chunk-012",
+        "knowledge_id": "kp-012",
+        "knowledge_title": "DNA复制",
+        "content": "DNA复制是半保留复制，需要解旋酶、DNA聚合酶等多种酶参与。",
+        "score": 0.92
+      },
+      {
+        "id": "chunk-013",
+        "knowledge_id": "kp-013",
+        "knowledge_title": "蛋白质合成",
+        "content": "蛋白质合成包括转录和翻译两个过程。",
+        "score": 0.45
+      }
+    ]
+  }
+]
