@@ -198,9 +198,7 @@ func (s *QuestionService) syncQuestionStatusFromStage(
 		q.AutoTaggingStatus = statusValue
 	case "syllabus_checking":
 		q.SyllabusCheckingStatus = statusValue
-		if syllabusScopeResult != "" {
-			q.SyllabusScopeResult = syllabusScopeResult
-		}
+		q.SyllabusScopeResult = syllabusScopeResult
 	}
 }
 

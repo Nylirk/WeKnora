@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -354,5 +355,161 @@ func TestAutoTagging_Paused_Preserved(t *testing.T) {
 	}
 	if q.AutoTaggingStatus != "paused" {
 		t.Errorf("expected auto_tagging_status=paused when KB missing, got %s", q.AutoTaggingStatus)
+	}
+}
+
+// Test 12: Reprocess overwrites existing auto_tagging candidates.
+func TestRunKnowledgePointMatching_OverwritesExistingAutoTagging(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "new-chunk", Content: "New knowledge", KnowledgeID: "know-new", KnowledgeTitle: "新知识点", Score: 0.92},
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+
+	q := makeTestQuestion("q12")
+	// Pre-populate with old auto_tagging data.
+	oldMeta := map[string]any{
+		"auto_processing": map[string]any{
+			"auto_tagging": map[string]any{
+				"status": "matched",
+				"candidates": []any{
+					map[string]any{"knowledge_point": "旧知识点", "confidence": 0.11, "score": 0.11},
+				},
+			},
+		},
+	}
+	oldBytes, _ := json.Marshal(oldMeta)
+	q.ExtractionMetadata = types.JSON(oldBytes)
+	q.AutoTaggingStatus = "matched"
+
+	err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var newMeta map[string]any
+	json.Unmarshal(q.ExtractionMetadata, &newMeta)
+	autoProc := newMeta["auto_processing"].(map[string]any)
+	tagging := autoProc["auto_tagging"].(map[string]any)
+	candidates := tagging["candidates"].([]any)
+	if len(candidates) == 0 {
+		t.Fatal("expected new candidates after overwrite")
+	}
+	c0 := candidates[0].(map[string]any)
+	if c0["knowledge_point"] != "新知识点" {
+		t.Errorf("expected 新知识点, got %v", c0["knowledge_point"])
+	}
+	if q.AutoTaggingStatus != "matched" {
+		t.Errorf("expected auto_tagging_status=matched, got %s", q.AutoTaggingStatus)
+	}
+}
+
+// Test 13: Reprocess overwrites existing syllabus_checking result.
+func TestRunSyllabusFiltering_OverwritesExistingSyllabusChecking(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "syl-new", Content: "out of scope content", KnowledgeID: "syl-new", Score: 0.20},
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{SyllabusKnowledgeBaseID: "syl-kb"}
+
+	q := makeTestQuestion("q13")
+	oldMeta := map[string]any{
+		"auto_processing": map[string]any{
+			"syllabus_checking": map[string]any{
+				"status": "completed", "result": "in_scope", "confidence": 0.91, "score": 0.91,
+			},
+		},
+	}
+	oldBytes, _ := json.Marshal(oldMeta)
+	q.ExtractionMetadata = types.JSON(oldBytes)
+	q.SyllabusCheckingStatus = "completed"
+	q.SyllabusScopeResult = "in_scope"
+
+	err := svc.RunSyllabusFiltering(context.Background(), cfg, []*types.Question{q})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var newMeta map[string]any
+	json.Unmarshal(q.ExtractionMetadata, &newMeta)
+	syl := newMeta["auto_processing"].(map[string]any)["syllabus_checking"].(map[string]any)
+	if syl["result"] != "out_of_scope" {
+		t.Errorf("expected out_of_scope, got %v", syl["result"])
+	}
+	if q.SyllabusScopeResult != "out_of_scope" {
+		t.Errorf("expected SyllabusScopeResult=out_of_scope, got %s", q.SyllabusScopeResult)
+	}
+	if q.SyllabusCheckingStatus != "completed" {
+		t.Errorf("expected SyllabusCheckingStatus=completed, got %s", q.SyllabusCheckingStatus)
+	}
+}
+
+// Test 14: Paused clears old SyllabusScopeResult.
+func TestRunSyllabusFiltering_PausedClearsOldScopeResult(t *testing.T) {
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(nil, nil)}
+	cfg := &types.QuestionBankConfig{} // No syllabus KB → paused
+
+	q := makeTestQuestion("q14")
+	q.SyllabusScopeResult = "in_scope" // stale from previous run
+
+	err := svc.RunSyllabusFiltering(context.Background(), cfg, []*types.Question{q})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if q.SyllabusCheckingStatus != "paused" {
+		t.Errorf("expected SyllabusCheckingStatus=paused, got %s", q.SyllabusCheckingStatus)
+	}
+	if q.SyllabusScopeResult != "" {
+		t.Errorf("expected SyllabusScopeResult to be cleared, got %s", q.SyllabusScopeResult)
+	}
+}
+
+// Test 15: Failed clears old SyllabusScopeResult.
+func TestRunSyllabusFiltering_FailedClearsOldScopeResult(t *testing.T) {
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(nil, fmt.Errorf("search error"))}
+	cfg := &types.QuestionBankConfig{SyllabusKnowledgeBaseID: "syl-kb"}
+
+	q := makeTestQuestion("q15")
+	q.SyllabusScopeResult = "in_scope"
+
+	err := svc.RunSyllabusFiltering(context.Background(), cfg, []*types.Question{q})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if q.SyllabusCheckingStatus != "failed" {
+		t.Errorf("expected SyllabusCheckingStatus=failed, got %s", q.SyllabusCheckingStatus)
+	}
+	if q.SyllabusScopeResult != "" {
+		t.Errorf("expected SyllabusScopeResult to be cleared on failed, got %s", q.SyllabusScopeResult)
+	}
+}
+
+// Test 16: Knowledge points field never touched by auto_tagging.
+func TestAutoTagging_NeverTouchesKnowledgePoints(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c16", Content: "x", KnowledgeID: "k16", KnowledgeTitle: "KP", Score: 0.90},
+	}
+	repo := &matchingTestRepo{}
+	svc := &QuestionService{repository: repo, knowledgeBaseSvc: makeMockKBService(results, nil)}
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+
+	q := makeTestQuestion("q16")
+	q.KnowledgePoints = types.JSON([]byte(`["人工知识点"]`))
+
+	err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var kps []string
+	json.Unmarshal(q.KnowledgePoints, &kps)
+	if len(kps) != 1 || kps[0] != "人工知识点" {
+		t.Errorf("knowledge_points must not be modified by auto_tagging, got %v", kps)
 	}
 }
