@@ -969,7 +969,97 @@ func (s *QuestionService) GetQuestionSetProcessingStatus(ctx context.Context, kb
 	if !cfg.AutoSyllabusCheckEnabled() {
 		status.SkippedSyllabusReason = "未配置考纲，自动考纲筛选已禁用"
 	}
+	status.Stages = computeProcessingStages(qs.ProcessingStage, cfg)
 	return status, nil
+}
+
+// computeProcessingStages derives per-stage status from the current processing stage
+// and KB config. It is deterministic and safe for polling.
+func computeProcessingStages(
+	currentStage types.QuestionSetProcessingStage,
+	cfg *types.QuestionBankConfig,
+) []types.ProcessingStageDetail {
+	type stageDef struct {
+		key   string
+		label string
+	}
+	pipeline := []stageDef{
+		{key: "draft_imported", label: "导入完成"},
+		{key: "indexing", label: "索引处理"},
+		{key: "auto_tagging", label: "知识点关联"},
+		{key: "syllabus_checking", label: "考纲筛选"},
+		{key: "ready_for_review", label: "待人工审核"},
+	}
+
+	currentKey := string(currentStage)
+	currentIdx := -1
+	for i, s := range pipeline {
+		if s.key == currentKey {
+			currentIdx = i
+			break
+		}
+	}
+
+	stages := make([]types.ProcessingStageDetail, len(pipeline))
+	for i, s := range pipeline {
+		stages[i] = types.ProcessingStageDetail{
+			Key:    s.key,
+			Label:  s.label,
+			Status: "pending",
+		}
+		if currentIdx < 0 {
+			continue
+		}
+		// Stages before the current one are completed.
+		if i < currentIdx {
+			stages[i].Status = "completed"
+		} else if i == currentIdx {
+			switch currentKey {
+			case "failed":
+				// Mark prior stages as completed; this stage as failed.
+				stages[i].Status = "failed"
+			case "ready_for_review":
+				stages[i].Status = "completed"
+			case "":
+				stages[i].Status = "pending"
+			default:
+				stages[i].Status = "running"
+			}
+		}
+	}
+
+	// When the overall status is "failed" we don't know exactly which pipeline
+	// stage failed; assume the last stage before the failure marker.
+	if currentKey == "failed" && currentIdx < len(stages) {
+		// Push the failure onto the last non-completed stage if any.
+		lastCompleted := -1
+		for i := range stages {
+			if stages[i].Status == "completed" {
+				lastCompleted = i
+			}
+		}
+		failIdx := lastCompleted + 1
+		if failIdx < len(stages) {
+			for i := failIdx + 1; i < len(stages); i++ {
+				stages[i].Status = "pending"
+			}
+			stages[failIdx].Status = "failed"
+		}
+	}
+
+	// Override paused stages from KB config (only when not currently running).
+	autoTaggingIdx := 2
+	syllabusIdx := 3
+	if !cfg.AutoKnowledgePointEnabled() && stages[autoTaggingIdx].Status != "running" {
+		stages[autoTaggingIdx].Status = "paused"
+		stages[autoTaggingIdx].Reason = "未关联知识点知识库"
+	}
+	if !cfg.AutoSyllabusCheckEnabled() && stages[syllabusIdx].Status != "running" {
+		stages[syllabusIdx].Status = "paused"
+		stages[syllabusIdx].Reason = "未配置考纲"
+	}
+
+	return stages
 }
 
 // startProcessingPipeline kicks off the background processing pipeline for imported questions.

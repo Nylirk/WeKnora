@@ -120,7 +120,6 @@
         :set-id="selectedSetId"
         :set-name="selectedSet?.name"
         :knowledge-base-id="knowledgeBaseId"
-        @generated="loadSets"
         @changed="handleDetailChanged"
       />
       <div v-else-if="!loadingSets" class="question-bank-empty">

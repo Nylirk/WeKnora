@@ -91,9 +91,13 @@ test('renders the question category sidebar with document-category style markup'
   assert.equal(bankSource.includes('class="set-meta"'), false)
 })
 
-test('top-level import menu offers single and disabled batch import only', () => {
+test('top-level import menu offers manual, file, and disabled batch import', () => {
+  assert.equal(source.includes('openManualImport'), true)
+  assert.equal(source.includes('手动导入'), true)
+  assert.equal(source.includes('手动创建一道题目'), true)
   assert.equal(source.includes('openSingleImport'), true)
-  assert.equal(source.includes('单个导入'), true)
+  assert.equal(source.includes('文件导入'), true)
+  assert.equal(source.includes('导入一个文件并进入题目审核工作台'), true)
   assert.equal(source.includes('批量导入'), true)
   assert.equal(source.includes('即将支持'), true)
   assert.equal(source.includes('openJsonImport'), false)
@@ -436,4 +440,180 @@ test('jsonQuestionImport does not silently drop malformed JSONL lines', () => {
   const adapterSource = readFileSync(new URL('../../utils/jsonQuestionImport.ts', import.meta.url), 'utf8')
   assert.equal(adapterSource.includes('JSONL_PARSE_ERROR'), true, 'must emit error for unparseable lines')
   assert.equal(adapterSource.includes('_jsonl_parse_error'), true, 'must track parse errors')
+})
+
+// ── Processing button state & drawer ──
+
+test('processing helper functions are imported in QuestionSetDetail', () => {
+  assert.equal(source.includes('resolveProcessingStages'), true, 'must import resolveProcessingStages')
+  assert.equal(source.includes('resolveProcessingButtonState'), true, 'must import resolveProcessingButtonState')
+  assert.equal(source.includes('PROCESSING_STAGE_STATUS_LABELS'), true, 'must import PROCESSING_STAGE_STATUS_LABELS')
+  assert.equal(source.includes('PROCESSING_BUTTON_LABELS'), true, 'must import PROCESSING_BUTTON_LABELS')
+})
+
+test('processing button is conditionally rendered based on state', () => {
+  // Button must check state before rendering
+  assert.equal(source.includes("processingButton.state !== 'hidden'"), true, 'must hide button when state is hidden')
+  // Running and paused states both show t-loading spinner in icon slot
+  assert.equal(source.includes("processingButton.state === 'running' || processingButton.state === 'paused'"), true, 'must use t-loading for both running and paused')
+  // Click opens drawer
+  assert.equal(source.includes('processingDrawerVisible = true'), true, 'must open drawer on click')
+  // Button is round shape with tooltip
+  assert.equal(source.includes('shape="round"'), true, 'must use round shape for pill button style')
+  assert.equal(source.includes('processingButtonTooltip'), true, 'must use tooltip for status text')
+  // Button must NOT use t-button loading prop (that would disable click)
+  assert.equal(source.includes(':loading="processingButton.state ==='), false, 'must not use t-button loading prop')
+})
+
+test('processing drawer renders waterfall timeline matching knowledge timeline structure', () => {
+  assert.equal(source.includes('processingDrawerVisible'), true, 'must have drawer visibility state')
+  assert.equal(source.includes('<t-drawer'), true, 'must have t-drawer component')
+  // Secondary drawer class (wider, no header prop)
+  assert.equal(source.includes('kp-secondary-drawer'), true, 'must use kp-secondary-drawer class')
+  // Waterfall shell/head/body structure
+  assert.equal(source.includes('kp-shell'), true, 'must use kp-shell')
+  assert.equal(source.includes('kp-head'), true, 'must use kp-head')
+  assert.equal(source.includes('kp-head-toolbar'), true, 'must use kp-head-toolbar')
+  assert.equal(source.includes('kp-head-doc-title'), true, 'must use kp-head-doc-title')
+  assert.equal(source.includes('kp-head-status-tag'), true, 'must use kp-head-status-tag')
+  assert.equal(source.includes('kp-head-meta'), true, 'must use kp-head-meta')
+  assert.equal(source.includes('处理流水线'), true, 'meta must include 处理流水线')
+  // Body and ruler
+  assert.equal(source.includes('kp-body'), true, 'must use kp-body')
+  assert.equal(source.includes('kp-ruler'), true, 'must use kp-ruler')
+  assert.equal(source.includes('kp-ruler-track'), true, 'must use kp-ruler-track')
+  assert.equal(source.includes('kp-scroll'), true, 'must use kp-scroll')
+  // Rows and cells
+  assert.equal(source.includes('kp-rows'), true, 'must use kp-rows')
+  assert.equal(source.includes('kp-cell-name'), true, 'must use kp-cell-name')
+  assert.equal(source.includes('kp-cell-dur'), true, 'must use kp-cell-dur')
+  assert.equal(source.includes('kp-cell-bar'), true, 'must use kp-cell-bar')
+  assert.equal(source.includes('kp-bar'), true, 'must use kp-bar')
+  assert.equal(source.includes('kp-status-dot'), true, 'must use kp-status-dot')
+  assert.equal(source.includes('kp-name-text'), true, 'must use kp-name-text')
+  assert.equal(source.includes('kp-name-kind'), true, 'must use kp-name-kind')
+  // Old stage list classes removed
+  assert.equal(source.includes('kp-stage-list'), false, 'old kp-stage-list must be removed')
+  assert.equal(source.includes('kp-stage-row'), false, 'old kp-stage-row must be removed')
+  assert.equal(source.includes('processing-drawer-hint'), false, 'old processing-drawer-hint must be removed')
+  // Detail panel for row click
+  assert.equal(source.includes('kp-detail'), true, 'must use kp-detail panel')
+  assert.equal(source.includes('kp-detail-head'), true, 'must use kp-detail-head')
+  assert.equal(source.includes('kp-tabs'), true, 'must use kp-tabs')
+  assert.equal(source.includes('概览'), true, 'must have 概览 tab')
+  assert.equal(source.includes('输入'), true, 'must have 输入 tab')
+  assert.equal(source.includes('输出'), true, 'must have 输出 tab')
+  assert.equal(source.includes('原始 JSON'), true, 'must have 原始 JSON tab')
+  assert.equal(source.includes('kp-body-with-detail'), true, 'must use kp-body-with-detail')
+  // kp-name-reason removed — reason only in detail panel
+  assert.equal(source.includes('kp-name-reason'), false, 'kp-name-reason must be removed')
+  // Status column replaces old kind/type column
+  assert.equal(source.includes('function qpRowStatusLabel'), true, 'must use qpRowStatusLabel')
+  assert.equal(source.includes('function qpDurationLabel'), true, 'must use qpDurationLabel')
+  assert.equal(source.includes('qp-row-status'), true, 'must use qp-row-status')
+  assert.equal(source.includes('kp-cell-status'), true, 'must use kp-cell-status')
+  assert.equal(source.includes('qp-status-paused'), true, 'must have paused status color class')
+  assert.equal(source.includes("return '部分暂停'"), true, 'qpRowStatusLabel must include 部分暂停')
+  assert.equal(source.includes("return '进行中'"), true, 'qpRowStatusLabel must include 进行中')
+  // Old kind/type column and related functions removed
+  assert.equal(source.includes('qpRowKindLabel'), false, 'qpRowKindLabel must be removed')
+  assert.equal(source.includes('qpRootStatusLabel'), false, 'qpRootStatusLabel must be removed')
+  assert.equal(source.includes("row.kind.toUpperCase()"), false, 'must not use row.kind.toUpperCase')
+  // Duration column never shows "暂停"
+  assert.equal(source.includes('qp-paused-duration'), false, 'qp-paused-duration must be removed')
+  // No fake times
+  assert.equal(source.includes('const offset = i * 500'), false, 'must not use fake offset times')
+  assert.equal(source.includes('dur = 500'), false, 'must not use fake duration')
+  // Paused loading is orange
+  assert.equal(source.includes('qp-loading-warning'), true, 'must have qp-loading-warning class')
+  // Reason shown in detail panel, not on waterfall row
+  assert.equal(source.includes('selectedProcessingRow.reason'), true, 'reason must be in detail panel')
+  // Paused icon is NOT pause-circle
+  assert.equal(source.includes('pause-circle-filled'), false, 'must not use pause-circle-filled')
+  assert.equal(source.includes('pause-circle'), false, 'must not use pause-circle')
+})
+
+test('processing drawer header shows status tag for paused and ready_for_review', () => {
+  // Header status tag computed values
+  assert.equal(source.includes("'部分暂停'"), true, 'header status must include 部分暂停 for paused')
+  assert.equal(source.includes("'待人工审核'"), true, 'ready_for_review header status must show 待人工审核')
+  // Old banner hint removed (waterfall shows reason per row instead)
+  assert.equal(source.includes('部分阶段因配置缺失已暂停'), false, 'old alert banner text must be removed')
+})
+
+test('processing resolve functions implement correct priority and 4-stage pipeline', () => {
+  const apiSource = readFileSync(new URL('../../api/question.ts', import.meta.url), 'utf8')
+
+  // resolveProcessingStages handles paused stages from config
+  assert.equal(apiSource.includes("status === 'paused'"), true, 'must define paused status')
+  assert.equal(apiSource.includes("status === 'failed'"), true, 'must define failed status')
+  assert.equal(apiSource.includes("status === 'running'"), true, 'must define running status')
+
+  // resolveProcessingButtonState implements priority order
+  const buttonFn = sourceSection(apiSource, 'export function resolveProcessingButtonState', 'export function')
+  assert.equal(buttonFn.includes("stage === 'failed'"), true, 'failed check must have highest priority')
+  assert.equal(buttonFn.includes("status === 'running'"), true, 'running check must precede paused')
+  assert.equal(buttonFn.includes("status === 'paused'"), true, 'paused check must precede ready_for_review')
+
+  // STAGE_ORDER has 4 items, no ready_for_review
+  assert.equal(apiSource.includes("STAGE_ORDER = ['draft_imported', 'indexing', 'auto_tagging', 'syllabus_checking']"), true, 'STAGE_ORDER must have 4 stages without ready_for_review')
+  assert.equal(apiSource.includes("ready_for_review']"), false, 'STAGE_ORDER must not include ready_for_review')
+
+  // Stages derivation checks both enabled flags
+  assert.equal(apiSource.includes('auto_tagging_enabled'), true, 'must check auto_tagging_enabled')
+  assert.equal(apiSource.includes('syllabus_check_enabled'), true, 'must check syllabus_check_enabled')
+  assert.equal(apiSource.includes('skipped_auto_tagging_reason'), true, 'must use skipped_auto_tagging_reason')
+  assert.equal(apiSource.includes('skipped_syllabus_reason'), true, 'must use skipped_syllabus_reason')
+})
+
+test('processing button uses dynamic theme and icon per state', () => {
+  // Theme mapping includes all states
+  assert.equal(source.includes("failed: 'danger'"), true, 'failed state must use danger theme')
+  assert.equal(source.includes("paused: 'warning'"), true, 'paused state must use warning theme')
+  assert.equal(source.includes("running: 'primary'"), true, 'running state must use primary theme')
+  assert.equal(source.includes("ready_for_review: 'success'"), true, 'ready_for_review must use success theme')
+
+  // Icon mapping no longer uses pause-circle for paused
+  assert.equal(source.includes("pause-circle"), false, 'must not use pause-circle icon anywhere')
+  assert.equal(source.includes("failed: 'close-circle'"), true, 'failed must use close-circle icon')
+  // Paused and running both use t-loading via template condition
+  assert.equal(source.includes("processingButton.state === 'running' || processingButton.state === 'paused'"), true, 'paused must also show t-loading')
+})
+
+test('processing button tooltip shows progress count when running', () => {
+  // Running state shows X/Y progress in tooltip
+  assert.equal(source.includes('btn.completedCount'), true, 'must show completedCount')
+  assert.equal(source.includes('btn.totalCount'), true, 'must show totalCount')
+  assert.equal(source.includes("btn.state === 'running'"), true, 'must conditionally show progress count')
+  // Tooltip content computed
+  assert.equal(source.includes('processingButtonTooltip'), true, 'must have tooltip property')
+  assert.equal(source.includes('题目处理中'), true, 'running tooltip must mention processing')
+})
+
+test('polling stops at terminal stages but button remains visible', () => {
+  // Polling still stops at ready_for_review / failed / ''
+  assert.equal(source.includes("stage === 'ready_for_review' || stage === 'failed' || stage === ''"), true, 'must stop polling at terminal stages')
+  // But the old banner is removed (replaced by button + drawer)
+  assert.equal(source.includes('processing-banner'), false, 'old processing-banner class must be removed')
+  assert.equal(source.includes('stageLabel(processingStatus.stage)'), false, 'old stageLabel call must be removed')
+})
+
+test('removed standalone add-question, generate, export controls; drawer is waterfall', () => {
+  // No standalone "新增题目" button
+  assert.equal(source.includes('新增题目'), false, 'standalone add-question button must be removed')
+  // No generate dialog
+  assert.equal(source.includes('QuestionGenerateDialog'), false, 'QuestionGenerateDialog must not be referenced')
+  // No export dialog
+  assert.equal(source.includes('exportToEvaluationDataset'), false, 'exportToEvaluationDataset must not be referenced')
+  assert.equal(source.includes('导出评测集'), false, 'export evaluation dataset must not be referenced')
+  // Import menu is the only primary action
+  assert.equal(source.includes('openManualImport'), true, 'manual import must be in the import menu')
+  // Drawer is waterfall, not old card list
+  assert.equal(source.includes('kp-shell'), true, 'drawer must use waterfall kp-shell')
+  assert.equal(source.includes('kp-stage-list'), false, 'old kp-stage-list must be removed')
+  assert.equal(source.includes('processing-stage-item'), false, 'old processing-stage-item must be removed')
+  assert.equal(source.includes('pause-circle'), false, 'pause-circle icon must not be used')
+  assert.equal(source.includes('processing-drawer-hint'), false, 'old hint alert must be removed')
+  // Paused label remains "部分暂停"
+  assert.equal(questionApiSource.includes("paused: '部分暂停'"), true, 'paused button label must remain 部分暂停')
 })
