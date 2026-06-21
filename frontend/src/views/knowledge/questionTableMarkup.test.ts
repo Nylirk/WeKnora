@@ -617,3 +617,39 @@ test('removed standalone add-question, generate, export controls; drawer is wate
   // Paused label remains "部分暂停"
   assert.equal(questionApiSource.includes("paused: '部分暂停'"), true, 'paused button label must remain 部分暂停')
 })
+
+// ── Processing reprocess action ──
+
+test('reprocessQuestionSet is exported from question API', () => {
+  assert.equal(questionApiSource.includes('reprocessQuestionSet'), true, 'must export reprocessQuestionSet')
+  assert.equal(questionApiSource.includes('QuestionProcessingReprocessScope'), true, 'must export QuestionProcessingReprocessScope')
+})
+
+test('processing drawer contains reprocess button and scope menu items', () => {
+  assert.equal(source.includes('重新处理'), true, 'must contain 重新处理 button')
+  assert.equal(source.includes('重新处理全部'), true, 'must contain 重新处理全部 menu item')
+  assert.equal(source.includes('重新匹配知识点'), true, 'must contain 重新匹配知识点 menu item')
+  assert.equal(source.includes('重新筛选考纲'), true, 'must contain 重新筛选考纲 menu item')
+  assert.equal(source.includes('triggerReprocess'), true, 'must contain triggerReprocess function')
+  assert.equal(source.includes('reprocessQuestionSet'), true, 'must call reprocessQuestionSet')
+  assert.equal(source.includes('reprocessMenuVisible'), true, 'must have reprocessMenuVisible ref')
+  assert.equal(source.includes('reprocessLoading'), true, 'must have reprocessLoading ref')
+})
+
+test('reprocess button is disabled when processing is running', () => {
+  assert.equal(source.includes("processingButton.state === 'running'"), true, 'must check running state for disabled')
+})
+
+test('reprocess action does not introduce direct status transitions', () => {
+  // triggerReprocess must not call updateQuestionStatus directly
+  const acceptSection = sourceSection(
+    source,
+    'function triggerReprocess',
+    '// ── End waterfall timeline',
+  )
+  assert.equal(acceptSection.includes("updateQuestionStatus"), false, 'reprocess must not call updateQuestionStatus')
+  assert.equal(acceptSection.includes("'reviewed'"), false, 'reprocess must not set reviewed status')
+  assert.equal(acceptSection.includes("'rejected'"), false, 'reprocess must not set rejected status')
+  // reprocessQuestionSet API endpoint uses POST to /processing/reprocess (not /status)
+  assert.equal(questionApiSource.includes('/processing/reprocess'), true, 'reprocess must use /processing/reprocess endpoint')
+})

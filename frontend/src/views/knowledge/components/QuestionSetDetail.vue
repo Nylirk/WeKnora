@@ -76,6 +76,35 @@
                   {{ qpHeaderStatusText }}
                 </t-tag>
                 <div class="kp-head-actions">
+                  <t-popup
+                    v-model:visible="reprocessMenuVisible"
+                    trigger="click"
+                    placement="bottom-right"
+                    :disabled="processingButton.state === 'running'"
+                  >
+                    <t-button
+                      size="small"
+                      variant="outline"
+                      theme="default"
+                      :disabled="processingButton.state === 'running'"
+                      :loading="reprocessLoading"
+                    >
+                      重新处理
+                    </t-button>
+                    <template #content>
+                      <div class="reprocess-menu">
+                        <button type="button" class="reprocess-item" @click="triggerReprocess('all')">
+                          重新处理全部
+                        </button>
+                        <button type="button" class="reprocess-item" @click="triggerReprocess('auto_tagging')">
+                          重新匹配知识点
+                        </button>
+                        <button type="button" class="reprocess-item" @click="triggerReprocess('syllabus_checking')">
+                          重新筛选考纲
+                        </button>
+                      </div>
+                    </template>
+                  </t-popup>
                   <button type="button" class="kp-icon-btn" :title="'关闭'" @click="processingDrawerVisible = false">
                     <t-icon name="close" size="16px" />
                   </button>
@@ -404,11 +433,13 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import {
   getQuestionSet, listQuestions, deleteQuestion as apiDeleteQuestion,
   updateQuestionStatus, getQuestionSetProcessingStatus,
+  reprocessQuestionSet,
   resolveProcessingStages, resolveProcessingButtonState,
   PROCESSING_STAGE_STATUS_LABELS, PROCESSING_BUTTON_LABELS,
   type Question, type QuestionListFilter, type QuestionType,
   type QuestionSetProcessingStatus,
   type ProcessingButtonState,
+  type QuestionProcessingReprocessScope,
 } from '@/api/question'
 import type { BlockPreviewSummary, ImportBlock } from '@/api/question_block'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
@@ -427,6 +458,8 @@ const importUI = useImportUIStore()
 const processingStatus = ref<QuestionSetProcessingStatus | null>(null)
 const processingDrawerVisible = ref(false)
 let processingPollTimer: ReturnType<typeof setInterval> | null = null
+const reprocessMenuVisible = ref(false)
+const reprocessLoading = ref(false)
 
 // Derived processing state
 const processingStages = computed(() => {
@@ -668,6 +701,21 @@ function stopProcessingPolling() {
   if (processingPollTimer !== null) {
     clearInterval(processingPollTimer)
     processingPollTimer = null
+  }
+}
+
+async function triggerReprocess(scope: QuestionProcessingReprocessScope) {
+  reprocessMenuVisible.value = false
+  reprocessLoading.value = true
+  try {
+    await reprocessQuestionSet(props.knowledgeBaseId, props.setId, scope)
+    MessagePlugin.success('重新处理已启动')
+    fetchProcessingStatus()
+    startProcessingPolling()
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || '重新处理失败')
+  } finally {
+    reprocessLoading.value = false
   }
 }
 
@@ -1090,6 +1138,28 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .kp-icon-btn:hover {
   background: var(--td-bg-color-secondarycontainer);
   color: var(--td-text-color-primary);
+}
+.reprocess-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 4px;
+}
+.reprocess-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--td-text-color-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 150ms ease;
+}
+.reprocess-item:hover {
+  background: var(--td-bg-color-secondarycontainer);
 }
 .kp-body {
   flex: 1 1 auto;
