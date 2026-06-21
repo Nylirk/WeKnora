@@ -164,6 +164,14 @@ const (
 	QuestionSetProcessingStageFailed           QuestionSetProcessingStage = "failed"
 )
 
+// ProcessingStageDetail describes a single stage in the question set processing pipeline.
+type ProcessingStageDetail struct {
+	Key    string `json:"key"`
+	Label  string `json:"label"`
+	Status string `json:"status"` // completed, running, paused, failed, pending
+	Reason string `json:"reason,omitempty"`
+}
+
 // QuestionSetProcessingStatus is the API response for question set processing status.
 type QuestionSetProcessingStatus struct {
 	Stage                    QuestionSetProcessingStage `json:"stage"`
@@ -172,6 +180,7 @@ type QuestionSetProcessingStatus struct {
 	SkippedSyllabusReason    string                     `json:"skipped_syllabus_reason,omitempty"`
 	AutoTaggingEnabled       bool                       `json:"auto_tagging_enabled"`
 	SyllabusCheckEnabled     bool                       `json:"syllabus_check_enabled"`
+	Stages                   []ProcessingStageDetail    `json:"stages"`
 }
 
 type CreateQuestionSetRequest struct {

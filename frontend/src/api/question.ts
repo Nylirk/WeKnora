@@ -17,6 +17,13 @@ export interface ShortAnswerAnswer { keywords?: string[]; explanation?: string }
 
 export type QuestionSetProcessingStage = '' | 'draft_imported' | 'indexing' | 'auto_tagging' | 'syllabus_checking' | 'ready_for_review' | 'failed'
 
+export interface ProcessingStageDetail {
+  key: string
+  label: string
+  status: 'completed' | 'running' | 'paused' | 'failed' | 'pending'
+  reason?: string
+}
+
 export interface QuestionSetProcessingStatus {
   stage: QuestionSetProcessingStage
   error_message: string
@@ -24,6 +31,133 @@ export interface QuestionSetProcessingStatus {
   skipped_syllabus_reason?: string
   auto_tagging_enabled: boolean
   syllabus_check_enabled: boolean
+  stages?: ProcessingStageDetail[]
+}
+
+// ProcessingButtonState models the toolbar button's visual/behavioural mode.
+export type ProcessingButtonState = 'hidden' | 'running' | 'paused' | 'failed' | 'ready_for_review' | 'completed'
+
+export const PROCESSING_STAGE_LABELS: Record<string, string> = {
+  draft_imported: '导入完成',
+  indexing: '索引处理',
+  auto_tagging: '知识点关联',
+  syllabus_checking: '考纲筛选',
+  ready_for_review: '待人工审核',
+}
+
+export const PROCESSING_STAGE_STATUS_LABELS: Record<string, string> = {
+  completed: '已完成',
+  running: '进行中',
+  paused: '暂停',
+  failed: '失败',
+  pending: '待处理',
+}
+
+export const PROCESSING_BUTTON_LABELS: Record<ProcessingButtonState, string> = {
+  hidden: '',
+  running: '处理中',
+  paused: '部分暂停',
+  failed: '处理失败',
+  ready_for_review: '待人工审核',
+  completed: '处理完成',
+}
+
+const STAGE_ORDER = ['draft_imported', 'indexing', 'auto_tagging', 'syllabus_checking', 'ready_for_review']
+
+/**
+ * Derive per-stage status from the API response.
+ * Prefer backend-computed stages when available; fall back to local derivation.
+ */
+export function resolveProcessingStages(status: QuestionSetProcessingStatus): ProcessingStageDetail[] {
+  // When backend provides structured stages, use them directly.
+  if (status.stages && status.stages.length > 0) {
+    return status.stages
+  }
+
+  // Fallback: derive from current stage + config booleans.
+  const currentStage = status.stage
+  const stages: ProcessingStageDetail[] = STAGE_ORDER.map(key => ({
+    key,
+    label: PROCESSING_STAGE_LABELS[key] || key,
+    status: 'pending' as const,
+  }))
+
+  if (!currentStage) return stages
+
+  const currentIdx = STAGE_ORDER.indexOf(currentStage)
+  const isFailed = currentStage === 'failed'
+
+  for (let i = 0; i < stages.length; i++) {
+    if (i < currentIdx) {
+      stages[i].status = 'completed'
+    } else if (i === currentIdx && !isFailed) {
+      stages[i].status = currentStage === 'ready_for_review' ? 'completed' : 'running'
+    }
+  }
+
+  if (isFailed) {
+    // Mark prior stages completed and the next expected stage as failed.
+    for (let i = 0; i < stages.length; i++) {
+      if (stages[i].status === 'pending') {
+        stages[i].status = 'failed'
+        break
+      }
+    }
+  }
+
+  // Paused stages from missing config (override only when not running).
+  const autoIdx = stages.findIndex(s => s.key === 'auto_tagging')
+  const syllabusIdx = stages.findIndex(s => s.key === 'syllabus_checking')
+  if (!status.auto_tagging_enabled && status.skipped_auto_tagging_reason && autoIdx >= 0 && stages[autoIdx].status !== 'running') {
+    stages[autoIdx].status = 'paused'
+    stages[autoIdx].reason = status.skipped_auto_tagging_reason
+  }
+  if (!status.syllabus_check_enabled && status.skipped_syllabus_reason && syllabusIdx >= 0 && stages[syllabusIdx].status !== 'running') {
+    stages[syllabusIdx].status = 'paused'
+    stages[syllabusIdx].reason = status.skipped_syllabus_reason
+  }
+
+  return stages
+}
+
+/**
+ * Resolve the toolbar button state from the processing status.
+ * Priority: failed > running > paused > ready_for_review/completed > hidden
+ */
+export function resolveProcessingButtonState(status: QuestionSetProcessingStatus | null): {
+  state: ProcessingButtonState
+  completedCount: number
+  totalCount: number
+} {
+  if (!status || !status.stage) {
+    return { state: 'hidden', completedCount: 0, totalCount: 0 }
+  }
+
+  const stages = resolveProcessingStages(status)
+  const completedCount = stages.filter(s => s.status === 'completed').length
+  const totalCount = stages.length
+
+  // 1. failed – any stage failed or overall stage is failed
+  if (status.stage === 'failed' || stages.some(s => s.status === 'failed')) {
+    return { state: 'failed', completedCount, totalCount }
+  }
+
+  // 2. running – any stage currently running
+  if (stages.some(s => s.status === 'running')) {
+    return { state: 'running', completedCount, totalCount }
+  }
+
+  // 3. paused – any stage paused (config missing)
+  if (stages.some(s => s.status === 'paused')) {
+    return { state: 'paused', completedCount, totalCount }
+  }
+
+  // 4. ready_for_review
+  if (status.stage === 'ready_for_review') {
+    return { state: 'ready_for_review', completedCount, totalCount }
+  }
+
+  return { state: 'completed', completedCount, totalCount }
 }
 
 export interface QuestionSet {
