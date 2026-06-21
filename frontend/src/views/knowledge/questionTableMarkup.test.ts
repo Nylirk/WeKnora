@@ -507,17 +507,20 @@ test('processing drawer renders waterfall timeline matching knowledge timeline s
   assert.equal(source.includes('kp-body-with-detail'), true, 'must use kp-body-with-detail')
   // kp-name-reason removed — reason only in detail panel
   assert.equal(source.includes('kp-name-reason'), false, 'kp-name-reason must be removed')
-  // ROOT row shows aggregate status, not "ROOT"
-  assert.equal(source.includes('qpRowKindLabel'), true, 'must use qpRowKindLabel')
-  assert.equal(source.includes('qpRootStatusLabel'), true, 'must use qpRootStatusLabel')
-  assert.equal(source.includes("return '部分暂停'"), true, 'qpRootStatusLabel must include 部分暂停')
-  assert.equal(source.includes("return '进行中'"), true, 'qpRootStatusLabel must include 进行中')
-  assert.equal(source.includes("return '待人工审核'"), true, 'qpRootStatusLabel must include 待人工审核')
-  // Paused stage duration shows "暂停"; ROOT paused does NOT show "暂停"
-  assert.equal(source.includes('qp-paused-duration'), true, 'must use qp-paused-duration')
-  assert.equal(source.includes("row.isStage && row.status === 'paused'"), true, 'must guard paused dur with isStage check')
-  assert.equal(source.includes('function qpDurationLabel'), true, 'must use qpDurationLabel helper')
-  assert.equal(source.includes("formattedDur: processingButton.value.state === 'paused' ? '暂停'"), false, 'ROOT paused must not show 暂停 in duration')
+  // Status column replaces old kind/type column
+  assert.equal(source.includes('function qpRowStatusLabel'), true, 'must use qpRowStatusLabel')
+  assert.equal(source.includes('function qpDurationLabel'), true, 'must use qpDurationLabel')
+  assert.equal(source.includes('qp-row-status'), true, 'must use qp-row-status')
+  assert.equal(source.includes('kp-cell-status'), true, 'must use kp-cell-status')
+  assert.equal(source.includes('qp-status-paused'), true, 'must have paused status color class')
+  assert.equal(source.includes("return '部分暂停'"), true, 'qpRowStatusLabel must include 部分暂停')
+  assert.equal(source.includes("return '进行中'"), true, 'qpRowStatusLabel must include 进行中')
+  // Old kind/type column and related functions removed
+  assert.equal(source.includes('qpRowKindLabel'), false, 'qpRowKindLabel must be removed')
+  assert.equal(source.includes('qpRootStatusLabel'), false, 'qpRootStatusLabel must be removed')
+  assert.equal(source.includes("row.kind.toUpperCase()"), false, 'must not use row.kind.toUpperCase')
+  // Duration column never shows "暂停"
+  assert.equal(source.includes('qp-paused-duration'), false, 'qp-paused-duration must be removed')
   // No fake times
   assert.equal(source.includes('const offset = i * 500'), false, 'must not use fake offset times')
   assert.equal(source.includes('dur = 500'), false, 'must not use fake duration')

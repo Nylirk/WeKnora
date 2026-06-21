@@ -124,14 +124,17 @@
                         <span class="kp-name-text" :class="{ 'kp-name-root': row.isRoot, 'kp-name-mono': !row.isRoot }">
                           {{ row.label }}
                         </span>
-                        <span class="kp-name-kind">{{ qpRowKindLabel(row) }}</span>
                       </div>
                     </div>
 
-                    <div class="kp-cell-dur kp-mono">
-                      <span :class="{ 'qp-paused-duration': row.isStage && row.status === 'paused' }">
-                        {{ qpDurationLabel(row) }}
+                    <div class="kp-cell-status">
+                      <span class="qp-row-status" :class="`qp-status-${row.status}`">
+                        {{ qpRowStatusLabel(row) }}
                       </span>
+                    </div>
+
+                    <div class="kp-cell-dur kp-mono">
+                      {{ qpDurationLabel(row) }}
                     </div>
 
                     <div class="kp-cell-bar">
@@ -515,24 +518,29 @@ function qpRowJson(row: QpFlatRow): string {
   }
 }
 
-const qpRootStatusLabel = computed(() => {
-  switch (processingButton.value.state) {
-    case 'running': return '进行中'
-    case 'paused': return '部分暂停'
-    case 'failed': return '处理失败'
-    case 'ready_for_review': return '待人工审核'
-    case 'completed': return '已完成'
-    default: return '未开始'
+function qpRowStatusLabel(row: QpFlatRow): string {
+  if (row.isRoot) {
+    switch (processingButton.value.state) {
+      case 'paused': return '部分暂停'
+      case 'running': return '进行中'
+      case 'failed': return '处理失败'
+      case 'ready_for_review': return '待人工审核'
+      case 'completed': return '已完成'
+      default: return '未开始'
+    }
   }
-})
-
-function qpRowKindLabel(row: QpFlatRow): string {
-  if (row.isRoot) return qpRootStatusLabel.value
-  return row.kind.toUpperCase()
+  switch (row.status) {
+    case 'completed':
+    case 'done': return '已完成'
+    case 'running': return '进行中'
+    case 'paused': return '暂停'
+    case 'failed': return '失败'
+    case 'pending': return '待处理'
+    default: return '未知'
+  }
 }
 
 function qpDurationLabel(row: QpFlatRow): string {
-  if (row.isStage && row.status === 'paused') return '暂停'
   return row.formattedDur || '—'
 }
 
@@ -1101,7 +1109,7 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .kp-ruler {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(220px, 42%) 64px 1fr;
+  grid-template-columns: minmax(180px, 40%) 80px 64px 1fr;
   height: 24px;
   align-items: end;
   padding: 12px 20px 6px;
@@ -1129,7 +1137,7 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .kp-rows { display: flex; flex-direction: column; }
 .kp-row {
   display: grid;
-  grid-template-columns: minmax(220px, 42%) 64px 1fr;
+  grid-template-columns: minmax(180px, 40%) 80px 64px 1fr;
   align-items: center;
   height: 32px;
   cursor: default;
@@ -1265,11 +1273,20 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
   50% { opacity: 0.45; transform: scale(0.8); }
 }
 
-/* Paused duration label */
-.qp-paused-duration {
-  color: var(--td-warning-color);
-  font-weight: 500;
+/* Status column */
+.kp-cell-status {
+  display: flex;
+  align-items: center;
+  color: var(--td-text-color-secondary);
+  font-size: 12px;
 }
+.qp-row-status { white-space: nowrap; }
+.qp-status-completed,
+.qp-status-done { color: var(--td-success-color); }
+.qp-status-running { color: var(--td-warning-color); }
+.qp-status-paused { color: var(--td-warning-color); }
+.qp-status-failed { color: var(--td-error-color); }
+.qp-status-pending { color: var(--td-text-color-placeholder); }
 
 /* Detail panel */
 .kp-body-with-detail .kp-scroll {
