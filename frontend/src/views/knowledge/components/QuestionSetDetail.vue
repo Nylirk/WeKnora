@@ -418,9 +418,6 @@
                     </span>
                   </div>
 
-                  <div v-if="candidate.evidence_text" class="semantic-evidence">
-                    {{ candidate.evidence_text }}
-                  </div>
                 </div>
               </div>
             </template>
@@ -467,9 +464,6 @@
                   </span>
                 </div>
 
-                <div v-if="getSyllabusDetail(row).evidenceText" class="semantic-evidence">
-                  {{ getSyllabusDetail(row).evidenceText }}
-                </div>
               </div>
             </template>
           </t-popup>
@@ -1150,7 +1144,6 @@ function getKnowledgePointCandidates(row: Question): Array<{
   knowledge_point: string
   confidence?: number
   score?: number
-  evidence_text?: string
 }> {
   const candidates = (row.extraction_metadata as any)?.auto_processing?.auto_tagging?.candidates
   if (!Array.isArray(candidates)) return []
@@ -1162,7 +1155,6 @@ function getKnowledgePointCandidates(row: Question): Array<{
       knowledge_point: String(c.knowledge_point || '未知知识点'),
       confidence: typeof c.confidence === 'number' ? c.confidence : undefined,
       score: typeof c.score === 'number' ? c.score : undefined,
-      evidence_text: typeof c.evidence_text === 'string' ? c.evidence_text : undefined,
     }))
 }
 
@@ -1184,7 +1176,6 @@ function getSyllabusDetail(row: Question): {
   reason?: string
   confidence?: number
   score?: number
-  evidenceText?: string
 } {
   const meta = (row.extraction_metadata as any)?.auto_processing?.syllabus_checking || {}
   const evidence = Array.isArray(meta.evidence) ? meta.evidence[0] : undefined
@@ -1198,7 +1189,6 @@ function getSyllabusDetail(row: Question): {
       : typeof evidence?.score === 'number'
         ? evidence.score
         : undefined,
-    evidenceText: typeof evidence?.text === 'string' ? evidence.text : undefined,
   }
 }
 
@@ -1393,18 +1383,6 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
   min-width: 0;
   flex: 1;
   color: var(--td-text-color-primary);
-  word-break: break-word;
-}
-
-.semantic-evidence {
-  margin-top: 8px;
-  padding: 8px;
-  max-height: 96px;
-  overflow: auto;
-  font-size: 12px;
-  color: var(--td-text-color-secondary);
-  background: var(--td-bg-color-secondarycontainer);
-  border-radius: 6px;
   word-break: break-word;
 }
 

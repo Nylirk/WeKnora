@@ -643,8 +643,13 @@ test('knowledge point hover uses structured popup, not string tooltip', () => {
   assert.equal(source.includes('semantic-popover'), true, 'must use semantic-popover class')
   assert.equal(source.includes('semantic-popover-title'), true, 'must use semantic-popover-title')
   assert.equal(source.includes('semantic-candidate'), true, 'must use semantic-candidate blocks')
-  assert.equal(source.includes('semantic-evidence'), true, 'must use semantic-evidence for evidence text')
   assert.equal(source.includes("join('\\n')"), false, 'must not join strings with newline')
+})
+
+test('popover cards do not show evidence text', () => {
+  assert.equal(source.includes('evidence_text'), false, 'must not show evidence_text')
+  assert.equal(source.includes('evidenceText'), false, 'must not show evidenceText')
+  assert.equal(source.includes('semantic-evidence'), false, 'must not use semantic-evidence class')
 })
 
 test('knowledge point column shows candidate knowledge_point and confidence', () => {
