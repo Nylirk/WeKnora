@@ -76,6 +76,35 @@
                   {{ qpHeaderStatusText }}
                 </t-tag>
                 <div class="kp-head-actions">
+                  <t-popup
+                    v-model:visible="reprocessMenuVisible"
+                    trigger="click"
+                    placement="bottom-right"
+                    :disabled="processingButton.state === 'running'"
+                  >
+                    <t-button
+                      size="small"
+                      variant="outline"
+                      theme="default"
+                      :disabled="processingButton.state === 'running'"
+                      :loading="reprocessLoading"
+                    >
+                      重新处理
+                    </t-button>
+                    <template #content>
+                      <div class="reprocess-menu">
+                        <button type="button" class="reprocess-item" @click="triggerReprocess('all')">
+                          重新处理全部
+                        </button>
+                        <button type="button" class="reprocess-item" @click="triggerReprocess('auto_tagging')">
+                          重新匹配知识点
+                        </button>
+                        <button type="button" class="reprocess-item" @click="triggerReprocess('syllabus_checking')">
+                          重新筛选考纲
+                        </button>
+                      </div>
+                    </template>
+                  </t-popup>
                   <button type="button" class="kp-icon-btn" :title="'关闭'" @click="processingDrawerVisible = false">
                     <t-icon name="close" size="16px" />
                   </button>
@@ -452,9 +481,11 @@ import {
   updateQuestionStatus, getQuestionSetProcessingStatus,
   resolveProcessingStages, resolveProcessingButtonState,
   PROCESSING_STAGE_STATUS_LABELS, PROCESSING_BUTTON_LABELS,
+  reprocessQuestionSet,
   type Question, type QuestionListFilter, type QuestionType,
   type QuestionSetProcessingStatus,
   type ProcessingButtonState,
+  type QuestionProcessingReprocessScope,
 } from '@/api/question'
 import type { BlockPreviewSummary, ImportBlock } from '@/api/question_block'
 import { useImportWorkbenchStore } from '@/stores/importWorkbench'
@@ -714,6 +745,25 @@ function stopProcessingPolling() {
   if (processingPollTimer !== null) {
     clearInterval(processingPollTimer)
     processingPollTimer = null
+  }
+}
+
+// ── Reprocess trigger ──
+const reprocessMenuVisible = ref(false)
+const reprocessLoading = ref(false)
+
+async function triggerReprocess(scope: QuestionProcessingReprocessScope) {
+  reprocessMenuVisible.value = false
+  reprocessLoading.value = true
+  try {
+    await reprocessQuestionSet(props.knowledgeBaseId, props.setId, scope)
+    MessagePlugin.success('重新处理已启动')
+    await fetchProcessingStatus()
+    startProcessingPolling()
+  } catch (e: any) {
+    MessagePlugin.error(e?.message || '重新处理失败')
+  } finally {
+    reprocessLoading.value = false
   }
 }
 
@@ -1505,6 +1555,11 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .import-type-help { color: var(--td-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .import-type-item:disabled .import-type-description,
 .import-type-item:disabled .import-type-help { color: var(--td-text-color-disabled); }
+
+/* Reprocess menu in waterfall drawer */
+.reprocess-menu { width: 180px; padding: 6px; }
+.reprocess-item { width: 100%; display: flex; align-items: center; padding: 8px 12px; border: 0; border-radius: 6px; color: var(--td-text-color-primary); background: transparent; text-align: left; cursor: pointer; font-size: 13px; }
+.reprocess-item:hover { background: var(--td-bg-color-container-hover); }
 </style>
 
 <style>

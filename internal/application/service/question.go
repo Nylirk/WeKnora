@@ -943,6 +943,84 @@ func normalizeJSONMap(val map[string]interface{}) types.JSON {
 
 // GetQuestionSetProcessingStatus returns the current processing status for a question set.
 // Auto-processing enablement is read from the parent question_bank KnowledgeBase.
+// ReprocessQuestionSet re-runs semantic matching for all draft questions in a question set.
+// scope: "all", "auto_tagging", or "syllabus_checking". Runs in a background goroutine.
+func (s *QuestionService) ReprocessQuestionSet(
+	ctx context.Context, kbID, setID string, scope string,
+) error {
+	qs, err := s.getQuestionSetForKB(ctx, kbID, setID)
+	if err != nil {
+		return err
+	}
+	kb, kberr := s.knowledgeBaseSvc.GetKnowledgeBaseByID(ctx, kbID)
+	if kberr != nil {
+		return kberr
+	}
+	var cfg *types.QuestionBankConfig
+	if kb.IsQuestionBank() && kb.QuestionBankConfig != nil {
+		cfg = kb.QuestionBankConfig
+	} else {
+		cfg = &types.QuestionBankConfig{}
+	}
+
+	// Collect all draft questions in this set.
+	var draftQuestions []*types.Question
+	page := &types.Pagination{Page: 1, PageSize: 500}
+	for {
+		result, listErr := s.repository.ListQuestions(ctx, tenantID(ctx), setID,
+			&types.QuestionListFilter{Status: string(types.QuestionStatusDraft)}, page)
+		if listErr != nil {
+			return listErr
+		}
+		questions, ok := result.Data.([]*types.Question)
+		if !ok {
+			break
+		}
+		draftQuestions = append(draftQuestions, questions...)
+		if len(questions) < page.PageSize {
+			break
+		}
+		page.Page++
+	}
+
+	if len(draftQuestions) == 0 {
+		return nil
+	}
+
+	bgCtx := logger.CloneContext(ctx)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf(bgCtx, "panic in reprocess pipeline for set %s: %v", qs.ID, r)
+			}
+		}()
+
+		runTagging := scope == "all" || scope == "auto_tagging"
+		runSyllabus := scope == "all" || scope == "syllabus_checking"
+
+		if runTagging {
+			_ = s.updateQuestionSetProcessingStage(bgCtx, qs.ID,
+				types.QuestionSetProcessingStageAutoTagging, "", "")
+			if err := s.RunKnowledgePointMatching(bgCtx, cfg, draftQuestions); err != nil {
+				logger.Warnf(bgCtx, "reprocess auto_tagging error for set %s: %v", qs.ID, err)
+			}
+		}
+
+		if runSyllabus {
+			_ = s.updateQuestionSetProcessingStage(bgCtx, qs.ID,
+				types.QuestionSetProcessingStageSyllabusChecking, "", "")
+			if err := s.RunSyllabusFiltering(bgCtx, cfg, draftQuestions); err != nil {
+				logger.Warnf(bgCtx, "reprocess syllabus_checking error for set %s: %v", qs.ID, err)
+			}
+		}
+
+		_ = s.updateQuestionSetProcessingStage(bgCtx, qs.ID,
+			types.QuestionSetProcessingStageReadyForReview, types.QuestionSetStatusActive, "")
+	}()
+
+	return nil
+}
+
 func (s *QuestionService) GetQuestionSetProcessingStatus(ctx context.Context, kbID, setID string) (*types.QuestionSetProcessingStatus, error) {
 	qs, err := s.getQuestionSetForKB(ctx, kbID, setID)
 	if err != nil {

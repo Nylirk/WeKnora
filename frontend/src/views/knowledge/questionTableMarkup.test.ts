@@ -662,3 +662,33 @@ test('syllabus column checks checking_status before scope_result', () => {
   assert.equal(failedIdx < scopeIdx, true, 'failed check must precede scope_result check')
   assert.equal(pausedIdx < scopeIdx, true, 'paused check must precede scope_result check')
 })
+
+// ── Reprocess trigger in waterfall drawer ──
+
+test('reprocess entry appears in waterfall drawer header', () => {
+  assert.equal(source.includes('重新处理'), true, 'drawer must include 重新处理 button')
+  assert.equal(source.includes('reprocessMenuVisible'), true, 'must use reprocessMenuVisible ref')
+  assert.equal(source.includes('triggerReprocess'), true, 'must use triggerReprocess function')
+})
+
+test('reprocess menu includes all three scope options', () => {
+  assert.equal(source.includes('重新处理全部'), true, 'must include 重新处理全部')
+  assert.equal(source.includes('重新匹配知识点'), true, 'must include 重新匹配知识点')
+  assert.equal(source.includes('重新筛选考纲'), true, 'must include 重新筛选考纲')
+})
+
+test('reprocess calls reprocessQuestionSet API', () => {
+  assert.equal(source.includes('reprocessQuestionSet'), true, 'must import reprocessQuestionSet')
+  assert.equal(source.includes("'all'"), true, 'must pass all scope')
+  assert.equal(source.includes("'auto_tagging'"), true, 'must pass auto_tagging scope')
+  assert.equal(source.includes("'syllabus_checking'"), true, 'must pass syllabus_checking scope')
+})
+
+test('reprocess button disabled when running', () => {
+  assert.equal(source.includes("processingButton.state === 'running'"), true, 'must disable reprocess when running')
+})
+
+test('reprocessQuestionSet is exported from question API', () => {
+  assert.equal(questionApiSource.includes('reprocessQuestionSet'), true, 'API module must export reprocessQuestionSet')
+  assert.equal(questionApiSource.includes('QuestionProcessingReprocessScope'), true, 'API module must export scope type')
+})

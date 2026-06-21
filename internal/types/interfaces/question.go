@@ -64,6 +64,10 @@ type QuestionService interface {
 	ExportToEvaluationDataset(context.Context, string, string, *types.ExportToEvaluationRequest) (*types.EvaluationDataset, error)
 	GenerateQuestions(context.Context, string, *types.GenerateQuestionsRequest) (*types.QuestionSet, error)
 
+	// ReprocessQuestionSet re-runs semantic matching for all draft questions in a question set.
+	// scope: "all", "auto_tagging", or "syllabus_checking". Runs in a background goroutine.
+	ReprocessQuestionSet(ctx context.Context, kbID, setID string, scope string) error
+
 	// Syllabus management for question bank knowledge bases.
 	UploadSyllabus(ctx context.Context, kbID string, fileHeader *multipart.FileHeader) (*types.SyllabusUploadResponse, error)
 	GetSyllabus(ctx context.Context, kbID string) (*types.SyllabusInfo, error)

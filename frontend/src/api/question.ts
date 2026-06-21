@@ -278,6 +278,11 @@ export const importQuestions = (kbId: string, setId: string, data: ImportQuestio
 export const getQuestionSetProcessingStatus = (kbId: string, setId: string) =>
   get(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/processing-status`).then(unwrap<QuestionSetProcessingStatus>)
 
+export type QuestionProcessingReprocessScope = 'all' | 'auto_tagging' | 'syllabus_checking'
+
+export const reprocessQuestionSet = (kbId: string, setId: string, scope: QuestionProcessingReprocessScope) =>
+  post(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/processing/reprocess`, { scope })
+
 export const exportToEvaluationDataset = (kbId: string, setId: string, data: { name: string; description?: string }) =>
   post(`/api/v1/knowledge-bases/${kbId}/question-sets/${setId}/questions/export`, data).then(unwrap<any>)
 
