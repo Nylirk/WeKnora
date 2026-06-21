@@ -195,6 +195,15 @@ func applyQuestionFilters(q *gorm.DB, filter *types.QuestionListFilter) *gorm.DB
 		pattern := "%" + filter.Keyword + "%"
 		q = q.Where("stem_text ILIKE ? OR answer_text ILIKE ? OR analysis_text ILIKE ?", pattern, pattern, pattern)
 	}
+	if filter.AutoTaggingStatus != "" {
+		q = q.Where("auto_tagging_status = ?", filter.AutoTaggingStatus)
+	}
+	if filter.SyllabusCheckingStatus != "" {
+		q = q.Where("syllabus_checking_status = ?", filter.SyllabusCheckingStatus)
+	}
+	if filter.SyllabusScopeResult != "" {
+		q = q.Where("syllabus_scope_result = ?", filter.SyllabusScopeResult)
+	}
 	return q
 }
 

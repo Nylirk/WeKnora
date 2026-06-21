@@ -101,6 +101,38 @@ func formatQuestionJSONValue(value interface{}) string {
 	}
 }
 
+// BuildQuestionSemanticQuery builds a query string for semantic matching (knowledge point
+// tagging and syllabus filtering). It intentionally excludes answer, analysis, and grading
+// fields to prevent answer/analysis text from polluting match results.
+func BuildQuestionSemanticQuery(q *Question) string {
+	if q == nil {
+		return ""
+	}
+	fields := []struct {
+		name  string
+		value string
+	}{
+		{name: "question_type", value: strings.TrimSpace(q.QuestionType)},
+		{name: "difficulty", value: strings.TrimSpace(string(q.Difficulty))},
+		{name: "stem_text", value: strings.TrimSpace(q.StemText)},
+		{name: "question_body", value: readableQuestionJSON(q.QuestionBody)},
+	}
+
+	var builder strings.Builder
+	for _, field := range fields {
+		if field.value == "" || field.value == "{}" || field.value == "[]" {
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteByte('\n')
+		}
+		builder.WriteString(field.name)
+		builder.WriteString(": ")
+		builder.WriteString(field.value)
+	}
+	return builder.String()
+}
+
 func isQuestionIndexForbiddenKey(key string) bool {
 	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(key), "-", "_"))
 	return strings.Contains(normalized, "answer") ||

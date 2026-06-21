@@ -293,6 +293,19 @@
         <t-option value="medium" :label="$t('questionBank.medium', '中等')" />
         <t-option value="hard" :label="$t('questionBank.hard', '困难')" />
       </t-select>
+      <t-select v-model="filter.auto_tagging_status" placeholder="知识点匹配" clearable style="width: 120px" @change="reloadFromFirstPage">
+        <t-option value="" label="全部" />
+        <t-option value="completed" label="已匹配" />
+        <t-option value="paused" label="暂停" />
+        <t-option value="failed" label="失败" />
+        <t-option value="pending" label="待处理" />
+      </t-select>
+      <t-select v-model="filter.syllabus_scope_result" placeholder="考纲结果" clearable style="width: 110px" @change="reloadFromFirstPage">
+        <t-option value="" label="全部" />
+        <t-option value="in_scope" label="符合考纲" />
+        <t-option value="out_of_scope" label="疑似超纲" />
+        <t-option value="uncertain" label="不确定" />
+      </t-select>
       <t-input v-model="filter.knowledge_point" placeholder="知识点" clearable style="width: 140px" @clear="reloadFromFirstPage" @enter="reloadFromFirstPage" />
       <t-input v-model="filter.tag" placeholder="标签" clearable style="width: 120px" @clear="reloadFromFirstPage" @enter="reloadFromFirstPage" />
       <t-input v-model="filter.keyword" :placeholder="$t('questionBank.searchPlaceholder', '搜索题干...')" clearable style="width: 180px" @clear="reloadFromFirstPage" @enter="reloadFromFirstPage" />
@@ -325,6 +338,18 @@
       </template>
       <template #difficulty="{ row }">
         {{ difficultyLabel(row.difficulty) }}
+      </template>
+      <template #auto_tagging_status="{ row }">
+        <t-tag v-if="row.auto_tagging_status === 'completed'" theme="success" variant="light" size="small">已匹配</t-tag>
+        <t-tag v-else-if="row.auto_tagging_status === 'paused'" theme="warning" variant="light" size="small">暂停</t-tag>
+        <t-tag v-else-if="row.auto_tagging_status === 'failed'" theme="danger" variant="light" size="small">失败</t-tag>
+        <t-tag v-else theme="default" variant="light" size="small">待处理</t-tag>
+      </template>
+      <template #syllabus_scope_result="{ row }">
+        <t-tag v-if="row.syllabus_scope_result === 'in_scope'" theme="success" variant="light" size="small">符合考纲</t-tag>
+        <t-tag v-else-if="row.syllabus_scope_result === 'out_of_scope'" theme="warning" variant="light" size="small">疑似超纲</t-tag>
+        <t-tag v-else-if="row.syllabus_scope_result === 'uncertain'" theme="default" variant="light" size="small">不确定</t-tag>
+        <span v-else class="qp-na">—</span>
       </template>
       <template #status="{ row }">
         <t-tooltip v-if="row.status === 'reviewed' && row.reviewed_at" :content="`审核人：${row.reviewed_by || '未知'}\n审核时间：${row.reviewed_at}`">
@@ -677,7 +702,9 @@ const questionColumns = computed(() => [
   { colKey: 'question_type', title: '类型', width: 100, cell: 'question_type' },
   { colKey: 'stem_text', title: '题干', ellipsis: true },
   { colKey: 'difficulty', title: '难度', width: 80, cell: 'difficulty' },
-  { colKey: 'status', title: '状态', width: 90, cell: 'status' },
+  { colKey: 'auto_tagging_status', title: '知识点', width: 80, cell: 'auto_tagging_status' },
+  { colKey: 'syllabus_scope_result', title: '考纲', width: 80, cell: 'syllabus_scope_result' },
+  { colKey: 'status', title: '状态', width: 80, cell: 'status' },
   { colKey: 'operation', title: '操作', width: 120, fixed: 'right', cell: 'operation' },
 ])
 const fetchedSetName = ref('')
@@ -1010,6 +1037,7 @@ import QuestionImportWorkbench from '../QuestionImportWorkbench.vue'
 .batch-label { font-size: 13px; color: var(--td-text-color-secondary); margin-right: 8px; }
 .draft-review-tag { cursor: pointer; }
 .draft-review-tag:hover { color: var(--td-brand-color); }
+.qp-na { color: var(--td-text-color-placeholder); font-size: 12px; }
 .question-empty { padding: 48px 16px; }
 .restore-draft-copy { margin: 0; color: var(--td-text-color-secondary); line-height: 1.7; }
 

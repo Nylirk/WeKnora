@@ -127,7 +127,16 @@ type Question struct {
 	EvidenceChunkIDs   JSON               `json:"evidence_chunk_ids" gorm:"type:jsonb;not null"`
 	SourcePayload      JSON               `json:"source_payload" gorm:"type:jsonb;not null"`
 	ExtractionMetadata JSON               `json:"extraction_metadata" gorm:"type:jsonb;not null"`
-	SortOrder          int                `json:"sort_order" gorm:"not null;default:0"`
+	// AutoTaggingStatus mirrors extraction_metadata.auto_processing.auto_tagging.status
+	// for fast list filtering. Values: pending, completed, paused, failed.
+	AutoTaggingStatus string `json:"auto_tagging_status" gorm:"type:varchar(16);not null;default:'pending'"`
+	// SyllabusCheckingStatus mirrors extraction_metadata.auto_processing.syllabus_checking.status.
+	// Values: pending, completed, paused, failed.
+	SyllabusCheckingStatus string `json:"syllabus_checking_status" gorm:"type:varchar(16);not null;default:'pending'"`
+	// SyllabusScopeResult mirrors extraction_metadata.auto_processing.syllabus_checking.result.
+	// Values: '' (empty), in_scope, out_of_scope, uncertain.
+	SyllabusScopeResult string `json:"syllabus_scope_result" gorm:"type:varchar(16);not null;default:''"`
+	SortOrder           int    `json:"sort_order" gorm:"not null;default:0"`
 	CreatedAt          time.Time          `json:"created_at"`
 	UpdatedAt          time.Time          `json:"updated_at"`
 	DeletedAt          gorm.DeletedAt     `json:"-" gorm:"index"`
@@ -142,12 +151,15 @@ func (q *Question) BeforeCreate(*gorm.DB) error {
 }
 
 type QuestionListFilter struct {
-	QuestionType   string `form:"question_type"`
-	Difficulty     string `form:"difficulty"`
-	Status         string `form:"status"`
-	KnowledgePoint string `form:"knowledge_point"`
-	Tag            string `form:"tag"`
-	Keyword        string `form:"keyword"`
+	QuestionType           string `form:"question_type"`
+	Difficulty             string `form:"difficulty"`
+	Status                 string `form:"status"`
+	KnowledgePoint         string `form:"knowledge_point"`
+	Tag                    string `form:"tag"`
+	Keyword                string `form:"keyword"`
+	AutoTaggingStatus      string `form:"auto_tagging_status"`
+	SyllabusCheckingStatus string `form:"syllabus_checking_status"`
+	SyllabusScopeResult    string `form:"syllabus_scope_result"`
 }
 
 // QuestionSetProcessingStage tracks the background processing stage of a question set

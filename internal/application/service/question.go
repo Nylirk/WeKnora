@@ -1119,8 +1119,7 @@ func (s *QuestionService) startProcessingPipeline(
 		}
 		s.writeAutoProcessingMetadataToQuestions(bgCtx, questions, "indexing", indexingMeta)
 
-		// Stage 2: Auto knowledge point tagging (skeleton — real algorithm in future PR).
-		var autoTaggingMeta map[string]any
+		// Stage 2: Auto knowledge point tagging via semantic matching.
 		if cfg.AutoKnowledgePointEnabled() {
 			if err := s.updateQuestionSetProcessingStage(
 				bgCtx, qs.ID,
@@ -1137,21 +1136,14 @@ func (s *QuestionService) startProcessingPipeline(
 				)
 				return
 			}
-			autoTaggingMeta = map[string]any{
-				"status":                            "completed",
-				"mode":                              "skeleton",
-				"knowledge_point_knowledge_base_id": cfg.KnowledgePointKnowledgeBaseID,
+			if err := s.RunKnowledgePointMatching(bgCtx, cfg, questions); err != nil {
+				logger.Warnf(bgCtx, "auto_tagging matching returned error for set %s: %v", qs.ID, err)
 			}
 		} else {
-			autoTaggingMeta = map[string]any{
-				"status": "skipped",
-				"reason": "knowledge_point_knowledge_base_id is empty",
-			}
+			_ = s.RunKnowledgePointMatching(bgCtx, cfg, questions)
 		}
-		s.writeAutoProcessingMetadataToQuestions(bgCtx, questions, "auto_tagging", autoTaggingMeta)
 
-		// Stage 3: Auto syllabus screening (skeleton — real algorithm in future PR).
-		var syllabusMeta map[string]any
+		// Stage 3: Auto syllabus screening via semantic matching.
 		if cfg.AutoSyllabusCheckEnabled() {
 			if err := s.updateQuestionSetProcessingStage(
 				bgCtx, qs.ID,
@@ -1168,18 +1160,12 @@ func (s *QuestionService) startProcessingPipeline(
 				)
 				return
 			}
-			syllabusMeta = map[string]any{
-				"status":                    "completed",
-				"mode":                      "skeleton",
-				"syllabus_knowledge_base_id": cfg.SyllabusKnowledgeBaseID,
+			if err := s.RunSyllabusFiltering(bgCtx, cfg, questions); err != nil {
+				logger.Warnf(bgCtx, "syllabus_checking matching returned error for set %s: %v", qs.ID, err)
 			}
 		} else {
-			syllabusMeta = map[string]any{
-				"status": "skipped",
-				"reason": "syllabus_knowledge_base_id is empty",
-			}
+			_ = s.RunSyllabusFiltering(bgCtx, cfg, questions)
 		}
-		s.writeAutoProcessingMetadataToQuestions(bgCtx, questions, "syllabus_checking", syllabusMeta)
 
 		// Stage 4: Ready for human review.
 		if err := s.updateQuestionSetProcessingStage(
