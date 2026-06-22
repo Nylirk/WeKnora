@@ -58,6 +58,29 @@ func (s *QuestionService) RunKnowledgePointMatching(
 			"未关联知识点知识库")
 	}
 
+	// Resolve rerank config once for the entire batch to avoid repeated
+	// tenant config lookups. Explicit QuestionBankConfig takes priority,
+	// then fall back to tenant RetrievalConfig, then disabled.
+	rc := s.resolveRerankConfig(ctx, cfg)
+	rerankModelID := rc.modelID
+	rerankModelSource := rc.source
+	rerankThreshold := rc.threshold
+	rerankTopK := rc.topK
+
+	// Resolve reranker once if a model is configured. This avoids calling
+	// GetRerankModel for every question in the batch.
+	var reranker rerank.Reranker
+	var rerankResolveErr string
+	if rerankModelID != "" && s.modelService != nil {
+		var rErr error
+		reranker, rErr = s.modelService.GetRerankModel(ctx, rerankModelID)
+		if rErr != nil {
+			rerankResolveErr = truncateError(rErr)
+			logger.Warnf(ctx, "[auto_tagging] GetRerankModel failed: %v", rErr)
+			reranker = nil
+		}
+	}
+
 	for _, q := range questions {
 		if q == nil {
 			continue
@@ -83,56 +106,39 @@ func (s *QuestionService) RunKnowledgePointMatching(
 		}
 
 		projections := buildKnowledgePointProjections(results)
-		rerankMode := "disabled"
-		rerankModelID := ""
-		rerankModelSource := "unavailable"
 		var rerankErr string
-		var rerankThreshold float64
-		var rerankTopK int
+		currentRerankMode := "disabled"
 
-		// Resolve rerank config: explicit QuestionBankConfig takes priority,
-		// then fall back to tenant RetrievalConfig, then disabled.
-		rc := s.resolveRerankConfig(ctx, cfg)
-		rerankModelID = rc.modelID
-		rerankModelSource = rc.source
-		rerankThreshold = rc.threshold
-		rerankTopK = rc.topK
-
-		if rerankModelID != "" && s.modelService != nil {
-			reranker, rErr := s.modelService.GetRerankModel(ctx, rerankModelID)
-			if rErr != nil {
-				rerankErr = truncateError(rErr)
-				logger.Warnf(ctx, "[auto_tagging] GetRerankModel failed for question %s: %v", q.ID, rErr)
+		if reranker != nil {
+			projectionsToRerank := projections
+			if rerankTopK > 0 && len(projections) > rerankTopK {
+				sort.Slice(projections, func(i, j int) bool {
+					return projections[i].RawScore > projections[j].RawScore
+				})
+				projectionsToRerank = projections[:rerankTopK]
+			}
+			rerankApplied, rrErr := rerankKnowledgePointProjectionsWithModel(ctx, query, projectionsToRerank, reranker)
+			if rrErr != nil || rerankApplied == nil {
+				if rrErr != nil {
+					rerankErr = truncateError(rrErr)
+				}
+				logger.Warnf(ctx, "[auto_tagging] model rerank failed for question %s, falling back", q.ID)
 				applyRuleRerank(query, projections)
-				rerankMode = "rule_fallback"
+				currentRerankMode = "rule_fallback"
 			} else {
-				projectionsToRerank := projections
-				if rerankTopK > 0 && len(projections) > rerankTopK {
-					sort.Slice(projections, func(i, j int) bool {
-						return projections[i].RawScore > projections[j].RawScore
-					})
-					projectionsToRerank = projections[:rerankTopK]
+				applyRerankMissingPenalty(projections, projectionsToRerank)
+				if rerankThreshold > 0 {
+					applyRerankThreshold(projections, rerankThreshold)
 				}
-				rerankApplied, rrErr := rerankKnowledgePointProjectionsWithModel(ctx, query, projectionsToRerank, reranker)
-				if rrErr != nil || rerankApplied == nil {
-					if rrErr != nil {
-						rerankErr = truncateError(rrErr)
-					}
-					logger.Warnf(ctx, "[auto_tagging] model rerank failed for question %s, falling back", q.ID)
-					applyRuleRerank(query, projections)
-					rerankMode = "rule_fallback"
-				} else {
-					applyRerankMissingPenalty(projections, projectionsToRerank)
-					if rerankThreshold > 0 {
-						applyRerankThreshold(projections, rerankThreshold)
-					}
-					rerankMode = "model"
-				}
+				currentRerankMode = "model"
 			}
 		} else {
 			applyRuleRerank(query, projections)
 			if rerankModelID != "" && s.modelService == nil {
-				rerankMode = "rule_fallback"
+				currentRerankMode = "rule_fallback"
+			} else if rerankResolveErr != "" {
+				currentRerankMode = "rule_fallback"
+				rerankErr = rerankResolveErr
 			}
 		}
 
@@ -141,7 +147,7 @@ func (s *QuestionService) RunKnowledgePointMatching(
 		})
 
 		statusValue, topScore, secondScore := classifyProjections(projections)
-		candidates := projectionsToCandidates(projections, KnowledgePointCandidateLimit, rerankMode)
+		candidates := projectionsToCandidates(projections, KnowledgePointCandidateLimit, currentRerankMode)
 		meta := map[string]any{
 			"status":                       statusValue,
 			"matched_at":                   time.Now().UTC().Format(time.RFC3339),
@@ -151,7 +157,7 @@ func (s *QuestionService) RunKnowledgePointMatching(
 			"min_margin":                   KnowledgePointMinMargin,
 			"candidates":                   candidates,
 			"scoring":                      "model_rerank_v1",
-			"rerank_mode":                  rerankMode,
+			"rerank_mode":                  currentRerankMode,
 			"projection_count":             len(projections),
 			"candidate_count_before_limit": len(projections),
 		}

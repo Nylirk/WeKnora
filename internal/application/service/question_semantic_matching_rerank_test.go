@@ -59,11 +59,13 @@ func (m *mockReranker) GetModelID() string   { return "rerank-mock-1" }
 
 type mockTenantService struct {
 	interfaces.TenantService
-	tenant *types.Tenant
-	err    error
+	tenant     *types.Tenant
+	err        error
+	getCalls   int
 }
 
 func (m *mockTenantService) GetTenantByID(_ context.Context, tenantID uint64) (*types.Tenant, error) {
+	m.getCalls++
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -1127,4 +1129,46 @@ func TestKnowledgePointModelRerank_UsesTenantThresholdWhenNoExplicitThreshold(t 
 
 func kpTestCtx() context.Context {
 	return context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+}
+
+// Test 33: Tenant config is resolved once per batch, not per question.
+func TestKnowledgePointModelRerank_ResolvesTenantConfigOncePerBatch(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c1", KnowledgeID: "k1", KnowledgeTitle: "KP1", Content: "content", Score: 0.85},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	reranker := &mockReranker{
+		results: []rerank.RankResult{{Index: 0, RelevanceScore: 0.90}},
+	}
+	modelSvc := &mockModelService{reranker: reranker}
+	tenantSvc := &mockTenantService{
+		tenant: makeTenantWithRerank("tenant-rerank", 20, 0.2),
+	}
+	svc := makeRerankTestServiceWithTenant(kbSvc, modelSvc, tenantSvc)
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+
+	// Run with 3 questions in one batch.
+	questions := []*types.Question{
+		makeTestQuestion("q-batch-1"),
+		makeTestQuestion("q-batch-2"),
+		makeTestQuestion("q-batch-3"),
+	}
+
+	if err := svc.RunKnowledgePointMatching(kpTestCtx(), cfg, questions); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// GetTenantByID should be called exactly once for the entire batch.
+	if tenantSvc.getCalls != 1 {
+		t.Errorf("expected GetTenantByID called 1 time, got %d", tenantSvc.getCalls)
+	}
+	// All 3 questions should still have model rerank applied.
+	for _, q := range questions {
+		tagging := extractTaggingMeta(t, q)
+		if tagging["rerank_mode"] != "model" {
+			t.Errorf("question %s: expected rerank_mode=model, got %v", q.ID, tagging["rerank_mode"])
+		}
+		if tagging["rerank_model_source"] != "tenant_retrieval_config" {
+			t.Errorf("question %s: expected rerank_model_source=tenant_retrieval_config, got %v", q.ID, tagging["rerank_model_source"])
+		}
+	}
 }
