@@ -213,5 +213,304 @@
         "score": 0.45
       }
     ]
+  },
+  {
+    "id": "q009",
+    "question_type": "single_choice",
+    "difficulty": "medium",
+    "stem_text": "求函数 f(x) = 2x + 3 在 x = 5 时的函数值。",
+    "question_body": {
+      "options": [
+        {"label": "A", "content": "10"},
+        {"label": "B", "content": "13"},
+        {"label": "C", "content": "15"},
+        {"label": "D", "content": "8"}
+      ]
+    },
+    "expected_knowledge_points": ["一次函数求值"],
+    "acceptable_knowledge_points": ["代数运算"],
+    "negative_knowledge_points": ["二次函数", "一元二次方程根与系数关系"],
+    "mock_results": [
+      {
+        "id": "chunk-014",
+        "knowledge_id": "kp-014",
+        "knowledge_title": "一元二次方程根与系数关系",
+        "content": "韦达定理：一元二次方程两根之和等于 -b/a，两根之积等于 c/a。",
+        "score": 0.82
+      },
+      {
+        "id": "chunk-015",
+        "knowledge_id": "kp-015",
+        "knowledge_title": "二次函数",
+        "content": "二次函数的一般形式为 f(x) = ax^2 + bx + c。",
+        "score": 0.76
+      },
+      {
+        "id": "chunk-016",
+        "knowledge_id": "kp-016",
+        "knowledge_title": "一次函数求值",
+        "content": "一次函数 f(x) = kx + b，代入自变量即可求函数值。",
+        "score": 0.68
+      }
+    ]
+  },
+  {
+    "id": "q010",
+    "question_type": "short_answer",
+    "difficulty": "medium",
+    "stem_text": "求 cos(0) 的值。",
+    "question_body": {},
+    "expected_knowledge_points": ["余弦函数性质"],
+    "acceptable_knowledge_points": ["三角函数"],
+    "negative_knowledge_points": ["正弦函数性质"],
+    "mock_results": [
+      {
+        "id": "chunk-017",
+        "knowledge_id": "kp-017",
+        "knowledge_title": "正弦函数性质",
+        "content": "正弦函数 sin(x) 是奇函数且以 2π 为周期，sin(0) = 0。",
+        "score": 0.83
+      },
+      {
+        "id": "chunk-018",
+        "knowledge_id": "kp-018",
+        "knowledge_title": "余弦函数性质",
+        "content": "余弦函数 cos(x) 是偶函数，cos(0) = 1。",
+        "score": 0.81
+      }
+    ]
+  },
+  {
+    "id": "q011",
+    "question_type": "short_answer",
+    "difficulty": "easy",
+    "stem_text": "What is x?",
+    "question_body": {},
+    "expected_knowledge_points": ["Algebra Basics"],
+    "acceptable_knowledge_points": ["Variables"],
+    "negative_knowledge_points": ["Calculus"],
+    "mock_results": [
+      {
+        "id": "chunk-019",
+        "knowledge_id": "kp-019",
+        "knowledge_title": "Algebra Basics",
+        "content": "In algebra, x commonly represents an unknown variable.",
+        "score": 0.52
+      }
+    ]
+  },
+  {
+    "id": "q012",
+    "question_type": "single_choice",
+    "difficulty": "hard",
+    "stem_text": "下列关于细胞呼吸的说法，正确的是？",
+    "question_body": {
+      "options": [
+        {"label": "A", "content": "只在有光条件下进行"},
+        {"label": "B", "content": "产生 ATP 和 CO2"},
+        {"label": "C", "content": "需要叶绿体"},
+        {"label": "D", "content": "消耗 CO2 释放 O2"}
+      ]
+    },
+    "expected_knowledge_points": ["细胞呼吸"],
+    "acceptable_knowledge_points": ["呼吸作用"],
+    "negative_knowledge_points": ["光合作用"],
+    "mock_results": [
+      {
+        "id": "chunk-020",
+        "knowledge_id": "kp-020",
+        "knowledge_title": "光合作用",
+        "content": "光合作用在叶绿体中进行，消耗二氧化碳，释放氧气，需要光照。",
+        "score": 0.84
+      },
+      {
+        "id": "chunk-021",
+        "knowledge_id": "kp-021",
+        "knowledge_title": "细胞呼吸",
+        "content": "细胞呼吸分解有机物产生 ATP 和 CO2，不需要光照，不依赖叶绿体。",
+        "score": 0.82
+      }
+    ]
+  },
+  {
+    "id": "q013",
+    "question_type": "short_answer",
+    "difficulty": "medium",
+    "stem_text": "用迭代和递归两种方式实现阶乘函数，并比较其优劣。",
+    "question_body": {},
+    "expected_knowledge_points": ["Recursion", "Iteration Loops"],
+    "acceptable_knowledge_points": ["Recursive Functions"],
+    "negative_knowledge_points": ["Sorting Algorithms"],
+    "mock_results": [
+      {
+        "id": "chunk-022",
+        "knowledge_id": "kp-022",
+        "knowledge_title": "Recursion",
+        "content": "Recursion is a technique where a function calls itself to solve smaller sub-problems.",
+        "score": 0.80
+      },
+      {
+        "id": "chunk-023",
+        "knowledge_id": "kp-023",
+        "knowledge_title": "Iteration Loops",
+        "content": "Iteration uses loops to repeat a block of code until a condition is met.",
+        "score": 0.78
+      },
+      {
+        "id": "chunk-024",
+        "knowledge_id": "kp-024",
+        "knowledge_title": "Recursive Functions",
+        "content": "A recursive function has a base case and a recursive case.",
+        "score": 0.75
+      }
+    ]
+  },
+  {
+    "id": "q014",
+    "question_type": "short_answer",
+    "difficulty": "hard",
+    "stem_text": "Explain the relationship between force and motion in classical mechanics.",
+    "question_body": {},
+    "expected_knowledge_points": ["Newton's Laws of Motion"],
+    "acceptable_knowledge_points": ["Classical Mechanics"],
+    "negative_knowledge_points": ["Quantum Mechanics", "Thermodynamics"],
+    "mock_results": [
+      {
+        "id": "chunk-025",
+        "knowledge_id": "kp-025",
+        "knowledge_title": "",
+        "content": "Newton's second law states that F = ma, relating force, mass, and acceleration.",
+        "score": 0.86
+      },
+      {
+        "id": "chunk-026",
+        "knowledge_id": "kp-026",
+        "knowledge_title": "",
+        "content": "Quantum mechanics describes particle behavior at atomic scales with wave functions.",
+        "score": 0.78
+      },
+      {
+        "id": "chunk-027",
+        "knowledge_id": "kp-027",
+        "knowledge_title": "",
+        "content": "Thermodynamics deals with heat, work, and energy transfer in systems.",
+        "score": 0.74
+      },
+      {
+        "id": "chunk-028",
+        "knowledge_id": "kp-028",
+        "knowledge_title": "",
+        "content": "Classical mechanics studies the motion of bodies under forces using Newton's laws.",
+        "score": 0.72
+      },
+      {
+        "id": "chunk-029",
+        "knowledge_id": "kp-029",
+        "knowledge_title": "",
+        "content": "The principle of conservation of energy states that energy cannot be created or destroyed.",
+        "score": 0.70
+      }
+    ]
+  },
+  {
+    "id": "q015",
+    "question_type": "single_choice",
+    "difficulty": "medium",
+    "stem_text": "设数列 {a_n} 的通项公式为 a_n = 3n - 1，求 a_5 的值。",
+    "question_body": {
+      "options": [
+        {"label": "A", "content": "14"},
+        {"label": "B", "content": "15"},
+        {"label": "C", "content": "16"},
+        {"label": "D", "content": "17"}
+      ]
+    },
+    "expected_knowledge_points": ["等差数列"],
+    "acceptable_knowledge_points": ["数列通项公式"],
+    "negative_knowledge_points": ["等比数列", "极限"],
+    "mock_results": [
+      {
+        "id": "chunk-030",
+        "knowledge_id": "kp-030",
+        "knowledge_title": "等比数列",
+        "content": "等比数列的通项公式为 a_n = a_1 * r^(n-1)，其中 r 为公比。",
+        "score": 0.85
+      },
+      {
+        "id": "chunk-031",
+        "knowledge_id": "kp-031",
+        "knowledge_title": "极限",
+        "content": "数列极限描述当 n 趋于无穷时 a_n 的趋向值。",
+        "score": 0.79
+      },
+      {
+        "id": "chunk-032",
+        "knowledge_id": "kp-032",
+        "knowledge_title": "等差数列",
+        "content": "等差数列的通项公式为 a_n = a_1 + (n-1)d，d 为公差。",
+        "score": 0.73
+      },
+      {
+        "id": "chunk-033",
+        "knowledge_id": "kp-033",
+        "knowledge_title": "函数定义域",
+        "content": "函数的定义域是自变量取值的集合。",
+        "score": 0.65
+      },
+      {
+        "id": "chunk-034",
+        "knowledge_id": "kp-034",
+        "knowledge_title": "数列求和",
+        "content": "数列前 n 项和公式 S_n = n(a_1 + a_n) / 2 适用于等差数列。",
+        "score": 0.62
+      }
+    ]
+  },
+  {
+    "id": "q016",
+    "question_type": "short_answer",
+    "difficulty": "medium",
+    "stem_text": "简述 TCP 三次握手的过程。",
+    "question_body": {},
+    "expected_knowledge_points": ["TCP协议"],
+    "acceptable_knowledge_points": ["网络协议基础"],
+    "negative_knowledge_points": ["UDP协议", "HTTP协议"],
+    "mock_results": [
+      {
+        "id": "chunk-035",
+        "knowledge_id": "kp-035",
+        "knowledge_title": "UDP协议",
+        "content": "UDP 是无连接的传输层协议，不保证可靠传输，适用于实时通信。",
+        "score": 0.81
+      },
+      {
+        "id": "chunk-036",
+        "knowledge_id": "kp-036",
+        "knowledge_title": "HTTP协议",
+        "content": "HTTP 是应用层协议，基于请求-响应模型，默认使用 80 端口。",
+        "score": 0.79
+      },
+      {
+        "id": "chunk-037",
+        "knowledge_id": "kp-037",
+        "knowledge_title": "TCP协议",
+        "content": "TCP 三次握手：SYN、SYN-ACK、ACK，建立可靠连接后开始数据传输。",
+        "score": 0.77
+      },
+      {
+        "id": "chunk-038",
+        "knowledge_id": "kp-038",
+        "knowledge_title": "网络协议基础",
+        "content": "网络协议定义了通信双方的数据格式和交互规则。",
+        "score": 0.70
+      },
+      {
+        "id": "chunk-039",
+        "knowledge_id": "kp-039",
+        "knowledge_title": "OSI模型",
+        "content": "OSI 七层模型从下到上依次为物理层、数据链路层、网络层、传输层、会话层、表示层、应用层。",
+        "score": 0.66
+      }
+    ]
   }
 ]
