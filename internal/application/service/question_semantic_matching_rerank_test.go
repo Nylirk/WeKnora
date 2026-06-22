@@ -55,14 +55,35 @@ func (m *mockReranker) Rerank(_ context.Context, query string, documents []strin
 func (m *mockReranker) GetModelName() string { return "mock-reranker" }
 func (m *mockReranker) GetModelID() string   { return "rerank-mock-1" }
 
+// ── Mock TenantService for rerank config fallback tests ──
+
+type mockTenantService struct {
+	interfaces.TenantService
+	tenant *types.Tenant
+	err    error
+}
+
+func (m *mockTenantService) GetTenantByID(_ context.Context, tenantID uint64) (*types.Tenant, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.tenant, nil
+}
+
 // ── Helpers ──
 
 func makeRerankTestService(kbSvc *mockKBService, modelSvc *mockModelService) *QuestionService {
 	return &QuestionService{
-		repository:     &matchingTestRepo{},
+		repository:       &matchingTestRepo{},
 		knowledgeBaseSvc: kbSvc,
-		modelService:   modelSvc,
+		modelService:     modelSvc,
 	}
+}
+
+func makeRerankTestServiceWithTenant(kbSvc *mockKBService, modelSvc *mockModelService, tenantSvc *mockTenantService) *QuestionService {
+	svc := makeRerankTestService(kbSvc, modelSvc)
+	svc.tenantService = tenantSvc
+	return svc
 }
 
 func makeRerankConfig(kbID string, rerankModelID string, enabled bool) *types.QuestionBankConfig {
@@ -70,6 +91,17 @@ func makeRerankConfig(kbID string, rerankModelID string, enabled bool) *types.Qu
 		KnowledgePointKnowledgeBaseID:   kbID,
 		KnowledgePointRerankModelID:     rerankModelID,
 		KnowledgePointRerankEnabled:     enabled,
+	}
+}
+
+func makeTenantWithRerank(rerankModelID string, rerankTopK int, rerankThreshold float64) *types.Tenant {
+	return &types.Tenant{
+		ID: 1,
+		RetrievalConfig: &types.RetrievalConfig{
+			RerankModelID:   rerankModelID,
+			RerankTopK:      rerankTopK,
+			RerankThreshold: rerankThreshold,
+		},
 	}
 }
 
@@ -925,4 +957,174 @@ func TestKnowledgePointModelRerank_RerankTopKSelectsByRawScore(t *testing.T) {
 	if !strings.Contains(reranker.capturedDocs[0], "KP-High") {
 		t.Errorf("expected first rerank doc to be KP-High, got %s", reranker.capturedDocs[0])
 	}
+}
+
+// ── Tenant RetrievalConfig fallback tests ──
+
+// Test 28: Explicit QuestionBankConfig rerank takes priority over tenant config.
+func TestKnowledgePointModelRerank_ExplicitConfigPriorityOverTenant(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c1", KnowledgeID: "k1", KnowledgeTitle: "KP1", Content: "content", Score: 0.85},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	reranker := &mockReranker{
+		results: []rerank.RankResult{{Index: 0, RelevanceScore: 0.90}},
+	}
+	modelSvc := &mockModelService{reranker: reranker}
+	tenantSvc := &mockTenantService{
+		tenant: makeTenantWithRerank("tenant-rerank", 20, 0.2),
+	}
+	svc := makeRerankTestServiceWithTenant(kbSvc, modelSvc, tenantSvc)
+	cfg := makeRerankConfig("kp-kb", "kp-rerank", true)
+	q := makeTestQuestion("q-r28")
+
+	if err := svc.RunKnowledgePointMatching(kpTestCtx(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	tagging := extractTaggingMeta(t, q)
+	if tagging["rerank_model_id"] != "kp-rerank" {
+		t.Errorf("expected rerank_model_id=kp-rerank, got %v", tagging["rerank_model_id"])
+	}
+	if tagging["rerank_model_source"] != "question_bank_config" {
+		t.Errorf("expected rerank_model_source=question_bank_config, got %v", tagging["rerank_model_source"])
+	}
+	if tagging["rerank_mode"] != "model" {
+		t.Errorf("expected rerank_mode=model, got %v", tagging["rerank_mode"])
+	}
+}
+
+// Test 29: No explicit rerank in QuestionBankConfig → fall back to tenant RetrievalConfig.
+func TestKnowledgePointModelRerank_FallsBackToTenantRetrievalConfig(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c1", KnowledgeID: "k1", KnowledgeTitle: "KP1", Content: "content", Score: 0.85},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	reranker := &mockReranker{
+		results: []rerank.RankResult{{Index: 0, RelevanceScore: 0.90}},
+	}
+	modelSvc := &mockModelService{reranker: reranker}
+	tenantSvc := &mockTenantService{
+		tenant: makeTenantWithRerank("tenant-rerank", 20, 0.2),
+	}
+	svc := makeRerankTestServiceWithTenant(kbSvc, modelSvc, tenantSvc)
+	// No explicit rerank config — only KP KB ID.
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q-r29")
+
+	if err := svc.RunKnowledgePointMatching(kpTestCtx(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	tagging := extractTaggingMeta(t, q)
+	if tagging["rerank_model_id"] != "tenant-rerank" {
+		t.Errorf("expected rerank_model_id=tenant-rerank, got %v", tagging["rerank_model_id"])
+	}
+	if tagging["rerank_model_source"] != "tenant_retrieval_config" {
+		t.Errorf("expected rerank_model_source=tenant_retrieval_config, got %v", tagging["rerank_model_source"])
+	}
+	if tagging["rerank_mode"] != "model" {
+		t.Errorf("expected rerank_mode=model, got %v", tagging["rerank_mode"])
+	}
+	// Verify rerank score was applied.
+	candidates := extractCandidates(t, q)
+	if len(candidates) == 0 {
+		t.Fatal("expected candidates")
+	}
+	rerankScore, _ := candidates[0]["rerank_score"].(float64)
+	if rerankScore == 0 {
+		t.Error("expected non-zero rerank_score when model rerank is active")
+	}
+}
+
+// Test 30: No rerank model in tenant RetrievalConfig → unavailable, rule fallback.
+func TestKnowledgePointModelRerank_TenantWithoutRerankModel(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c1", KnowledgeID: "k1", KnowledgeTitle: "KP1", Content: "content", Score: 0.85},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	modelSvc := &mockModelService{}
+	tenantSvc := &mockTenantService{
+		tenant: makeTenantWithRerank("", 0, 0),
+	}
+	svc := makeRerankTestServiceWithTenant(kbSvc, modelSvc, tenantSvc)
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q-r30")
+
+	if err := svc.RunKnowledgePointMatching(kpTestCtx(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	tagging := extractTaggingMeta(t, q)
+	if tagging["rerank_model_source"] != "unavailable" {
+		t.Errorf("expected rerank_model_source=unavailable, got %v", tagging["rerank_model_source"])
+	}
+	if tagging["rerank_mode"] == "model" {
+		t.Error("expected non-model rerank_mode when no rerank model available")
+	}
+}
+
+// Test 31: GetRerankModel fails → rule_fallback with rerank_error.
+func TestKnowledgePointModelRerank_TenantFallbackGetRerankModelFails(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c1", KnowledgeID: "k1", KnowledgeTitle: "KP1", Content: "content", Score: 0.85},
+		{ID: "c2", KnowledgeID: "k2", KnowledgeTitle: "KP2", Content: "content2", Score: 0.72},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	modelSvc := &mockModelService{rerankErr: errors.New("model unavailable")}
+	tenantSvc := &mockTenantService{
+		tenant: makeTenantWithRerank("tenant-rerank", 20, 0.2),
+	}
+	svc := makeRerankTestServiceWithTenant(kbSvc, modelSvc, tenantSvc)
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q-r31")
+
+	if err := svc.RunKnowledgePointMatching(kpTestCtx(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	tagging := extractTaggingMeta(t, q)
+	if tagging["rerank_mode"] != "rule_fallback" {
+		t.Errorf("expected rerank_mode=rule_fallback, got %v", tagging["rerank_mode"])
+	}
+	if tagging["rerank_error"] == nil || tagging["rerank_error"] == "" {
+		t.Error("expected rerank_error in metadata")
+	}
+	candidates := extractCandidates(t, q)
+	if len(candidates) == 0 {
+		t.Fatal("expected candidates despite model error")
+	}
+}
+
+// Test 32: Tenant config threshold is used when QuestionBankConfig has no explicit threshold.
+func TestKnowledgePointModelRerank_UsesTenantThresholdWhenNoExplicitThreshold(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c1", KnowledgeID: "k1", KnowledgeTitle: "KP1", Content: "content", Score: 1.0},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	reranker := &mockReranker{
+		results: []rerank.RankResult{{Index: 0, RelevanceScore: 0.15}},
+	}
+	modelSvc := &mockModelService{reranker: reranker}
+	tenantSvc := &mockTenantService{
+		tenant: makeTenantWithRerank("tenant-rerank", 20, 0.2),
+	}
+	svc := makeRerankTestServiceWithTenant(kbSvc, modelSvc, tenantSvc)
+	cfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-kb"}
+	q := makeTestQuestion("q-r32")
+
+	if err := svc.RunKnowledgePointMatching(kpTestCtx(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	tagging := extractTaggingMeta(t, q)
+	// threshold should be from tenant config (0.2)
+	if tagging["rerank_threshold"] == nil {
+		t.Error("expected rerank_threshold in metadata")
+	}
+	// rerank score 0.15 < tenant threshold 0.2 → should not be matched
+	if tagging["status"] == "matched" {
+		t.Error("expected non-matched when rerank score below tenant threshold")
+	}
+}
+
+// ── Helpers for tenant-aware tests ──
+
+func kpTestCtx() context.Context {
+	return context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
 }

@@ -85,48 +85,53 @@ func (s *QuestionService) RunKnowledgePointMatching(
 		projections := buildKnowledgePointProjections(results)
 		rerankMode := "disabled"
 		rerankModelID := ""
+		rerankModelSource := "unavailable"
 		var rerankErr string
 		var rerankThreshold float64
+		var rerankTopK int
 
-		if cfg.KnowledgePointRerankEnabledModel() && s.modelService != nil {
-			rerankModelID = cfg.KnowledgePointRerankModelID
-			rerankThreshold = cfg.KnowledgePointRerankThreshold
+		// Resolve rerank config: explicit QuestionBankConfig takes priority,
+		// then fall back to tenant RetrievalConfig, then disabled.
+		rc := s.resolveRerankConfig(ctx, cfg)
+		rerankModelID = rc.modelID
+		rerankModelSource = rc.source
+		rerankThreshold = rc.threshold
+		rerankTopK = rc.topK
+
+		if rerankModelID != "" && s.modelService != nil {
 			reranker, rErr := s.modelService.GetRerankModel(ctx, rerankModelID)
 			if rErr != nil {
 				rerankErr = truncateError(rErr)
 				logger.Warnf(ctx, "[auto_tagging] GetRerankModel failed for question %s: %v", q.ID, rErr)
 				applyRuleRerank(query, projections)
 				rerankMode = "rule_fallback"
-		} else {
-			projectionsToRerank := projections
-			if cfg.KnowledgePointRerankTopK > 0 && len(projections) > cfg.KnowledgePointRerankTopK {
-				// Sort by RawScore descending before truncating so the
-				// topK candidates sent to the rerank model are the highest
-				// raw-scoring ones, not whatever order search returned.
-				sort.Slice(projections, func(i, j int) bool {
-					return projections[i].RawScore > projections[j].RawScore
-				})
-				projectionsToRerank = projections[:cfg.KnowledgePointRerankTopK]
-			}
-			rerankApplied, rrErr := rerankKnowledgePointProjectionsWithModel(ctx, query, projectionsToRerank, reranker)
-			if rrErr != nil || rerankApplied == nil {
-				if rrErr != nil {
-					rerankErr = truncateError(rrErr)
-				}
-				logger.Warnf(ctx, "[auto_tagging] model rerank failed for question %s, falling back", q.ID)
-				applyRuleRerank(query, projections)
-				rerankMode = "rule_fallback"
 			} else {
-				applyRerankMissingPenalty(projections, projectionsToRerank)
-				if rerankThreshold > 0 {
-					applyRerankThreshold(projections, rerankThreshold)
+				projectionsToRerank := projections
+				if rerankTopK > 0 && len(projections) > rerankTopK {
+					sort.Slice(projections, func(i, j int) bool {
+						return projections[i].RawScore > projections[j].RawScore
+					})
+					projectionsToRerank = projections[:rerankTopK]
 				}
-				rerankMode = "model"
+				rerankApplied, rrErr := rerankKnowledgePointProjectionsWithModel(ctx, query, projectionsToRerank, reranker)
+				if rrErr != nil || rerankApplied == nil {
+					if rrErr != nil {
+						rerankErr = truncateError(rrErr)
+					}
+					logger.Warnf(ctx, "[auto_tagging] model rerank failed for question %s, falling back", q.ID)
+					applyRuleRerank(query, projections)
+					rerankMode = "rule_fallback"
+				} else {
+					applyRerankMissingPenalty(projections, projectionsToRerank)
+					if rerankThreshold > 0 {
+						applyRerankThreshold(projections, rerankThreshold)
+					}
+					rerankMode = "model"
+				}
 			}
-		}
 		} else {
 			applyRuleRerank(query, projections)
-			if cfg.KnowledgePointRerankEnabledModel() && s.modelService == nil {
+			if rerankModelID != "" && s.modelService == nil {
 				rerankMode = "rule_fallback"
 			}
 		}
@@ -153,11 +158,15 @@ func (s *QuestionService) RunKnowledgePointMatching(
 		if rerankModelID != "" {
 			meta["rerank_model_id"] = rerankModelID
 		}
+		meta["rerank_model_source"] = rerankModelSource
 		if rerankErr != "" {
 			meta["rerank_error"] = rerankErr
 		}
 		if rerankThreshold > 0 {
 			meta["rerank_threshold"] = rerankThreshold
+		}
+		if rerankTopK > 0 {
+			meta["rerank_top_k"] = rerankTopK
 		}
 		if topScore > 0 {
 			meta["top_score"] = topScore
@@ -171,7 +180,67 @@ func (s *QuestionService) RunKnowledgePointMatching(
 	return nil
 }
 
-// RunSyllabusFiltering performs semantic matching of draft questions against the
+// kpRerankConfig holds the resolved rerank configuration for knowledge point
+// matching, with the source of each field for metadata attribution.
+type kpRerankConfig struct {
+	modelID   string
+	source    string
+	threshold float64
+	topK      int
+}
+
+// resolveRerankConfig resolves the rerank configuration with the following
+// priority:
+//  1. Explicit QuestionBankConfig fields (when KnowledgePointRerankEnabled is
+//     true and KnowledgePointRerankModelID is non-empty).
+//  2. Tenant RetrievalConfig (when the KB has a linked knowledge point KB and
+//     the tenant's RetrievalConfig.RerankModelID is non-empty).
+//  3. Unavailable (no rerank).
+//
+// Threshold and topK from QuestionBankConfig take priority over tenant config.
+func (s *QuestionService) resolveRerankConfig(ctx context.Context, cfg *types.QuestionBankConfig) kpRerankConfig {
+	// Priority 1: explicit QuestionBankConfig rerank.
+	if cfg != nil && cfg.KnowledgePointRerankEnabled && cfg.KnowledgePointRerankModelID != "" {
+		return kpRerankConfig{
+			modelID:   cfg.KnowledgePointRerankModelID,
+			source:    "question_bank_config",
+			threshold: cfg.KnowledgePointRerankThreshold,
+			topK:      cfg.KnowledgePointRerankTopK,
+		}
+	}
+
+	// Priority 2: tenant RetrievalConfig fallback.
+	// Only active when the KB has a linked knowledge point KB.
+	if cfg != nil && cfg.KnowledgePointKnowledgeBaseID != "" && s.tenantService != nil {
+		tenantID, ok := types.TenantIDFromContext(ctx)
+		if !ok {
+			return kpRerankConfig{source: "unavailable"}
+		}
+		tenant, err := s.tenantService.GetTenantByID(ctx, tenantID)
+		if err != nil || tenant == nil || tenant.RetrievalConfig == nil {
+			return kpRerankConfig{source: "unavailable"}
+		}
+		rc := tenant.RetrievalConfig
+		if rc.RerankModelID == "" {
+			return kpRerankConfig{source: "unavailable"}
+		}
+		resolved := kpRerankConfig{
+			modelID: rc.RerankModelID,
+			source:  "tenant_retrieval_config",
+			topK:    rc.GetEffectiveRerankTopK(),
+		}
+		// Use tenant threshold, but if QuestionBankConfig has an explicit
+		// non-zero threshold, it takes priority.
+		if cfg.KnowledgePointRerankThreshold > 0 {
+			resolved.threshold = cfg.KnowledgePointRerankThreshold
+		} else {
+			resolved.threshold = rc.GetEffectiveRerankThreshold()
+		}
+		return resolved
+	}
+
+	return kpRerankConfig{source: "unavailable"}
+}
 // configured syllabus knowledge base. Results are written to
 // extraction_metadata.auto_processing.syllabus_checking and redundant status fields.
 func (s *QuestionService) RunSyllabusFiltering(
