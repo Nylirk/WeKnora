@@ -861,7 +861,10 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 			oldQBCfg = oldKB.QuestionBankConfig
 		}
 		if service.QuestionBankAutoTaggingConfigChanged(oldQBCfg, kb.QuestionBankConfig) {
-			h.scheduleKnowledgePointReprocess(ctx, kb.ID)
+			// Inject tenant ID into context so the background goroutine
+			// can access it via types.TenantIDFromContext.
+			reprocessCtx := context.WithValue(ctx, types.TenantIDContextKey, c.GetUint64(types.TenantIDContextKey.String()))
+			h.scheduleKnowledgePointReprocess(reprocessCtx, kb.ID)
 		}
 	}
 
