@@ -123,9 +123,10 @@ Current baseline metrics:
   have close top1/top2 scores.
 
 This is a **constraining baseline** for future algorithm improvements: any
-change that degrades recall@3 below 0.60 or raises FPR above 0.50 will fail
+change that degrades recall@3 below 0.70 or raises FPR above 0.30 will fail
 the test gate. As more real failure cases are added, thresholds may need
-adjustment — always loosen conservatively, never tighten to mask regressions.
+adjustment — always loosen conservatively, never loosen merely to mask
+regressions.
 
 ### Adding real business failure cases
 
