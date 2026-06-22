@@ -578,14 +578,30 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 	// Update question bank auto-processing config when provided.
 	// Only applies to question_bank type KBs; EnsureDefaults() clears
 	// it for other types.
-	if questionBankConfig != nil {
+	if questionBankConfig != nil && kb.IsQuestionBank() {
 		if kb.QuestionBankConfig == nil {
 			kb.QuestionBankConfig = &types.QuestionBankConfig{}
 		}
-		// KnowledgePointKnowledgeBaseID is updated via the KB update path.
+		// KnowledgePointKnowledgeBaseID is always controlled by the KB update path.
 		// SyllabusKnowledgeBaseID is managed by the syllabus upload API
 		// and must NOT be overwritten here.
 		kb.QuestionBankConfig.KnowledgePointKnowledgeBaseID = questionBankConfig.KnowledgePointKnowledgeBaseID
+		// Rerank config fields are only overwritten when the request explicitly
+		// provides non-zero values. The current frontend only sends
+		// knowledge_point_knowledge_base_id, so we preserve existing rerank
+		// config to avoid clearing it on every save.
+		if questionBankConfig.KnowledgePointRerankModelID != "" {
+			kb.QuestionBankConfig.KnowledgePointRerankModelID = questionBankConfig.KnowledgePointRerankModelID
+		}
+		if questionBankConfig.KnowledgePointRerankEnabled {
+			kb.QuestionBankConfig.KnowledgePointRerankEnabled = questionBankConfig.KnowledgePointRerankEnabled
+		}
+		if questionBankConfig.KnowledgePointRerankTopK > 0 {
+			kb.QuestionBankConfig.KnowledgePointRerankTopK = questionBankConfig.KnowledgePointRerankTopK
+		}
+		if questionBankConfig.KnowledgePointRerankThreshold > 0 {
+			kb.QuestionBankConfig.KnowledgePointRerankThreshold = questionBankConfig.KnowledgePointRerankThreshold
+		}
 	}
 	kb.UpdatedAt = time.Now()
 	kb.EnsureDefaults()
@@ -627,6 +643,57 @@ func (s *knowledgeBaseService) UpdateQuestionBankSyllabusKnowledgeBaseID(
 	}
 	logger.Infof(ctx, "Updated syllabus_knowledge_base_id for KB %s: %s", kbID, syllabusKBID)
 	return nil
+}
+
+// normalizeQBCfgForCompare returns a string fingerprint for nil-vs-empty
+// fields between old and new configs. It normalizes string fields with
+// TrimSpace and treats nil configs as equivalent to empty configs.
+// Returns true only when one of the monitored fields actually changed.
+// Exported so the handler layer can decide whether to trigger reprocess
+// without creating a service-to-service dependency.
+func QuestionBankAutoTaggingConfigChanged(oldCfg, newCfg *types.QuestionBankConfig) bool {
+	oldNorm := normalizeQBCfgForCompare(oldCfg)
+	newNorm := normalizeQBCfgForCompare(newCfg)
+	if oldCfg == nil && newCfg == nil {
+		return false
+	}
+	if oldNorm == newNorm {
+		return false
+	}
+	if oldCfg == nil {
+		oldCfg = &types.QuestionBankConfig{}
+	}
+	if newCfg == nil {
+		newCfg = &types.QuestionBankConfig{}
+	}
+	if strings.TrimSpace(oldCfg.KnowledgePointKnowledgeBaseID) != strings.TrimSpace(newCfg.KnowledgePointKnowledgeBaseID) {
+		return true
+	}
+	if strings.TrimSpace(oldCfg.KnowledgePointRerankModelID) != strings.TrimSpace(newCfg.KnowledgePointRerankModelID) {
+		return true
+	}
+	if oldCfg.KnowledgePointRerankEnabled != newCfg.KnowledgePointRerankEnabled {
+		return true
+	}
+	if oldCfg.KnowledgePointRerankTopK != newCfg.KnowledgePointRerankTopK {
+		return true
+	}
+	if oldCfg.KnowledgePointRerankThreshold != newCfg.KnowledgePointRerankThreshold {
+		return true
+	}
+	return false
+}
+
+// normalizeQBCfgForCompare returns a string fingerprint for nil-vs-empty
+// equivalence checking. This is only used for the fast-path equality check;
+// the full field-level comparison is done in questionBankAutoTaggingConfigChanged.
+func normalizeQBCfgForCompare(cfg *types.QuestionBankConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.KnowledgePointKnowledgeBaseID) + "|" +
+		strings.TrimSpace(cfg.KnowledgePointRerankModelID) + "|" +
+		fmt.Sprintf("%v|%d|%f", cfg.KnowledgePointRerankEnabled, cfg.KnowledgePointRerankTopK, cfg.KnowledgePointRerankThreshold)
 }
 
 // TogglePinKnowledgeBase toggles whether the calling user has pinned
