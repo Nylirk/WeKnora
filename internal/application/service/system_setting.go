@@ -179,6 +179,43 @@ var registry = map[string]settingSpec{
 			"文档解析、嵌入等任务多为 I/O 等待，适当提高可缩短批量上传排队时间。" +
 			"修改后需重启服务进程方可生效。",
 	},
+	// Debug trace settings -- in-memory ring buffer for SystemAdmin diagnostics.
+	"debug.http_trace.enabled": {
+		Type:        "bool",
+		EnvName:     "",
+		Default:     false,
+		Category:    "debug",
+		Description: "开启内存 HTTP 调试 trace 采集。默认关闭;仅 SystemAdmin 可见已采集数据。",
+	},
+	"debug.http_trace.capture_body": {
+		Type:     "bool",
+		EnvName:  "",
+		Default:  false,
+		Category: "debug",
+		Description: "采集脱敏后的请求/响应 body preview。高风险项——开启后可能将业务数据写入内存。" +
+			"前端需二次确认。",
+	},
+	"debug.http_trace.max_entries": {
+		Type:        "int",
+		EnvName:     "",
+		Default:     int64(500),
+		Category:    "debug",
+		Description: "内存 ring buffer 最大条目数。超过上限后自动丢弃最旧记录。范围 1-5000。",
+	},
+	"debug.http_trace.max_body_bytes": {
+		Type:        "int",
+		EnvName:     "",
+		Default:     int64(4096),
+		Category:    "debug",
+		Description: "单条 trace body preview 最大字节数。超出部分截断并标记 truncated。范围 0-65536。",
+	},
+	"debug.http_trace.ttl_minutes": {
+		Type:        "int",
+		EnvName:     "",
+		Default:     int64(60),
+		Category:    "debug",
+		Description: "trace 条目生存时间（分钟）。超时记录在查询时自动过滤。范围 1-1440。",
+	},
 }
 
 // systemSettingService wires the repository, audit log, and (P2)

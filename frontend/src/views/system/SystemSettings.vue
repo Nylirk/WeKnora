@@ -221,6 +221,29 @@
             class="setting-input"
             @change="onChange(item)"
           />
+          <!-- High-risk bool: wrap in inline popconfirm so the danger
+               confirmation bubble appears anchored to the switch. -->
+          <t-popconfirm
+            v-else-if="item.value_type === 'bool' && isHighRiskKey(item.key)"
+            v-model:visible="highRiskPopconfirm.visible"
+            :content="highRiskPopconfirm.content"
+            :theme="highRiskPopconfirm.theme"
+            :confirm-btn="highRiskPopconfirm.confirmBtn"
+            :cancel-btn="t('system.globalSettings.confirm.cancelBtn')"
+            :popup-props="PROGRAMMATIC_POPCONFIRM_PROPS"
+            placement="left"
+            @confirm="highRiskPopconfirm.finish(true)"
+            @cancel="highRiskPopconfirm.finish(false)"
+            @visible-change="highRiskPopconfirm.onVisibleChange"
+          >
+            <div class="setting-control-anchor">
+              <t-switch
+                v-model="editValues[item.key]"
+                :disabled="savingKey === item.key"
+                @change="onChange(item)"
+              />
+            </div>
+          </t-popconfirm>
           <t-switch
             v-else-if="item.value_type === 'bool'"
             v-model="editValues[item.key]"
@@ -532,6 +555,7 @@ function keyLabel(k: string): string {
 // PUT. ssrf.whitelist is not here — it uses per-tag confirm instead.
 const HIGH_RISK_KEYS = new Set<string>([
   'auth.registration_mode',
+  'debug.http_trace.capture_body',
 ])
 
 function isHighRiskKey(key: string): boolean {
@@ -777,15 +801,16 @@ async function loadSettings() {
 
 // onChange persists non-SSRF settings. SSRF whitelist and system admins
 // have dedicated handlers with inline popconfirm.
+// High-risk keys are gated through the inline popconfirm; all others
+// persist immediately.
 async function onChange(item: SystemSettingItem) {
   if (!isDirty(item)) return
 
-  // SSRF whitelist gets the per-entry confirm flow — same shape as the
-  // admin tag-input above. Adding or removing each host/CIDR is its
-  // own privileged change (a single bad CIDR can punch a hole through
-  // the egress firewall), so we ask once per delta instead of once
-  // per "save". This matches the operator's mental model: every tag
-  // they touch is acknowledged on its own.
+  if (isHighRiskKey(item.key)) {
+    await onHighRiskChange(item)
+    return
+  }
+
   await persistSetting(item)
 }
 
@@ -796,6 +821,33 @@ async function onHighRiskSelectChange(item: SystemSettingItem) {
   // Revert the select immediately so cancel leaves the saved value
   // visible; re-apply only after the inline popconfirm is confirmed.
   editValues[item.key] = item.value
+
+  const ok = await highRiskPopconfirm.ask({
+    content: highRiskConfirmBody(item, newValue),
+    theme: 'danger',
+    confirmBtn: {
+      content: t('system.globalSettings.confirm.confirmBtn'),
+      theme: 'danger',
+    },
+  })
+  if (!ok) return
+
+  editValues[item.key] = newValue
+  await persistSetting(item)
+}
+
+// onHighRiskChange handles high-risk confirmation for any control type
+// (bool, int, string, enum). Reverts the edit value on cancel so the UI
+// reflects the saved state.
+async function onHighRiskChange(item: SystemSettingItem) {
+  const newValue = editValues[item.key]
+  if (newValue === item.value) return
+
+  // Revert immediately so cancel leaves the canonical value visible.
+  const savedValue = item.value
+  editValues[item.key] = Array.isArray(savedValue)
+    ? [...(savedValue as unknown[])]
+    : savedValue
 
   const ok = await highRiskPopconfirm.ask({
     content: highRiskConfirmBody(item, newValue),
@@ -902,7 +954,26 @@ function highRiskConfirmBody(item: SystemSettingItem, value: unknown): string {
       ? t('system.globalSettings.confirm.emptyValue')
       : value.join(', ')
     : String(value)
-  return t('system.globalSettings.confirm.bodyAuthRegistrationMode', {
+  // Use key-specific messages when available; fall back to the generic
+  // high-risk body for other dangerous settings.
+  if (item.key === 'auth.registration_mode') {
+    return t('system.globalSettings.confirm.bodyAuthRegistrationMode', {
+      label: keyLabel(item.key),
+      value: renderedValue,
+    })
+  }
+  // For bool keys, use enable/disable variants for clearer messaging.
+  if (item.value_type === 'bool') {
+    if (value === true) {
+      return t('system.globalSettings.confirm.bodyHighRiskEnable', {
+        label: keyLabel(item.key),
+      })
+    }
+    return t('system.globalSettings.confirm.bodyHighRiskDisable', {
+      label: keyLabel(item.key),
+    })
+  }
+  return t('system.globalSettings.confirm.bodyHighRisk', {
     label: keyLabel(item.key),
     value: renderedValue,
   })

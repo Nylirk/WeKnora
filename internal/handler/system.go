@@ -42,6 +42,22 @@ type SystemHandler struct {
 	// tests that wire a partial container still compile. In production
 	// the dig graph always provides one.
 	auditSvc interfaces.AuditLogService
+	// engine is the gin engine, used by ListDebugRoutes to enumerate
+	// registered routes. Set after router construction; nil in tests.
+	engine *gin.Engine
+	// debugTraceSvc is the in-memory HTTP trace ring buffer.
+	// nil when not wired (e.g. tests, lite mode).
+	debugTraceSvc interfaces.HTTPDebugTraceService
+}
+
+// SetEngine stores the gin engine reference for route registry queries.
+func (h *SystemHandler) SetEngine(e *gin.Engine) {
+	h.engine = e
+}
+
+// SetDebugTraceService stores the debug trace service reference.
+func (h *SystemHandler) SetDebugTraceService(svc interfaces.HTTPDebugTraceService) {
+	h.debugTraceSvc = svc
 }
 
 // NewSystemHandler creates a new system handler

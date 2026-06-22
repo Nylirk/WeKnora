@@ -72,7 +72,7 @@
                 class="content-wrapper"
                 :class="{
                   'content-wrapper--wide': currentSection === 'members',
-                  'content-wrapper--full': currentSection === 'system-global',
+                  'content-wrapper--full': currentSection === 'system-global' || currentSection === 'system-debug',
                 }"
               >
                 <!-- 角色不允许访问当前 section（deep-link 进来 / 跨租户切换后角色降级）—— 优先于具体 section 渲染。
@@ -141,6 +141,11 @@
                     <SystemSettings />
                   </div>
 
+                  <!-- 系统管理员调试面板 -->
+                  <div v-if="currentSection === 'system-debug'" class="section">
+                    <SystemDebugConsole />
+                  </div>
+
                   <!-- 用户信息（账户基础信息：ID / 用户名 / 邮箱 / 注册时间）。
                      从 ApiInfo.vue 拆出来，原页面挂的是 owner-only 入口，
                      用户的基本信息不该跟 owner 权限绑定。 -->
@@ -199,6 +204,7 @@ import StorageEngineSettings from './StorageEngineSettings.vue'
 import WeKnoraCloudSettings from './WeKnoraCloudSettings.vue'
 import TenantMembers from './TenantMembers.vue'
 import SystemSettings from '@/views/system/SystemSettings.vue'
+import SystemDebugConsole from '@/views/system/SystemDebugConsole.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -256,7 +262,7 @@ const SECTION_MIN_ROLE: Record<string, RoleKey> = {
   api: 'owner',
 }
 
-const SYSTEM_ADMIN_SECTIONS = new Set(['system-global'])
+const SYSTEM_ADMIN_SECTIONS = new Set(['system-global', 'system-debug'])
 
 const canSeeSection = (key: string): boolean => {
   if (SYSTEM_ADMIN_SECTIONS.has(key)) {
@@ -286,6 +292,7 @@ const navItems = computed(() => {
     { key: 'mcp', icon: 'tools', label: t('settings.mcpService') },
     { key: 'system', icon: 'info-circle', label: t('settings.versionInfo') },
     { key: 'system-global', icon: 'server', label: '系统设置' },
+    { key: 'system-debug', icon: 'bug', label: t('system.debug.title') },
     { key: 'userprofile', icon: 'user', label: t('userProfile.title') },
     { key: 'tenant', icon: 'user-circle', label: t('settings.tenantInfo') },
     { key: 'members', icon: 'usergroup', label: t('tenantMember.title') },
@@ -331,7 +338,7 @@ const navGroups = computed<NavGroup[]>(() => {
     {
       key: 'platform',
       label: t('settings.navGroups.platform'),
-      items: pickItems(['system-global', 'system']),
+      items: pickItems(['system-global', 'system-debug', 'system']),
     },
   ].filter((group) => group.items.length > 0)
 })
