@@ -209,11 +209,17 @@ func captureBody(body io.Reader, contentType string, maxBytes int) (string, bool
 		return "", false
 	}
 
-	// Read the full body (up to maxBytes for the raw read).
-	limited := io.LimitReader(body, int64(maxBytes))
+	// Read maxBytes+1 to detect whether the original body exceeds the limit.
+	limited := io.LimitReader(body, int64(maxBytes+1))
 	raw, err := io.ReadAll(limited)
 	if err != nil {
 		return "", false
+	}
+
+	// rawTruncated is true when the original body was longer than maxBytes.
+	rawTruncated := len(raw) > maxBytes
+	if rawTruncated {
+		raw = raw[:maxBytes]
 	}
 
 	if len(raw) == 0 {
@@ -224,24 +230,25 @@ func captureBody(body io.Reader, contentType string, maxBytes int) (string, bool
 
 	switch mediaType {
 	case "application/json":
-		return captureJSONBody(raw, maxBytes)
+		preview, sanitizedTruncated := captureJSONBody(raw, maxBytes)
+		return preview, rawTruncated || sanitizedTruncated
 
 	case "application/x-www-form-urlencoded":
 		result := redactURLEncoded(string(raw))
-		truncated := len(result) > maxBytes
-		if truncated {
+		sanitizedTruncated := len(result) > maxBytes
+		if sanitizedTruncated {
 			result = result[:maxBytes]
 		}
-		return result, truncated
+		return result, rawTruncated || sanitizedTruncated
 
 	default:
 		// text/plain, text/*, etc.
 		result := fallbackRedactRaw(string(raw))
-		truncated := len(result) > maxBytes
-		if truncated {
+		sanitizedTruncated := len(result) > maxBytes
+		if sanitizedTruncated {
 			result = result[:maxBytes]
 		}
-		return result, truncated
+		return result, rawTruncated || sanitizedTruncated
 	}
 }
 
@@ -282,26 +289,90 @@ func captureJSONBody(raw []byte, maxBytes int) (string, bool) {
 	return result, truncated
 }
 
-// responseWriter wraps gin.ResponseWriter to capture status and body.
+// traceResponseWriter wraps gin.ResponseWriter to capture status and
+// conditionally buffer response body bytes. When captureBody is false
+// the buffer is nil and all Write/WriteString calls skip the copy —
+// large responses pay zero memory cost beyond the original writer.
 type traceResponseWriter struct {
 	gin.ResponseWriter
-	buf    *bytes.Buffer
-	status int
+	buf         *bytes.Buffer // nil when captureBody is false
+	captureBody bool
+	maxBytes    int
+	bufTruncated bool
+	status      int
+}
+
+func newTraceResponseWriter(w gin.ResponseWriter, captureBody bool, maxBytes int) *traceResponseWriter {
+	rw := &traceResponseWriter{
+		ResponseWriter: w,
+		captureBody:    captureBody,
+		maxBytes:       maxBytes,
+		status:         http.StatusOK,
+	}
+	if captureBody && maxBytes > 0 {
+		rw.buf = &bytes.Buffer{}
+	}
+	return rw
 }
 
 func (w *traceResponseWriter) Write(b []byte) (int, error) {
-	w.buf.Write(b)
-	return w.ResponseWriter.Write(b)
+	if w.buf != nil {
+		if !w.bufTruncated {
+			remain := w.maxBytes - w.buf.Len()
+			if remain > 0 {
+				if len(b) > remain {
+					w.buf.Write(b[:remain])
+					w.bufTruncated = true
+				} else {
+					w.buf.Write(b)
+				}
+			} else {
+				w.bufTruncated = true
+			}
+		}
+	}
+	if w.ResponseWriter != nil {
+		return w.ResponseWriter.Write(b)
+	}
+	return len(b), nil
 }
 
 func (w *traceResponseWriter) WriteHeader(code int) {
 	w.status = code
-	w.ResponseWriter.WriteHeader(code)
+	if w.ResponseWriter != nil {
+		w.ResponseWriter.WriteHeader(code)
+	}
 }
 
 func (w *traceResponseWriter) WriteString(s string) (int, error) {
-	w.buf.WriteString(s)
-	return w.ResponseWriter.WriteString(s)
+	if w.buf != nil {
+		if !w.bufTruncated {
+			remain := w.maxBytes - w.buf.Len()
+			if remain > 0 {
+				if len(s) > remain {
+					w.buf.WriteString(s[:remain])
+					w.bufTruncated = true
+				} else {
+					w.buf.WriteString(s)
+				}
+			} else {
+				w.bufTruncated = true
+			}
+		}
+	}
+	if w.ResponseWriter != nil {
+		return w.ResponseWriter.WriteString(s)
+	}
+	return len(s), nil
+}
+
+// bufferedBody returns the bytes captured in the buffer, or nil when
+// captureBody was disabled.
+func (w *traceResponseWriter) bufferedBody() []byte {
+	if w.buf == nil {
+		return nil
+	}
+	return w.buf.Bytes()
 }
 
 // DebugTrace is a gin middleware that records HTTP debug traces into an
@@ -389,12 +460,9 @@ func DebugTrace(
 			}
 		}
 
-		// Wrap response writer to capture response data.
-		rw := &traceResponseWriter{
-			ResponseWriter: c.Writer,
-			buf:            &bytes.Buffer{},
-			status:         http.StatusOK,
-		}
+		// Wrap response writer. When capture_body is disabled the buffer is
+		// nil — zero per-request memory cost for response buffering.
+		rw := newTraceResponseWriter(c.Writer, captureBodyEnabled, maxBodyBytes)
 		c.Writer = rw
 
 		// Process.
@@ -411,13 +479,19 @@ func DebugTrace(
 		if captureBodyEnabled {
 			respCT := rw.Header().Get("Content-Type")
 			if isTextContentType(respCT) {
-				preview, truncated := captureBody(
-					bytes.NewReader(rw.buf.Bytes()),
-					respCT,
-					maxBodyBytes,
-				)
-				trace.ResponseBodyPreview = preview
-				trace.ResponseBodyTruncated = truncated
+				respBytes := rw.bufferedBody()
+				if len(respBytes) > 0 {
+					preview, sanitizedTruncated := captureBody(
+						bytes.NewReader(respBytes),
+						respCT,
+						maxBodyBytes,
+					)
+					trace.ResponseBodyPreview = preview
+					trace.ResponseBodyTruncated = rw.bufTruncated || sanitizedTruncated
+				}
+			} else if rw.bufTruncated {
+				// Non-text response that exceeded the buffer cap.
+				trace.ResponseBodyTruncated = true
 			}
 		}
 

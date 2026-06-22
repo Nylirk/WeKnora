@@ -268,3 +268,110 @@ func TestSanitizeHeader_EmptyHeaders(t *testing.T) {
 		t.Error("expected nil for nil headers")
 	}
 }
+
+// --- traceResponseWriter tests ---
+
+func TestTraceResponseWriter_NoCaptureBody_NoBuffer(t *testing.T) {
+	// captureBody=false → buf is nil, Write/WriteString never touch it.
+	w := newTraceResponseWriter(nil, false, 4096)
+	if w.buf != nil {
+		t.Error("expected nil buffer when captureBody=false")
+	}
+	if w.captureBody {
+		t.Error("expected captureBody=false")
+	}
+	body := w.bufferedBody()
+	if body != nil {
+		t.Errorf("expected nil buffered body, got %d bytes", len(body))
+	}
+}
+
+func TestTraceResponseWriter_CaptureBody_CapsAtMaxBytes(t *testing.T) {
+	// captureBody=true, maxBytes=10 → only first 10 bytes captured.
+	w := newTraceResponseWriter(nil, true, 10)
+	if w.buf == nil {
+		t.Fatal("expected non-nil buffer when captureBody=true")
+	}
+
+	payload := []byte("hello world this is long")
+	w.Write(payload)
+
+	body := w.bufferedBody()
+	if len(body) > 10 {
+		t.Errorf("expected at most 10 bytes buffered, got %d: %q", len(body), body)
+	}
+	if string(body[:5]) != "hello" {
+		t.Errorf("expected first bytes to be 'hello', got %q", body)
+	}
+	if !w.bufTruncated {
+		t.Error("expected bufTruncated=true after write larger than maxBytes")
+	}
+}
+
+func TestTraceResponseWriter_CaptureBody_TruncationFlag(t *testing.T) {
+	// Small writes within maxBytes → not truncated.
+	w := newTraceResponseWriter(nil, true, 100)
+	w.Write([]byte("short"))
+	if w.bufTruncated {
+		t.Error("expected bufTruncated=false for small write")
+	}
+
+	// Write across the boundary.
+	w2 := newTraceResponseWriter(nil, true, 5)
+	w2.Write([]byte("12345")) // exactly maxBytes
+	if w2.bufTruncated {
+		t.Error("expected bufTruncated=false when writing exactly maxBytes")
+	}
+	w2.Write([]byte("6")) // one more byte
+	if !w2.bufTruncated {
+		t.Error("expected bufTruncated=true after exceeding maxBytes")
+	}
+}
+
+func TestTraceResponseWriter_WriteString_CapsAtMaxBytes(t *testing.T) {
+	w := newTraceResponseWriter(nil, true, 8)
+	w.WriteString("1234567890")
+	body := w.bufferedBody()
+	if len(body) > 8 {
+		t.Errorf("expected at most 8 bytes, got %d", len(body))
+	}
+	if !w.bufTruncated {
+		t.Error("expected bufTruncated=true for WriteString exceeding maxBytes")
+	}
+}
+
+// --- captureBody truncation detection ---
+
+func TestCaptureBody_RawTruncationPreserved(t *testing.T) {
+	// Feed a body longer than maxBytes. Even if sanitization produces short
+	// output, the truncated flag must remain true.
+	longBody := strings.Repeat("x", 200)
+	result, truncated := captureBody(
+		bytes.NewReader([]byte(longBody)),
+		"text/plain",
+		100,
+	)
+	if !truncated {
+		t.Error("expected truncated=true when raw body exceeds maxBytes")
+	}
+	if len(result) > 100 {
+		t.Errorf("output exceeds maxBytes: len=%d", len(result))
+	}
+}
+
+func TestCaptureBody_JSON_RawTruncationWithRedacted(t *testing.T) {
+	// JSON body just over the limit. Redaction may shrink output but
+	// rawTruncated must still be true.
+	payload := `{"password":"` + strings.Repeat("x", 200) + `","name":"ok"}`
+	result, truncated := captureBody(
+		bytes.NewReader([]byte(payload)),
+		"application/json",
+		100,
+	)
+	if !truncated {
+		t.Error("expected truncated=true when JSON raw body exceeds maxBytes")
+	}
+	if strings.Contains(result, strings.Repeat("x", 10)) {
+		t.Error("password value should be redacted")
+	}
+}
