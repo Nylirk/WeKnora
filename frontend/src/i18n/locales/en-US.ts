@@ -3352,6 +3352,9 @@ export default {
         emptyValue: '(empty)',
         defaultBody: 'About to change "{label}" to: {value}',
         bodyAuthRegistrationMode: 'About to change "{label}" to: {value}\n\nIf switched to self_serve, anyone on the public internet can register an account — please confirm this is intended.',
+        bodyHighRisk: 'About to change "{label}" to: {value}\n\nThis is a high-risk operation that may write sensitive data into memory. Confirm?',
+        bodyHighRiskEnable: 'About to enable "{label}"\n\nThis is a high-risk operation. Confirm?',
+        bodyHighRiskDisable: 'About to disable "{label}"\n\nConfirm?',
       },
       listConfirm: {
         ssrf: {

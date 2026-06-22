@@ -2514,6 +2514,9 @@ export default {
         emptyValue: "（空）",
         defaultBody: "即将把「{label}」改为：{value}",
         bodyAuthRegistrationMode: "即将把「{label}」改为：{value}\n\n如果切到 self_serve，公网任何人都可以注册账号 — 务必确认是预期行为。",
+        bodyHighRisk: "即将把「{label}」改为：{value}\n\n此为高风险操作，可能将敏感数据写入内存。确认继续？",
+        bodyHighRiskEnable: "即将启用「{label}」\n\n此为高风险操作，确认继续？",
+        bodyHighRiskDisable: "即将停用「{label}」\n\n确认继续？",
       },
       listConfirm: {
         ssrf: {

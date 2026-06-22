@@ -6,6 +6,8 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -119,8 +121,86 @@ func redactJSON(v any) any {
 	}
 }
 
+// fallbackRedactRaw applies regex-based sensitive-key redaction to raw text.
+// Used when JSON parsing fails (e.g. truncated body) or for text/plain content.
+// Two independent passes: first JSON-like key-value pairs, then form-encoded pairs.
+func fallbackRedactRaw(raw string) string {
+	result := fallbackRedactJSONComplete.ReplaceAllString(raw, `"$1": "[REDACTED]"`)
+	result = fallbackRedactJSONTruncated.ReplaceAllString(result, `"$1": "[REDACTED]"`)
+	result = fallbackRedactFormShape.ReplaceAllString(result, `$1=[REDACTED]`)
+	return result
+}
+
+// Regexes for fallback redaction.
+// Group 1 captures the bare key name (without quotes/colon/equals).
+var (
+	fallbackRedactJSONComplete  = buildJSONCompleteRegex()  // "key": "value"
+	fallbackRedactJSONTruncated = buildJSONTruncatedRegex()  // "key": "value  (no closing quote)
+	fallbackRedactFormShape     = buildFormShapeRegex()     // key=value
+)
+
+func buildSensitiveKeyAlt() string {
+	keys := []string{
+		"password", "passwd",
+		"token", "access_token", "refresh_token",
+		"api_key", "apikey",
+		"secret", "secret_key", "private_key",
+		"credential", "credentials",
+		"authorization", "cookie",
+		"openai_api_key", "mineru_api_key",
+		"access_key", "access_key_id", "secret_access_key",
+	}
+	return strings.Join(keys, "|")
+}
+
+func buildJSONCompleteRegex() *regexp.Regexp {
+	alt := buildSensitiveKeyAlt()
+	// "keyContainingSensitiveSubstr": "quoted-value"
+	// Group 1: the bare key name (no quotes).
+	return regexp.MustCompile(`"(?i)([\w.-]*?(` + alt + `)[\w.-]*?)"\s*:\s*"[^"]*"`)
+}
+
+func buildJSONTruncatedRegex() *regexp.Regexp {
+	alt := buildSensitiveKeyAlt()
+	// "keyContainingSensitiveSubstr": "truncated-value (no closing quote, at EOS)
+	// Group 1: the bare key name.
+	return regexp.MustCompile(`"(?i)([\w.-]*?(` + alt + `)[\w.-]*?)"\s*:\s*"[^"]*$`)
+}
+
+func buildFormShapeRegex() *regexp.Regexp {
+	alt := buildSensitiveKeyAlt()
+	// keyContainingSensitiveSubstr=nonspace-nonamp-value
+	// Group 1: the bare key name.
+	return regexp.MustCompile(`(?i)([\w.-]*?(` + alt + `)[\w.-]*?)=[^&\s]+`)
+}
+
+// redactURLEncoded parses application/x-www-form-urlencoded data, redacts
+// sensitive keys, and re-encodes.
+func redactURLEncoded(raw string) string {
+	vals, err := url.ParseQuery(raw)
+	if err != nil || len(vals) == 0 {
+		// Parse failed: fall back to regex redaction.
+		return fallbackRedactRaw(raw)
+	}
+	redacted := make(url.Values, len(vals))
+	for k, vs := range vals {
+		if shouldRedactKey(k) {
+			redacted[k] = []string{"[REDACTED]"}
+		} else {
+			redacted[k] = vs
+		}
+	}
+	return redacted.Encode()
+}
+
 // captureBody reads and sanitizes a request/response body for tracing.
 // Returns the preview string and whether it was truncated.
+//
+// Strategy per content type:
+//   - application/json:         parse → recursive-redact → re-serialize → truncate output.
+//     On parse failure, fall back to regex-based redaction.
+//   - application/x-www-form-urlencoded: url.ParseQuery → redact keys → re-encode.
+//   - text/*:                   regex-based fallback redaction.
 func captureBody(body io.Reader, contentType string, maxBytes int) (string, bool) {
 	if body == nil {
 		return "", false
@@ -129,40 +209,77 @@ func captureBody(body io.Reader, contentType string, maxBytes int) (string, bool
 		return "", false
 	}
 
-	// Read up to maxBytes+1 to detect truncation.
-	limited := io.LimitReader(body, int64(maxBytes+1))
+	// Read the full body (up to maxBytes for the raw read).
+	limited := io.LimitReader(body, int64(maxBytes))
 	raw, err := io.ReadAll(limited)
 	if err != nil {
 		return "", false
 	}
 
-	truncated := len(raw) > maxBytes
-	if truncated {
-		raw = raw[:maxBytes]
-	}
-
 	if len(raw) == 0 {
-		return "", truncated
+		return "", false
 	}
 
-	// For JSON: parse, redact, re-serialize.
 	mediaType, _, _ := mime.ParseMediaType(contentType)
-	if mediaType == "application/json" {
-		var parsed any
-		if err := json.Unmarshal(raw, &parsed); err == nil {
-			redacted := redactJSON(parsed)
-			if b, err := json.Marshal(redacted); err == nil {
-				result := string(b)
-				if truncated && len(result) > maxBytes {
-					result = result[:maxBytes]
-				}
-				return result, truncated
-			}
+
+	switch mediaType {
+	case "application/json":
+		return captureJSONBody(raw, maxBytes)
+
+	case "application/x-www-form-urlencoded":
+		result := redactURLEncoded(string(raw))
+		truncated := len(result) > maxBytes
+		if truncated {
+			result = result[:maxBytes]
 		}
-		// JSON parse failed — treat as raw text with redaction attempt
+		return result, truncated
+
+	default:
+		// text/plain, text/*, etc.
+		result := fallbackRedactRaw(string(raw))
+		truncated := len(result) > maxBytes
+		if truncated {
+			result = result[:maxBytes]
+		}
+		return result, truncated
+	}
+}
+
+// captureJSONBody handles application/json: parse → redact → re-serialize,
+// with a regex fallback when parsing fails (e.g. truncated body).
+func captureJSONBody(raw []byte, maxBytes int) (string, bool) {
+	var parsed any
+	if err := json.Unmarshal(raw, &parsed); err == nil {
+		// Successful parse: walk and redact, then re-serialize.
+		redacted := redactJSON(parsed)
+		b, err := json.Marshal(redacted)
+		if err != nil {
+			// Marshal failed (shouldn't happen after a successful parse).
+			// Fall back to regex redaction on the original bytes.
+			result := fallbackRedactRaw(string(raw))
+			truncated := len(result) > maxBytes
+			if truncated {
+				result = result[:maxBytes]
+			}
+			return result, truncated
+		}
+		result := string(b)
+		truncated := len(result) > maxBytes
+		if truncated {
+			result = result[:maxBytes]
+		}
+		return result, truncated
 	}
 
-	return string(raw), truncated
+	// JSON parse failed (truncated or malformed). Must NOT return raw text
+	// directly — use regex-based fallback redaction to catch partial
+	// sensitive fields.
+	result := fallbackRedactRaw(string(raw))
+	truncated := len(result) > maxBytes
+	if truncated {
+		result = result[:maxBytes]
+	}
+	return result, truncated
 }
 
 // responseWriter wraps gin.ResponseWriter to capture status and body.
