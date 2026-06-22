@@ -73,3 +73,11 @@ type QuestionService interface {
 	GetSyllabus(ctx context.Context, kbID string) (*types.SyllabusInfo, error)
 	DeleteSyllabus(ctx context.Context, kbID string) error
 }
+
+// QuestionSetReprocessor is a narrow interface for triggering question set
+// reprocessing from other services (e.g. knowledge base update). It avoids
+// the circular dependency that would arise from injecting the full
+// QuestionService into KnowledgeBaseService.
+type QuestionSetReprocessor interface {
+	ReprocessQuestionSet(ctx context.Context, kbID, setID string, scope string) error
+}
