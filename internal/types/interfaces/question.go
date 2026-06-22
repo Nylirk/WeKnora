@@ -68,6 +68,21 @@ type QuestionService interface {
 	// scope: "all", "auto_tagging", or "syllabus_checking". Runs in a background goroutine.
 	ReprocessQuestionSet(ctx context.Context, kbID, setID string, scope string) error
 
+	// GetReviewDetail returns the review detail for a question: the question itself,
+	// the auto-processing suggestions (auto_tagging + syllabus_checking), and the
+	// manual review result, all read from extraction_metadata. Does not mutate data.
+	GetReviewDetail(ctx context.Context, kbID, setID, questionID string) (*types.ReviewDetailResponse, error)
+	// SaveReviewDraft saves a manual review draft into extraction_metadata.manual_review
+	// without changing question.status, reviewed_by, or reviewed_at.
+	SaveReviewDraft(ctx context.Context, kbID, setID, questionID string, req *types.ReviewDraftRequest) (*types.Question, error)
+	// ApproveReview marks a draft question as reviewed, recording the reviewer and
+	// syncing the human-confirmed knowledge_points onto the question. Only draft
+	// questions can be approved; knowledge_points must be non-empty.
+	ApproveReview(ctx context.Context, kbID, setID, questionID string, req *types.ApproveReviewRequest) (*types.Question, error)
+	// RejectReview marks a draft question as rejected, recording the reviewer and
+	// the rejection reason. Only draft questions can be rejected; reason must be non-empty.
+	RejectReview(ctx context.Context, kbID, setID, questionID string, req *types.RejectReviewRequest) (*types.Question, error)
+
 	// Syllabus management for question bank knowledge bases.
 	UploadSyllabus(ctx context.Context, kbID string, fileHeader *multipart.FileHeader) (*types.SyllabusUploadResponse, error)
 	GetSyllabus(ctx context.Context, kbID string) (*types.SyllabusInfo, error)

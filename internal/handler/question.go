@@ -2,6 +2,7 @@ package handler
 
 import (
 	stderrors "errors"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -245,8 +246,22 @@ func (h *QuestionHandler) ListQuestions(c *gin.Context) {
 }
 
 func (h *QuestionHandler) UpdateQuestion(c *gin.Context) {
+	bodyBytes, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		questionBadRequest(c, err)
+		return
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(bodyBytes, &raw); err != nil {
+		questionBadRequest(c, err)
+		return
+	}
+	if _, ok := raw["status"]; ok {
+		questionBadRequest(c, apperrors.NewBadRequestError("请使用审核接口更新题目审核状态"))
+		return
+	}
 	var req types.UpdateQuestionRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		questionBadRequest(c, err)
 		return
 	}
@@ -282,6 +297,69 @@ func (h *QuestionHandler) UpdateQuestionStatus(c *gin.Context) {
 	setID := c.Param("set_id")
 	questionID := c.Param("question_id")
 	result, err := h.questionService.UpdateQuestionStatus(c.Request.Context(), kbID, setID, questionID, &req)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, result)
+}
+
+func (h *QuestionHandler) GetReviewDetail(c *gin.Context) {
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	questionID := c.Param("question_id")
+	result, err := h.questionService.GetReviewDetail(c.Request.Context(), kbID, setID, questionID)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, result)
+}
+
+func (h *QuestionHandler) SaveReviewDraft(c *gin.Context) {
+	var req types.ReviewDraftRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		questionBadRequest(c, err)
+		return
+	}
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	questionID := c.Param("question_id")
+	result, err := h.questionService.SaveReviewDraft(c.Request.Context(), kbID, setID, questionID, &req)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, result)
+}
+
+func (h *QuestionHandler) ApproveReview(c *gin.Context) {
+	var req types.ApproveReviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		questionBadRequest(c, err)
+		return
+	}
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	questionID := c.Param("question_id")
+	result, err := h.questionService.ApproveReview(c.Request.Context(), kbID, setID, questionID, &req)
+	if err != nil {
+		questionHandleError(c, err)
+		return
+	}
+	questionOK(c, result)
+}
+
+func (h *QuestionHandler) RejectReview(c *gin.Context) {
+	var req types.RejectReviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		questionBadRequest(c, err)
+		return
+	}
+	kbID := c.Param("id")
+	setID := c.Param("set_id")
+	questionID := c.Param("question_id")
+	result, err := h.questionService.RejectReview(c.Request.Context(), kbID, setID, questionID, &req)
 	if err != nil {
 		questionHandleError(c, err)
 		return
