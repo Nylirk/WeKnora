@@ -550,6 +550,20 @@ type QuestionBankConfig struct {
 	// SyllabusKnowledgeBaseID 是用于自动考纲筛选的知识库 ID。
 	// 可选；为空时自动考纲筛选禁用。
 	SyllabusKnowledgeBaseID string `yaml:"syllabus_knowledge_base_id" json:"syllabus_knowledge_base_id"`
+	// KnowledgePointRerankModelID is the optional rerank model ID used to
+	// re-rank knowledge-point candidates after hybrid recall. When empty or
+	// KnowledgePointRerankEnabled is false, the pipeline falls back to
+	// deterministic rule rerank.
+	KnowledgePointRerankModelID string `json:"knowledge_point_rerank_model_id,omitempty"`
+	// KnowledgePointRerankEnabled controls whether model-based rerank is
+	// attempted. Defaults to false (rule fallback) for backward compatibility.
+	KnowledgePointRerankEnabled bool `json:"knowledge_point_rerank_enabled,omitempty"`
+	// KnowledgePointRerankTopK is the number of candidates to send to the
+	// rerank model. When zero, defaults to KnowledgePointDefaultTopK.
+	KnowledgePointRerankTopK int `json:"knowledge_point_rerank_top_k,omitempty"`
+	// KnowledgePointRerankThreshold is an optional minimum rerank score
+	// gate. When zero, the pipeline uses KnowledgePointMinScore instead.
+	KnowledgePointRerankThreshold float64 `json:"knowledge_point_rerank_threshold,omitempty"`
 }
 
 // AutoKnowledgePointEnabled 当配置了知识点知识库时返回 true。
@@ -560,6 +574,14 @@ func (c *QuestionBankConfig) AutoKnowledgePointEnabled() bool {
 // AutoSyllabusCheckEnabled 当配置了考纲时返回 true。
 func (c *QuestionBankConfig) AutoSyllabusCheckEnabled() bool {
 	return c != nil && c.SyllabusKnowledgeBaseID != ""
+}
+
+// KnowledgePointRerankEnabledModel returns true when a rerank model ID is
+// configured and the rerank flag is explicitly enabled. This is the sole
+// gate for attempting model-based rerank; all other cases fall back to rule
+// rerank.
+func (c *QuestionBankConfig) KnowledgePointRerankEnabledModel() bool {
+	return c != nil && c.KnowledgePointRerankEnabled && c.KnowledgePointRerankModelID != ""
 }
 
 // Value implements driver.Valuer.

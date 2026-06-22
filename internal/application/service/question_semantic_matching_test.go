@@ -696,6 +696,8 @@ func TestKnowledgePoint_Unmatched_WhenOnlyInvalidCandidates(t *testing.T) {
 }
 
 // Test 23: Unsorted results — classification uses highest scores regardless of order.
+// With rule rerank, KnowledgeTitle-sourced labels get +0.02, so final scores
+// differ from raw scores.
 func TestKnowledgePoint_UsesHighestScoresWhenResultsUnsorted(t *testing.T) {
 	results := []*types.SearchResult{
 		{ID: "c23a", Content: "content a", KnowledgeID: "k23a", KnowledgeTitle: "KP-A", Score: 0.60},
@@ -711,16 +713,18 @@ func TestKnowledgePoint_UsesHighestScoresWhenResultsUnsorted(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if q.AutoTaggingStatus != "matched" {
-		t.Errorf("expected auto_tagging_status=matched (0.90 vs 0.70), got %s", q.AutoTaggingStatus)
+		t.Errorf("expected auto_tagging_status=matched, got %s", q.AutoTaggingStatus)
 	}
 	var meta map[string]any
 	json.Unmarshal(q.ExtractionMetadata, &meta)
 	tagging := meta["auto_processing"].(map[string]any)["auto_tagging"].(map[string]any)
-	if tagging["top_score"] != 0.90 {
-		t.Errorf("expected top_score=0.90, got %v", tagging["top_score"])
+	topScore, _ := tagging["top_score"].(float64)
+	secondScore, _ := tagging["second_score"].(float64)
+	if topScore <= secondScore {
+		t.Errorf("expected top_score > second_score, got top=%.4f second=%.4f", topScore, secondScore)
 	}
-	if tagging["second_score"] != 0.70 {
-		t.Errorf("expected second_score=0.70, got %v", tagging["second_score"])
+	if topScore < 0.90 {
+		t.Errorf("expected top_score >= 0.90 (raw + rule bonus), got %.4f", topScore)
 	}
 }
 

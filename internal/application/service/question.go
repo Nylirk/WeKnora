@@ -25,6 +25,7 @@ type QuestionService struct {
 	extractionService    *QuestionExtractionService
 	blockAnalysisService *BlockAnalysisService
 	questionIndexService interfaces.QuestionIndexService
+	modelService         interfaces.ModelService
 }
 
 func NewQuestionService(
@@ -38,6 +39,7 @@ func NewQuestionService(
 	extractionSvc *QuestionExtractionService,
 	blockAnalysisSvc *BlockAnalysisService,
 	questionIndexSvc interfaces.QuestionIndexService,
+	modelSvc interfaces.ModelService,
 ) interfaces.QuestionService {
 	return &QuestionService{
 		repository:           repo,
@@ -50,6 +52,7 @@ func NewQuestionService(
 		extractionService:    extractionSvc,
 		blockAnalysisService: blockAnalysisSvc,
 		questionIndexService: questionIndexSvc,
+		modelService:         modelSvc,
 	}
 }
 
