@@ -629,3 +629,187 @@ func TestTruncateText_EdgeCases(t *testing.T) {
 		t.Error("expected 10 chars truncation")
 	}
 }
+
+// Test 19: KnowledgePointRerankTopK does not reduce HybridSearch recall.
+func TestKnowledgePointModelRerank_RerankTopKDoesNotReduceHybridRecall(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c1", KnowledgeID: "k1", KnowledgeTitle: "KP1", Content: "content1", Score: 0.90},
+		{ID: "c2", KnowledgeID: "k2", KnowledgeTitle: "KP2", Content: "content2", Score: 0.85},
+		{ID: "c3", KnowledgeID: "k3", KnowledgeTitle: "KP3", Content: "content3", Score: 0.80},
+		{ID: "c4", KnowledgeID: "k4", KnowledgeTitle: "KP4", Content: "content4", Score: 0.75},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	reranker := &mockReranker{
+		results: []rerank.RankResult{
+			{Index: 0, RelevanceScore: 0.90},
+			{Index: 1, RelevanceScore: 0.85},
+			{Index: 2, RelevanceScore: 0.80},
+		},
+	}
+	modelSvc := &mockModelService{reranker: reranker}
+	svc := makeRerankTestService(kbSvc, modelSvc)
+	cfg := makeRerankConfig("kp-kb", "rerank-1", true)
+	cfg.KnowledgePointRerankTopK = 3
+	q := makeTestQuestion("q-r19")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(kbSvc.capturedParams) == 0 {
+		t.Fatal("expected HybridSearch call")
+	}
+	if kbSvc.capturedParams[0].MatchCount != KnowledgePointDefaultTopK {
+		t.Errorf("HybridSearch MatchCount=%d, want %d (KnowledgePointDefaultTopK, not RerankTopK)",
+			kbSvc.capturedParams[0].MatchCount, KnowledgePointDefaultTopK)
+	}
+	if len(reranker.capturedDocs) > 3 {
+		t.Errorf("reranker received %d docs, expected <= 3 (RerankTopK)", len(reranker.capturedDocs))
+	}
+}
+
+// Test 20: KnowledgePointRerankThreshold prevents matched when rerank score is low.
+func TestKnowledgePointModelRerank_RespectsRerankThreshold(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c1", KnowledgeID: "k1", KnowledgeTitle: "KP1", Content: "content", Score: 0.95},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	reranker := &mockReranker{
+		results: []rerank.RankResult{
+			{Index: 0, RelevanceScore: 0.30},
+		},
+	}
+	modelSvc := &mockModelService{reranker: reranker}
+	svc := makeRerankTestService(kbSvc, modelSvc)
+	cfg := makeRerankConfig("kp-kb", "rerank-1", true)
+	cfg.KnowledgePointRerankThreshold = 0.80
+	q := makeTestQuestion("q-r20")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	tagging := extractTaggingMeta(t, q)
+	if tagging["status"] == "matched" {
+		t.Error("expected non-matched status when rerank score below threshold")
+	}
+	if tagging["rerank_threshold"] == nil {
+		t.Error("expected rerank_threshold in metadata")
+	}
+}
+
+// Test 21: Candidate includes rerank_mode field.
+func TestKnowledgePointModelRerank_CandidateIncludesRerankMode(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c1", KnowledgeID: "k1", KnowledgeTitle: "KP1", Content: "content", Score: 0.85},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	reranker := &mockReranker{
+		results: []rerank.RankResult{{Index: 0, RelevanceScore: 0.90}},
+	}
+	modelSvc := &mockModelService{reranker: reranker}
+	svc := makeRerankTestService(kbSvc, modelSvc)
+	cfg := makeRerankConfig("kp-kb", "rerank-1", true)
+	q := makeTestQuestion("q-r21")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	candidates := extractCandidates(t, q)
+	if len(candidates) == 0 {
+		t.Fatal("expected candidates")
+	}
+	if candidates[0]["rerank_mode"] != "model" {
+		t.Errorf("expected candidate rerank_mode=model, got %v", candidates[0]["rerank_mode"])
+	}
+}
+
+// Test 22: normalizeKnowledgePointLabel handles punctuation, hyphens, underscores, full-width spaces.
+func TestKnowledgePointProjection_NormalizesLabels(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "hyphen and spaces", input: " Newton-Laws ", want: "newton laws"},
+		{name: "underscore", input: "newton_laws", want: "newton laws"},
+		{name: "plain words", input: "Newton Laws", want: "newton laws"},
+		{name: "full-width space", input: "Newton\u3000Laws", want: "newton laws"},
+		{name: "chinese punctuation", input: "牛顿定律（第一定律）", want: "牛顿定律第一定律"},
+		{name: "mixed punctuation", input: "Newton's, Laws: Motion.", want: "newtons laws motion"},
+		{name: "consecutive whitespace", input: "Newton   Laws", want: "newton laws"},
+		{name: "chinese preserved", input: "一元二次方程", want: "一元二次方程"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeKnowledgePointLabel(tt.input)
+			if got != tt.want {
+				t.Errorf("normalizeKnowledgePointLabel(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// Test 23: inferKnowledgePointLabelFromContent extracts short labels.
+func TestKnowledgePointProjection_InfersShortLabelFromContent(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{name: "colon separator", content: "Newton's Laws: force and motion relationship", want: "Newton's Laws"},
+		{name: "chinese colon", content: "光合作用：绿色植物利用光能将二氧化碳和水转化为有机物", want: "光合作用"},
+		{name: "dash separator", content: "Recursion - a function calling itself", want: "Recursion"},
+		{name: "sentence end period", content: "TCP is a transport layer protocol. It provides reliable delivery.", want: "TCP is a transport layer protocol"},
+		{name: "chinese sentence end", content: "DNA复制是半保留复制。需要多种酶参与。", want: "DNA复制是半保留复制"},
+		{name: "no separator long text", content: strings.Repeat("abcdefghij", 10), want: strings.Repeat("abcdefghij", 6)},
+		{name: "empty", content: "", want: ""},
+		{name: "whitespace only", content: "   ", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := inferKnowledgePointLabelFromContent(tt.content)
+			if got != tt.want {
+				t.Errorf("inferKnowledgePointLabelFromContent(%q) = %q, want %q", tt.content, got, tt.want)
+			}
+		})
+	}
+}
+
+// Test 24: Partial rerank results don't let missing raw score dominate.
+func TestKnowledgePointModelRerank_PartialResultsDoNotLetMissingRawScoreDominate(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c1", KnowledgeID: "k1", KnowledgeTitle: "KP-High-Raw", Content: "content a", Score: 0.95},
+		{ID: "c2", KnowledgeID: "k2", KnowledgeTitle: "KP-Low-Raw-Reranked", Content: "content b", Score: 0.70},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	reranker := &mockReranker{
+		results: []rerank.RankResult{
+			{Index: 1, RelevanceScore: 0.90},
+		},
+	}
+	modelSvc := &mockModelService{reranker: reranker}
+	svc := makeRerankTestService(kbSvc, modelSvc)
+	cfg := makeRerankConfig("kp-kb", "rerank-1", true)
+	q := makeTestQuestion("q-r24")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	candidates := extractCandidates(t, q)
+	if len(candidates) < 2 {
+		t.Fatalf("expected at least 2 candidates, got %d", len(candidates))
+	}
+	top1, _ := candidates[0]["knowledge_point"].(string)
+	if top1 != "KP-Low-Raw-Reranked" {
+		t.Errorf("expected reranked candidate on top, got %q", top1)
+	}
+	signals, _ := candidates[1]["match_signals"].([]any)
+	foundMissing := false
+	for _, s := range signals {
+		if s == "rerank_missing" {
+			foundMissing = true
+		}
+	}
+	if !foundMissing {
+		t.Error("expected rerank_missing in match_signals for unreranked projection")
+	}
+}

@@ -72,11 +72,7 @@ func (s *QuestionService) RunKnowledgePointMatching(
 			continue
 		}
 
-		topK := KnowledgePointDefaultTopK
-		if cfg.KnowledgePointRerankTopK > 0 {
-			topK = cfg.KnowledgePointRerankTopK
-		}
-		results, err := s.semanticSearchKnowledgePoints(ctx, cfg.KnowledgePointKnowledgeBaseID, query, topK)
+		results, err := s.semanticSearchKnowledgePoints(ctx, cfg.KnowledgePointKnowledgeBaseID, query, KnowledgePointDefaultTopK)
 		if err != nil {
 			logger.Warnf(ctx, "[auto_tagging] search failed for question %s: %v", q.ID, err)
 			s.writeSingleQuestionMetadata(ctx, q, "auto_tagging", map[string]any{
@@ -90,9 +86,11 @@ func (s *QuestionService) RunKnowledgePointMatching(
 		rerankMode := "disabled"
 		rerankModelID := ""
 		var rerankErr string
+		var rerankThreshold float64
 
 		if cfg.KnowledgePointRerankEnabledModel() && s.modelService != nil {
 			rerankModelID = cfg.KnowledgePointRerankModelID
+			rerankThreshold = cfg.KnowledgePointRerankThreshold
 			reranker, rErr := s.modelService.GetRerankModel(ctx, rerankModelID)
 			if rErr != nil {
 				rerankErr = truncateError(rErr)
@@ -100,7 +98,11 @@ func (s *QuestionService) RunKnowledgePointMatching(
 				applyRuleRerank(query, projections)
 				rerankMode = "rule_fallback"
 		} else {
-			reranked, rrErr := rerankKnowledgePointProjectionsWithModel(ctx, query, projections, reranker)
+			projectionsToRerank := projections
+			if cfg.KnowledgePointRerankTopK > 0 && len(projections) > cfg.KnowledgePointRerankTopK {
+				projectionsToRerank = projections[:cfg.KnowledgePointRerankTopK]
+			}
+			reranked, rrErr := rerankKnowledgePointProjectionsWithModel(ctx, query, projectionsToRerank, reranker)
 			if rrErr != nil || len(reranked) == 0 {
 				if rrErr != nil {
 					rerankErr = truncateError(rrErr)
@@ -109,7 +111,11 @@ func (s *QuestionService) RunKnowledgePointMatching(
 				applyRuleRerank(query, projections)
 				rerankMode = "rule_fallback"
 			} else {
+				applyRerankMissingPenalty(projections, projectionsToRerank)
 				projections = reranked
+				if rerankThreshold > 0 {
+					applyRerankThreshold(projections, rerankThreshold)
+				}
 				rerankMode = "model"
 			}
 		}
@@ -125,7 +131,7 @@ func (s *QuestionService) RunKnowledgePointMatching(
 		})
 
 		statusValue, topScore, secondScore := classifyProjections(projections)
-		candidates := projectionsToCandidates(projections, KnowledgePointCandidateLimit)
+		candidates := projectionsToCandidates(projections, KnowledgePointCandidateLimit, rerankMode)
 		meta := map[string]any{
 			"status":                       statusValue,
 			"matched_at":                   time.Now().UTC().Format(time.RFC3339),
@@ -144,6 +150,9 @@ func (s *QuestionService) RunKnowledgePointMatching(
 		}
 		if rerankErr != "" {
 			meta["rerank_error"] = rerankErr
+		}
+		if rerankThreshold > 0 {
+			meta["rerank_threshold"] = rerankThreshold
 		}
 		if topScore > 0 {
 			meta["top_score"] = topScore
@@ -287,10 +296,28 @@ func buildKnowledgePointProjections(results []*types.SearchResult) []knowledgePo
 	return projections
 }
 
-// normalizeKnowledgePointLabel produces a case-folded, trimmed key for
-// aggregating projections that differ only in casing or whitespace.
+// normalizeKnowledgePointLabel produces a normalized key for aggregating
+// projections that differ only in casing, whitespace, hyphens, underscores,
+// or common CJK/Latin punctuation. Chinese characters are preserved.
 func normalizeKnowledgePointLabel(label string) string {
-	return strings.ToLower(strings.TrimSpace(label))
+	s := strings.TrimSpace(label)
+	s = strings.ToLower(s)
+	s = strings.ReplaceAll(s, "\u3000", " ")
+	for _, p := range kpLabelPunctuation {
+		s = strings.ReplaceAll(s, p, "")
+	}
+	s = strings.ReplaceAll(s, "-", " ")
+	s = strings.ReplaceAll(s, "_", " ")
+	fields := strings.Fields(s)
+	return strings.Join(fields, " ")
+}
+
+var kpLabelPunctuation = []string{
+	",", ".", ";", ":",
+	"：", "，", "。", "、",
+	"（", "）", "(", ")",
+	"[", "]", "【", "】",
+	"\"", "'", "“", "”",
 }
 
 // rerankKnowledgePointProjectionsWithModel calls the rerank model to re-score
@@ -335,19 +362,22 @@ func rerankKnowledgePointProjectionsWithModel(
 		return nil, nil
 	}
 
+	rerankedSet := make(map[int]bool, len(rankResults))
 	for _, rr := range rankResults {
 		if rr.Index < 0 || rr.Index >= len(validIdx) {
 			continue
 		}
 		projIdx := validIdx[rr.Index]
+		rerankedSet[projIdx] = true
 		projections[projIdx].RerankScore = rr.RelevanceScore
 		projections[projIdx].Score = clamp01(kpRerankScoreWeight*rr.RelevanceScore + kpRawScoreWeight*projections[projIdx].RawScore)
 		projections[projIdx].MatchSignals = append(projections[projIdx].MatchSignals, "model_rerank")
 	}
 
 	for i := range projections {
-		if projections[i].RerankScore == 0 && projections[i].Score == 0 {
-			projections[i].Score = projections[i].RawScore
+		if !rerankedSet[i] {
+			projections[i].MatchSignals = append(projections[i].MatchSignals, "rerank_missing")
+			projections[i].Score = projections[i].RawScore * 0.5
 		}
 	}
 
@@ -404,6 +434,38 @@ func labelOverlap(query, candidate string) bool {
 	return false
 }
 
+// applyRerankMissingPenalty marks projections beyond the rerank subset as
+// rerank_missing and halves their Score so they cannot dominate projections
+// that received an explicit model score.
+func applyRerankMissingPenalty(all, reranked []knowledgePointProjection) {
+	if len(reranked) >= len(all) {
+		return
+	}
+	rerankedSet := make(map[string]bool, len(reranked))
+	for _, p := range reranked {
+		rerankedSet[p.NormalizedLabel] = true
+	}
+	for i := range all {
+		if !rerankedSet[all[i].NormalizedLabel] {
+			all[i].MatchSignals = append(all[i].MatchSignals, "rerank_missing")
+			all[i].Score = all[i].RawScore * 0.5
+		}
+	}
+}
+
+// applyRerankThreshold caps the Score of any projection whose RerankScore
+// falls below the configured threshold, preventing a high raw score from
+// masking a weak model signal. The capped Score is set to min(Score, threshold).
+func applyRerankThreshold(projections []knowledgePointProjection, threshold float64) {
+	for i := range projections {
+		if projections[i].RerankScore < threshold {
+			if projections[i].Score > threshold {
+				projections[i].Score = threshold
+			}
+		}
+	}
+}
+
 func tokenizeForOverlap(s string) []string {
 	return strings.FieldsFunc(s, func(r rune) bool {
 		return r == ' ' || r == '\t' || r == '\n' || r == ',' || r == '.' || r == ';' || r == ':' || r == '/' || r == '(' || r == ')'
@@ -446,8 +508,8 @@ func classifyProjections(projections []knowledgePointProjection) (string, float6
 // projectionsToCandidates converts the final sorted projections into the
 // candidate map slice written to auto_tagging metadata. Capped at limit.
 // Preserves all existing candidate fields and adds raw_score, rerank_score,
-// rerank_mode (via match_signals), evidence_chunk_ids, and match_signals.
-func projectionsToCandidates(projections []knowledgePointProjection, limit int) []map[string]any {
+// rerank_mode, evidence_chunk_ids, and match_signals.
+func projectionsToCandidates(projections []knowledgePointProjection, limit int, rerankMode string) []map[string]any {
 	if limit <= 0 {
 		return []map[string]any{}
 	}
@@ -474,6 +536,7 @@ func projectionsToCandidates(projections []knowledgePointProjection, limit int) 
 			"reason":               p.Reason,
 			"raw_score":            p.RawScore,
 			"rerank_score":         p.RerankScore,
+			"rerank_mode":          rerankMode,
 			"evidence_chunk_ids":   p.EvidenceChunkIDs,
 			"match_signals":        p.MatchSignals,
 		})
@@ -548,16 +611,47 @@ func (s *QuestionService) syncQuestionStatusFromStage(
 }
 
 // knowledgePointLabel derives a short knowledge-point label from a search result.
-// Prefers KnowledgeTitle; falls back to a short truncation of chunk content.
+// Prefers KnowledgeTitle; falls back to inferKnowledgePointLabelFromContent.
 func knowledgePointLabel(r *types.SearchResult) (string, string) {
 	if title := strings.TrimSpace(r.KnowledgeTitle); title != "" {
 		return title, "knowledge_title"
 	}
-	if content := strings.TrimSpace(r.Content); content != "" {
-		return truncateText(content, 60), "inferred_from_content"
+	if label := inferKnowledgePointLabelFromContent(r.Content); label != "" {
+		return label, "inferred_from_content"
 	}
 	return "", ""
 }
+
+// inferKnowledgePointLabelFromContent extracts a short label from unstructured
+// chunk content. It tries colon/dash separators first, then sentence
+// boundaries, and finally rune-safe truncation to 60 characters.
+func inferKnowledgePointLabelFromContent(content string) string {
+	s := strings.TrimSpace(content)
+	if s == "" {
+		return ""
+	}
+	for _, sep := range kpLabelSeparators {
+		if idx := strings.Index(s, sep); idx > 0 {
+			prefix := strings.TrimSpace(s[:idx])
+			if len([]rune(prefix)) >= 2 {
+				return truncateText(prefix, 60)
+			}
+		}
+	}
+	for _, sep := range kpLabelSentenceEnds {
+		if idx := strings.Index(s, sep); idx > 0 {
+			prefix := strings.TrimSpace(s[:idx])
+			if len([]rune(prefix)) >= 2 {
+				return truncateText(prefix, 60)
+			}
+		}
+	}
+	return truncateText(s, 60)
+}
+
+var kpLabelSeparators = []string{":", "：", "—", "-"}
+
+var kpLabelSentenceEnds = []string{".", "。", "；", ";"}
 
 // classifySyllabusResult determines the scope result from search scores.
 func classifySyllabusResult(results []*types.SearchResult) (result string, topScore float64) {
