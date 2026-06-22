@@ -2623,6 +2623,42 @@ export default {
         },
       },
     },
+    debug: {
+      title: "调试面板",
+      description: "SystemAdmin 专用调试工具。仅采集有限且已脱敏的 trace 信息。",
+      tabs: {
+        routes: "路由注册",
+        httpTraces: "HTTP 请求跟踪",
+      },
+      routes: {
+        method: "请求方法",
+        path: "路由路径",
+        module: "模块",
+        handler: "处理函数",
+        authRequired: "需认证",
+        systemAdminRequired: "需系统管理员",
+      },
+      traces: {
+        enabled: "采集状态",
+        captureBody: "Body 采集",
+        status: "状态码",
+        duration: "耗时",
+        user: "用户",
+        tenant: "租户",
+        role: "角色",
+        clear: "清空记录",
+        clearConfirm: "确认清空所有 trace 记录？此操作不可撤销。",
+        bodyCaptureDisabled: "Body 采集未开启",
+        truncated: "已截断",
+        detailTitle: "请求详情",
+        statusMin400: "status ≥ 400",
+        statusMin500: "status ≥ 500",
+        slowRequest: "慢请求",
+      },
+      errors: {
+        loadFailed: "加载失败，请重试",
+      },
+    },
   },
   mcp: {
     testResult: {

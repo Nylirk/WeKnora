@@ -219,6 +219,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewQuestionService))
 	must(container.Provide(service.NewUserService))
 	must(container.Provide(service.NewSystemSettingService))
+	must(container.Provide(service.NewHTTPDebugTraceService))
 	must(container.Provide(service.NewWeKnoraCloudService))
 
 	// Extract services - register individual extracters with names

@@ -86,6 +86,10 @@ type RouterParams struct {
 	WeKnoraCloudHandler          *handler.WeKnoraCloudHandler
 	WikiPageHandler              *handler.WikiPageHandler
 	QuestionHandler              *handler.QuestionHandler
+	// DebugTraceService is the in-memory HTTP trace ring buffer for the
+	// SystemAdmin debug console. Optional — nil skips middleware registration.
+	DebugTraceService   interfaces.HTTPDebugTraceService
+	SystemSettingService interfaces.SystemSettingService
 }
 
 // NewRouter 创建新的路由
@@ -158,6 +162,21 @@ func NewRouter(params RouterParams) *gin.Engine {
 
 	// 认证中间件
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.TenantMemberService, params.Config))
+
+	// Wire the gin engine into SystemHandler so ListDebugRoutes can
+	// enumerate registered routes from the engine itself.
+	if params.SystemHandler != nil {
+		params.SystemHandler.SetEngine(r)
+		if params.DebugTraceService != nil {
+			params.SystemHandler.SetDebugTraceService(params.DebugTraceService)
+		}
+	}
+
+	// Debug trace middleware — after Auth so user/tenant/role context is
+	// available, before business routes. No-op when disabled.
+	if params.DebugTraceService != nil && params.SystemSettingService != nil {
+		r.Use(middleware.DebugTrace(params.DebugTraceService, params.SystemSettingService))
+	}
 
 	// 文件服务：统一代理本地/MinIO/COS/TOS存储后端（需要认证）
 	serveFiles(r, params.FileService)
@@ -841,6 +860,13 @@ func RegisterSystemAdminRoutes(
 		if auditLogHandler != nil {
 			adminRoutes.GET("/audit-log", auditLogHandler.ListSystemAuditLog)
 		}
+
+		// Debug console: route registry + HTTP trace inspection.
+		// SystemAdmin-only -- inherited from the adminRoutes group guard.
+		adminRoutes.GET("/debug/routes", handler.ListDebugRoutes)
+		adminRoutes.GET("/debug/http-traces", handler.ListHTTPTraces)
+		adminRoutes.GET("/debug/http-traces/:id", handler.GetHTTPTrace)
+		adminRoutes.DELETE("/debug/http-traces", handler.ClearHTTPTraces)
 	}
 }
 

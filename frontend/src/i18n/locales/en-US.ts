@@ -3460,7 +3460,43 @@ export default {
           details: 'Raw details',
         },
       },
-    }
+    },
+    debug: {
+      title: 'Debug Console',
+      description: 'SystemAdmin-only debugging surface. Captures only bounded, redacted traces.',
+      tabs: {
+        routes: 'Routes',
+        httpTraces: 'HTTP Traces',
+      },
+      routes: {
+        method: 'Method',
+        path: 'Path',
+        module: 'Module',
+        handler: 'Handler',
+        authRequired: 'Auth Required',
+        systemAdminRequired: 'System Admin',
+      },
+      traces: {
+        enabled: 'Trace Status',
+        captureBody: 'Body Capture',
+        status: 'Status',
+        duration: 'Duration',
+        user: 'User',
+        tenant: 'Tenant',
+        role: 'Role',
+        clear: 'Clear Traces',
+        clearConfirm: 'Clear all trace records? This cannot be undone.',
+        bodyCaptureDisabled: 'Body capture is disabled',
+        truncated: 'Truncated',
+        detailTitle: 'Request Detail',
+        statusMin400: 'status ≥ 400',
+        statusMin500: 'status ≥ 500',
+        slowRequest: 'Slow request',
+      },
+      errors: {
+        loadFailed: 'Failed to load, please retry',
+      },
+    },
   },
   mcp: {
     testResult: {
