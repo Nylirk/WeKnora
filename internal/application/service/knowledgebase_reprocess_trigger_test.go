@@ -2,15 +2,13 @@ package service
 
 import (
 	"context"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
-// ── Mocks for KB update reprocess trigger tests ──
+// ── Mocks for KB update tests ──
 
 type kbUpdateTestRepo struct {
 	interfaces.KnowledgeBaseRepository
@@ -52,69 +50,11 @@ func (r *kbUpdateTestRepo) UpdateKnowledgeBase(_ context.Context, kb *types.Know
 	return nil
 }
 
-type kbUpdateQuestionRepo struct {
-	interfaces.QuestionRepository
-	sets []*types.QuestionSet
-}
-
-func (r *kbUpdateQuestionRepo) ListQuestionSets(_ context.Context, _ uint64, kbID string, page *types.Pagination) (*types.PageResult, error) {
-	filtered := make([]*types.QuestionSet, 0)
-	for _, qs := range r.sets {
-		if qs.KnowledgeBaseID == kbID {
-			filtered = append(filtered, qs)
-		}
-	}
-	if page.Page > 1 {
-		return types.NewPageResult(int64(len(filtered)), page, []*types.QuestionSet{}), nil
-	}
-	return types.NewPageResult(int64(len(filtered)), page, filtered), nil
-}
-
-type mockQSReprocessor struct {
-	mu          sync.Mutex
-	calls       []reprocessCall
-	callCount   int
-	failOnError error
-}
-
-type reprocessCall struct {
-	KBID  string
-	SetID string
-	Scope string
-}
-
-func (m *mockQSReprocessor) ReprocessQuestionSet(_ context.Context, kbID, setID, scope string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.calls = append(m.calls, reprocessCall{KBID: kbID, SetID: setID, Scope: scope})
-	m.callCount++
-	if m.failOnError != nil {
-		return m.failOnError
-	}
-	return nil
-}
-
-func (m *mockQSReprocessor) getCalls() []reprocessCall {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	cp := make([]reprocessCall, len(m.calls))
-	copy(cp, m.calls)
-	return cp
-}
-
-func (m *mockQSReprocessor) getCallCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.callCount
-}
-
 // ── Helpers ──
 
-func newKBUpdateService(repo *kbUpdateTestRepo, qRepo *kbUpdateQuestionRepo, reproc *mockQSReprocessor) *knowledgeBaseService {
+func newKBUpdateService(repo *kbUpdateTestRepo) *knowledgeBaseService {
 	return &knowledgeBaseService{
-		repo:          repo,
-		questionRepo:  qRepo,
-		qsReprocessor: reproc,
+		repo: repo,
 	}
 }
 
@@ -132,21 +72,21 @@ func makeQuestionBankKB(id string, cfg *types.QuestionBankConfig) *types.Knowled
 	}
 }
 
-// ── Tests ──
+// ── Tests for QuestionBankAutoTaggingConfigChanged ──
 
 func TestQuestionBankAutoTaggingConfigChanged_NoChange(t *testing.T) {
 	old := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-1"}
 	new := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-1"}
-	if questionBankAutoTaggingConfigChanged(old, new) {
+	if QuestionBankAutoTaggingConfigChanged(old, new) {
 		t.Error("expected false for identical configs")
 	}
 }
 
 func TestQuestionBankAutoTaggingConfigChanged_NilEqualsEmpty(t *testing.T) {
-	if questionBankAutoTaggingConfigChanged(nil, &types.QuestionBankConfig{}) {
+	if QuestionBankAutoTaggingConfigChanged(nil, &types.QuestionBankConfig{}) {
 		t.Error("expected false for nil vs empty config")
 	}
-	if questionBankAutoTaggingConfigChanged(nil, nil) {
+	if QuestionBankAutoTaggingConfigChanged(nil, nil) {
 		t.Error("expected false for nil vs nil")
 	}
 }
@@ -154,30 +94,41 @@ func TestQuestionBankAutoTaggingConfigChanged_NilEqualsEmpty(t *testing.T) {
 func TestQuestionBankAutoTaggingConfigChanged_KBIDChanged(t *testing.T) {
 	old := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-1"}
 	new := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-2"}
-	if !questionBankAutoTaggingConfigChanged(old, new) {
+	if !QuestionBankAutoTaggingConfigChanged(old, new) {
 		t.Error("expected true when KnowledgePointKnowledgeBaseID changed")
 	}
 }
 
 func TestQuestionBankAutoTaggingConfigChanged_RerankConfigChanged(t *testing.T) {
 	old := &types.QuestionBankConfig{
-		KnowledgePointKnowledgeBaseID:   "kp-1",
-		KnowledgePointRerankModelID:     "rm-1",
-		KnowledgePointRerankEnabled:     false,
-		KnowledgePointRerankTopK:        0,
-		KnowledgePointRerankThreshold:   0,
+		KnowledgePointKnowledgeBaseID: "kp-1",
+		KnowledgePointRerankModelID:   "rm-1",
+		KnowledgePointRerankEnabled:   false,
+		KnowledgePointRerankTopK:      0,
+		KnowledgePointRerankThreshold: 0,
 	}
 	new := &types.QuestionBankConfig{
-		KnowledgePointKnowledgeBaseID:   "kp-1",
-		KnowledgePointRerankModelID:     "rm-2",
-		KnowledgePointRerankEnabled:     true,
-		KnowledgePointRerankTopK:        5,
-		KnowledgePointRerankThreshold:   0.8,
+		KnowledgePointKnowledgeBaseID: "kp-1",
+		KnowledgePointRerankModelID:   "rm-2",
+		KnowledgePointRerankEnabled:   true,
+		KnowledgePointRerankTopK:      5,
+		KnowledgePointRerankThreshold: 0.8,
 	}
-	if !questionBankAutoTaggingConfigChanged(old, new) {
+	if !QuestionBankAutoTaggingConfigChanged(old, new) {
 		t.Error("expected true when rerank config changed")
 	}
 }
+
+func TestQuestionBankAutoTaggingConfigChanged_NameOnlyReturnsFalse(t *testing.T) {
+	// Name changes are not part of QuestionBankConfig, so this is always false.
+	old := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-1"}
+	new := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-1"}
+	if QuestionBankAutoTaggingConfigChanged(old, new) {
+		t.Error("expected false for config-unchanged (name-only change scenario)")
+	}
+}
+
+// ── Tests for UpdateKnowledgeBase preserving config ──
 
 func TestUpdateKnowledgeBase_DoesNotTriggerReprocessWhenConfigUnchanged(t *testing.T) {
 	kb := makeQuestionBankKB("kb-1", &types.QuestionBankConfig{
@@ -187,20 +138,20 @@ func TestUpdateKnowledgeBase_DoesNotTriggerReprocessWhenConfigUnchanged(t *testi
 		kb:     kb,
 		refKBs: map[string]*types.KnowledgeBase{"kp-B": {ID: "kp-B", Type: types.KnowledgeBaseTypeDocument}},
 	}
-	qRepo := &kbUpdateQuestionRepo{sets: []*types.QuestionSet{
-		{ID: "set-1", KnowledgeBaseID: "kb-1"},
-	}}
-	reproc := &mockQSReprocessor{}
-	svc := newKBUpdateService(repo, qRepo, reproc)
+	svc := newKBUpdateService(repo)
 
-	_, err := svc.UpdateKnowledgeBase(kbUpdateCtx(), "kb-1", "New Name", "desc", nil, &types.QuestionBankConfig{
+	// Deep-copy old config before update.
+	oldCfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-B"}
+	updatedKB, err := svc.UpdateKnowledgeBase(kbUpdateCtx(), "kb-1", "New Name", "desc", nil, &types.QuestionBankConfig{
 		KnowledgePointKnowledgeBaseID: "kp-B",
 	})
 	if err != nil {
 		t.Fatalf("UpdateKnowledgeBase error: %v", err)
 	}
-	if reproc.getCallCount() != 0 {
-		t.Errorf("expected 0 reprocess calls, got %d", reproc.getCallCount())
+	// Service no longer triggers reprocess; verify config unchanged so
+	// handler-side QuestionBankAutoTaggingConfigChanged returns false.
+	if QuestionBankAutoTaggingConfigChanged(oldCfg, updatedKB.QuestionBankConfig) {
+		t.Error("expected no config change when same KP KB ID submitted")
 	}
 }
 
@@ -209,19 +160,17 @@ func TestUpdateKnowledgeBase_DoesNotTriggerForNameOnlyChange(t *testing.T) {
 		KnowledgePointKnowledgeBaseID: "kp-A",
 	})
 	repo := &kbUpdateTestRepo{kb: kb}
-	qRepo := &kbUpdateQuestionRepo{sets: []*types.QuestionSet{
-		{ID: "set-1", KnowledgeBaseID: "kb-1"},
-	}}
-	reproc := &mockQSReprocessor{}
-	svc := newKBUpdateService(repo, qRepo, reproc)
+	svc := newKBUpdateService(repo)
 
+	// Deep-copy old config before update.
+	oldCfg := &types.QuestionBankConfig{KnowledgePointKnowledgeBaseID: "kp-A"}
 	// Only change name, no questionBankConfig
-	_, err := svc.UpdateKnowledgeBase(kbUpdateCtx(), "kb-1", "Changed Name", "desc", nil, nil)
+	updatedKB, err := svc.UpdateKnowledgeBase(kbUpdateCtx(), "kb-1", "Changed Name", "desc", nil, nil)
 	if err != nil {
 		t.Fatalf("UpdateKnowledgeBase error: %v", err)
 	}
-	if reproc.getCallCount() != 0 {
-		t.Errorf("expected 0 reprocess calls for name-only change, got %d", reproc.getCallCount())
+	if QuestionBankAutoTaggingConfigChanged(oldCfg, updatedKB.QuestionBankConfig) {
+		t.Error("expected no config change for name-only edit")
 	}
 }
 
@@ -233,32 +182,21 @@ func TestUpdateKnowledgeBase_TriggersWhenKnowledgePointKBChanged(t *testing.T) {
 		kb:     kb,
 		refKBs: map[string]*types.KnowledgeBase{"kp-B": {ID: "kp-B", Type: types.KnowledgeBaseTypeDocument}},
 	}
-	qRepo := &kbUpdateQuestionRepo{sets: []*types.QuestionSet{
-		{ID: "set-1", KnowledgeBaseID: "kb-1"},
-		{ID: "set-2", KnowledgeBaseID: "kb-1"},
-	}}
-	reproc := &mockQSReprocessor{}
-	svc := newKBUpdateService(repo, qRepo, reproc)
+	svc := newKBUpdateService(repo)
 
-	_, err := svc.UpdateKnowledgeBase(kbUpdateCtx(), "kb-1", "Test Bank", "desc", nil, &types.QuestionBankConfig{
+	// Deep-copy old config before update (repo.UpdateKnowledgeBase mutates kb in place).
+	oldCfg := &types.QuestionBankConfig{
+		KnowledgePointKnowledgeBaseID: kb.QuestionBankConfig.KnowledgePointKnowledgeBaseID,
+	}
+	updatedKB, err := svc.UpdateKnowledgeBase(kbUpdateCtx(), "kb-1", "Test Bank", "desc", nil, &types.QuestionBankConfig{
 		KnowledgePointKnowledgeBaseID: "kp-B",
 	})
 	if err != nil {
 		t.Fatalf("UpdateKnowledgeBase error: %v", err)
 	}
-	// Reprocess runs in goroutine; wait briefly for it.
-	waitForReprocess(reproc, 2, 1)
-	if reproc.getCallCount() != 2 {
-		t.Errorf("expected 2 reprocess calls, got %d", reproc.getCallCount())
-	}
-	calls := reproc.getCalls()
-	for _, c := range calls {
-		if c.Scope != "auto_tagging" {
-			t.Errorf("expected scope=auto_tagging, got %s", c.Scope)
-		}
-		if c.KBID != "kb-1" {
-			t.Errorf("expected KBID=kb-1, got %s", c.KBID)
-		}
+	// Handler would check: did config change?
+	if !QuestionBankAutoTaggingConfigChanged(oldCfg, updatedKB.QuestionBankConfig) {
+		t.Error("expected config change detected when KP KB ID changed")
 	}
 }
 
@@ -267,13 +205,11 @@ func TestUpdateKnowledgeBase_TriggersWhenRerankConfigChanged(t *testing.T) {
 		KnowledgePointKnowledgeBaseID: "",
 	})
 	repo := &kbUpdateTestRepo{kb: kb}
-	qRepo := &kbUpdateQuestionRepo{sets: []*types.QuestionSet{
-		{ID: "set-1", KnowledgeBaseID: "kb-1"},
-	}}
-	reproc := &mockQSReprocessor{}
-	svc := newKBUpdateService(repo, qRepo, reproc)
+	svc := newKBUpdateService(repo)
 
-	_, err := svc.UpdateKnowledgeBase(kbUpdateCtx(), "kb-1", "Test Bank", "desc", nil, &types.QuestionBankConfig{
+	// Deep-copy old config before update.
+	oldCfg := &types.QuestionBankConfig{}
+	updatedKB, err := svc.UpdateKnowledgeBase(kbUpdateCtx(), "kb-1", "Test Bank", "desc", nil, &types.QuestionBankConfig{
 		KnowledgePointKnowledgeBaseID:   "",
 		KnowledgePointRerankModelID:     "rm-1",
 		KnowledgePointRerankEnabled:     true,
@@ -283,9 +219,8 @@ func TestUpdateKnowledgeBase_TriggersWhenRerankConfigChanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateKnowledgeBase error: %v", err)
 	}
-	waitForReprocess(reproc, 1, 1)
-	if reproc.getCallCount() != 1 {
-		t.Errorf("expected 1 reprocess call, got %d", reproc.getCallCount())
+	if !QuestionBankAutoTaggingConfigChanged(oldCfg, updatedKB.QuestionBankConfig) {
+		t.Error("expected config change detected when rerank config changed")
 	}
 }
 
@@ -295,9 +230,7 @@ func TestUpdateKnowledgeBase_PreservesSyllabusIDWhenSavingQuestionBankConfig(t *
 		SyllabusKnowledgeBaseID:       "syl-1",
 	})
 	repo := &kbUpdateTestRepo{kb: kb}
-	qRepo := &kbUpdateQuestionRepo{}
-	reproc := &mockQSReprocessor{}
-	svc := newKBUpdateService(repo, qRepo, reproc)
+	svc := newKBUpdateService(repo)
 
 	_, err := svc.UpdateKnowledgeBase(kbUpdateCtx(), "kb-1", "Test Bank", "desc", nil, &types.QuestionBankConfig{
 		KnowledgePointKnowledgeBaseID:   "",
@@ -319,37 +252,42 @@ func TestUpdateKnowledgeBase_PreservesSyllabusIDWhenSavingQuestionBankConfig(t *
 	}
 }
 
-func TestScheduleKnowledgePointReprocessForKB_UsesAutoTaggingScope(t *testing.T) {
+func TestUpdateKnowledgeBase_PreservesExistingRerankConfigWhenRequestOnlyContainsKnowledgePointKB(t *testing.T) {
 	kb := makeQuestionBankKB("kb-1", &types.QuestionBankConfig{
-		KnowledgePointKnowledgeBaseID: "kp-A",
+		KnowledgePointKnowledgeBaseID:   "kp-A",
+		KnowledgePointRerankModelID:     "rm-1",
+		KnowledgePointRerankEnabled:     true,
+		KnowledgePointRerankTopK:        5,
+		KnowledgePointRerankThreshold:   0.8,
 	})
-	qRepo := &kbUpdateQuestionRepo{sets: []*types.QuestionSet{
-		{ID: "set-1", KnowledgeBaseID: "kb-1"},
-	}}
-	reproc := &mockQSReprocessor{}
-	svc := &knowledgeBaseService{
-		questionRepo:  qRepo,
-		qsReprocessor: reproc,
+	repo := &kbUpdateTestRepo{
+		kb:     kb,
+		refKBs: map[string]*types.KnowledgeBase{"kp-B": {ID: "kp-B", Type: types.KnowledgeBaseTypeDocument}},
 	}
+	svc := newKBUpdateService(repo)
 
-	svc.scheduleKnowledgePointReprocessForKB(kbUpdateCtx(), kb)
-	waitForReprocess(reproc, 1, 1)
-	calls := reproc.getCalls()
-	if len(calls) != 1 {
-		t.Fatalf("expected 1 call, got %d", len(calls))
+	// Request only sends knowledge_point_knowledge_base_id — no rerank fields.
+	// This simulates the current frontend behavior.
+	_, err := svc.UpdateKnowledgeBase(kbUpdateCtx(), "kb-1", "Test Bank", "desc", nil, &types.QuestionBankConfig{
+		KnowledgePointKnowledgeBaseID: "kp-B",
+	})
+	if err != nil {
+		t.Fatalf("UpdateKnowledgeBase error: %v", err)
 	}
-	if calls[0].Scope != "auto_tagging" {
-		t.Errorf("expected scope=auto_tagging, got %s", calls[0].Scope)
+	saved := repo.updatedKB.QuestionBankConfig
+	if saved.KnowledgePointKnowledgeBaseID != "kp-B" {
+		t.Errorf("expected kp ID updated to kp-B, got %s", saved.KnowledgePointKnowledgeBaseID)
 	}
-}
-
-// waitForReprocess polls the mock reprocessor until expectedCalls is reached
-// or the timeout (in seconds) expires.
-func waitForReprocess(reproc *mockQSReprocessor, expectedCalls int, timeoutSec int) {
-	for i := 0; i < timeoutSec*50; i++ {
-		if reproc.getCallCount() >= expectedCalls {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
+	if saved.KnowledgePointRerankModelID != "rm-1" {
+		t.Errorf("expected rerank model ID preserved as rm-1, got %s", saved.KnowledgePointRerankModelID)
+	}
+	if !saved.KnowledgePointRerankEnabled {
+		t.Error("expected rerank enabled preserved as true")
+	}
+	if saved.KnowledgePointRerankTopK != 5 {
+		t.Errorf("expected rerank topK preserved as 5, got %d", saved.KnowledgePointRerankTopK)
+	}
+	if saved.KnowledgePointRerankThreshold != 0.8 {
+		t.Errorf("expected rerank threshold preserved as 0.8, got %f", saved.KnowledgePointRerankThreshold)
 	}
 }

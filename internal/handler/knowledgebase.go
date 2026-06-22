@@ -35,6 +35,10 @@ type KnowledgeBaseHandler struct {
 	// userService 仅在 list 类接口里用于批量回填 creator_name；
 	// 真正的鉴权由 RBAC 中间件 + Lookup 完成，这里不参与决策。
 	userService interfaces.UserService
+	// questionService is used to trigger knowledge point reprocess
+	// after a successful KB update that changes auto-tagging config.
+	// It is optional — nil skips reprocess scheduling (e.g. in tests).
+	questionService interfaces.QuestionService
 }
 
 // NewKnowledgeBaseHandler creates a new knowledge base handler instance
@@ -46,6 +50,7 @@ func NewKnowledgeBaseHandler(
 	asynqClient interfaces.TaskEnqueuer,
 	vectorStoreService interfaces.VectorStoreService,
 	userService interfaces.UserService,
+	questionService interfaces.QuestionService,
 ) *KnowledgeBaseHandler {
 	return &KnowledgeBaseHandler{
 		service:            service,
@@ -55,6 +60,7 @@ func NewKnowledgeBaseHandler(
 		asynqClient:        asynqClient,
 		vectorStoreService: vectorStoreService,
 		userService:        userService,
+		questionService:    questionService,
 	}
 }
 
@@ -814,7 +820,7 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 	logger.Info(ctx, "Start updating knowledge base")
 
 	// Validate and get the knowledge base
-	_, id, _, permission, err := h.validateAndGetKnowledgeBase(c)
+	oldKB, id, _, permission, err := h.validateAndGetKnowledgeBase(c)
 	if err != nil {
 		c.Error(err)
 		return
@@ -845,6 +851,20 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		return
 	}
 
+	// After a successful save, trigger knowledge point reprocess only if
+	// the auto-tagging config fields actually changed. This comparison runs
+	// in the handler layer to avoid a service-to-service dependency cycle
+	// (KnowledgeBaseService -> QuestionService -> KnowledgeBaseService).
+	if req.QuestionBankConfig != nil && kb.IsQuestionBank() && h.questionService != nil {
+		var oldQBCfg *types.QuestionBankConfig
+		if oldKB != nil {
+			oldQBCfg = oldKB.QuestionBankConfig
+		}
+		if service.QuestionBankAutoTaggingConfigChanged(oldQBCfg, kb.QuestionBankConfig) {
+			h.scheduleKnowledgePointReprocess(ctx, kb.ID)
+		}
+	}
+
 	logger.Infof(ctx, "Knowledge base updated successfully, ID: %s",
 		secutils.SanitizeForLog(id))
 	callerTenantID := c.GetUint64(types.TenantIDContextKey.String())
@@ -852,6 +872,49 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 		"success": true,
 		"data":    buildKBResponse(kb, h.resolveKBStoreView(ctx, kb, callerTenantID), nil),
 	})
+}
+
+// scheduleKnowledgePointReprocess iterates all question sets under the
+// given question bank KB and triggers auto_tagging reprocess for each.
+// It reads the current persisted KB config at execution time via
+// ReprocessQuestionSet, so consecutive saves A→B will reprocess with the
+// final config.
+func (h *KnowledgeBaseHandler) scheduleKnowledgePointReprocess(ctx context.Context, kbID string) {
+	_, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		logger.Warnf(ctx, "[auto_tagging] cannot schedule reprocess for KB %s: tenant ID missing from context", kbID)
+		return
+	}
+	go func() {
+		bgCtx := logger.CloneContext(ctx)
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Errorf(bgCtx, "panic in scheduleKnowledgePointReprocess for KB %s: %v", kbID, r)
+			}
+		}()
+		page := &types.Pagination{Page: 1, PageSize: 500}
+		for {
+			result, err := h.questionService.ListQuestionSets(bgCtx, kbID, page)
+			if err != nil {
+				logger.Warnf(bgCtx, "[auto_tagging] failed to list question sets for KB %s: %v", kbID, err)
+				return
+			}
+			sets, ok := result.Data.([]*types.QuestionSet)
+			if !ok {
+				logger.Warnf(bgCtx, "[auto_tagging] unexpected question set page data type for KB %s", kbID)
+				return
+			}
+			for _, qs := range sets {
+				if err := h.questionService.ReprocessQuestionSet(bgCtx, kbID, qs.ID, "auto_tagging"); err != nil {
+					logger.Warnf(bgCtx, "[auto_tagging] reprocess failed for set %s in KB %s: %v", qs.ID, kbID, err)
+				}
+			}
+			if len(sets) < page.PageSize {
+				return
+			}
+			page.Page++
+		}
+	}()
 }
 
 // DeleteKnowledgeBase godoc

@@ -100,19 +100,24 @@ func (s *QuestionService) RunKnowledgePointMatching(
 		} else {
 			projectionsToRerank := projections
 			if cfg.KnowledgePointRerankTopK > 0 && len(projections) > cfg.KnowledgePointRerankTopK {
+				// Sort by RawScore descending before truncating so the
+				// topK candidates sent to the rerank model are the highest
+				// raw-scoring ones, not whatever order search returned.
+				sort.Slice(projections, func(i, j int) bool {
+					return projections[i].RawScore > projections[j].RawScore
+				})
 				projectionsToRerank = projections[:cfg.KnowledgePointRerankTopK]
 			}
-			reranked, rrErr := rerankKnowledgePointProjectionsWithModel(ctx, query, projectionsToRerank, reranker)
-			if rrErr != nil || len(reranked) == 0 {
+			rerankApplied, rrErr := rerankKnowledgePointProjectionsWithModel(ctx, query, projectionsToRerank, reranker)
+			if rrErr != nil || rerankApplied == nil {
 				if rrErr != nil {
 					rerankErr = truncateError(rrErr)
 				}
-				logger.Warnf(ctx, "[auto_tagging] model rerank returned empty for question %s, falling back", q.ID)
+				logger.Warnf(ctx, "[auto_tagging] model rerank failed for question %s, falling back", q.ID)
 				applyRuleRerank(query, projections)
 				rerankMode = "rule_fallback"
 			} else {
 				applyRerankMissingPenalty(projections, projectionsToRerank)
-				projections = reranked
 				if rerankThreshold > 0 {
 					applyRerankThreshold(projections, rerankThreshold)
 				}
@@ -453,15 +458,15 @@ func applyRerankMissingPenalty(all, reranked []knowledgePointProjection) {
 	}
 }
 
-// applyRerankThreshold caps the Score of any projection whose RerankScore
-// falls below the configured threshold, preventing a high raw score from
-// masking a weak model signal. The capped Score is set to min(Score, threshold).
+// applyRerankThreshold penalizes any projection whose RerankScore falls
+// below the configured threshold. The Score is halved so that a weak
+// model signal cannot be masked by a high raw score, and the projection
+// will not pass the KnowledgePointMinScore gate for matched status.
 func applyRerankThreshold(projections []knowledgePointProjection, threshold float64) {
 	for i := range projections {
 		if projections[i].RerankScore < threshold {
-			if projections[i].Score > threshold {
-				projections[i].Score = threshold
-			}
+			projections[i].Score = projections[i].Score * 0.5
+			projections[i].MatchSignals = append(projections[i].MatchSignals, "below_rerank_threshold")
 		}
 	}
 }

@@ -813,3 +813,116 @@ func TestKnowledgePointModelRerank_PartialResultsDoNotLetMissingRawScoreDominate
 		t.Error("expected rerank_missing in match_signals for unreranked projection")
 	}
 }
+
+// Test 25: RerankThreshold near-boundary — raw=1.0, rerank=0.79, threshold=0.80.
+func TestKnowledgePointModelRerank_RerankThresholdNearBoundary(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c1", KnowledgeID: "k1", KnowledgeTitle: "KP1", Content: "content", Score: 1.0},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	reranker := &mockReranker{
+		results: []rerank.RankResult{
+			{Index: 0, RelevanceScore: 0.79},
+		},
+	}
+	modelSvc := &mockModelService{reranker: reranker}
+	svc := makeRerankTestService(kbSvc, modelSvc)
+	cfg := makeRerankConfig("kp-kb", "rerank-1", true)
+	cfg.KnowledgePointRerankThreshold = 0.80
+	q := makeTestQuestion("q-r25")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	tagging := extractTaggingMeta(t, q)
+	if tagging["status"] == "matched" {
+		t.Error("expected non-matched status when rerank score 0.79 < threshold 0.80")
+	}
+	if tagging["rerank_threshold"] == nil {
+		t.Error("expected rerank_threshold in metadata")
+	}
+}
+
+// Test 26: RerankTopK does not discard unreranked projections — projection_count stays 4.
+func TestKnowledgePointModelRerank_RerankTopKDoesNotDiscardProjections(t *testing.T) {
+	results := []*types.SearchResult{
+		{ID: "c1", KnowledgeID: "k1", KnowledgeTitle: "KP1", Content: "c1", Score: 0.90},
+		{ID: "c2", KnowledgeID: "k2", KnowledgeTitle: "KP2", Content: "c2", Score: 0.85},
+		{ID: "c3", KnowledgeID: "k3", KnowledgeTitle: "KP3", Content: "c3", Score: 0.80},
+		{ID: "c4", KnowledgeID: "k4", KnowledgeTitle: "KP4", Content: "c4", Score: 0.75},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	reranker := &mockReranker{
+		results: []rerank.RankResult{
+			{Index: 0, RelevanceScore: 0.95},
+			{Index: 1, RelevanceScore: 0.60},
+		},
+	}
+	modelSvc := &mockModelService{reranker: reranker}
+	svc := makeRerankTestService(kbSvc, modelSvc)
+	cfg := makeRerankConfig("kp-kb", "rerank-1", true)
+	cfg.KnowledgePointRerankTopK = 2
+	q := makeTestQuestion("q-r26")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	tagging := extractTaggingMeta(t, q)
+	projCount, _ := tagging["projection_count"].(float64)
+	if int(projCount) != 4 {
+		t.Errorf("expected projection_count=4, got %v", tagging["projection_count"])
+	}
+	// Candidates capped at KnowledgePointCandidateLimit (5), so all 4 appear.
+	candidates := extractCandidates(t, q)
+	if len(candidates) != 4 {
+		t.Fatalf("expected 4 candidates, got %d", len(candidates))
+	}
+	// Unreranked candidates (KP3, KP4) should have rerank_missing signal.
+	foundMissing := false
+	for _, c := range candidates {
+		signals, _ := c["match_signals"].([]any)
+		for _, s := range signals {
+			if s == "rerank_missing" {
+				foundMissing = true
+			}
+		}
+	}
+	if !foundMissing {
+		t.Error("expected at least one candidate with rerank_missing signal")
+	}
+}
+
+// Test 27: RerankTopK selects top projections by RawScore, not search result order.
+func TestKnowledgePointModelRerank_RerankTopKSelectsByRawScore(t *testing.T) {
+	// Results deliberately unsorted by score.
+	results := []*types.SearchResult{
+		{ID: "c1", KnowledgeID: "k1", KnowledgeTitle: "KP-Low", Content: "c1", Score: 0.60},
+		{ID: "c2", KnowledgeID: "k2", KnowledgeTitle: "KP-High", Content: "c2", Score: 0.95},
+		{ID: "c3", KnowledgeID: "k3", KnowledgeTitle: "KP-Mid", Content: "c3", Score: 0.75},
+	}
+	kbSvc := makeMockKBService(results, nil)
+	reranker := &mockReranker{
+		results: []rerank.RankResult{
+			{Index: 0, RelevanceScore: 0.90},
+			{Index: 1, RelevanceScore: 0.50},
+		},
+	}
+	modelSvc := &mockModelService{reranker: reranker}
+	svc := makeRerankTestService(kbSvc, modelSvc)
+	cfg := makeRerankConfig("kp-kb", "rerank-1", true)
+	cfg.KnowledgePointRerankTopK = 2
+	q := makeTestQuestion("q-r27")
+
+	if err := svc.RunKnowledgePointMatching(context.Background(), cfg, []*types.Question{q}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The reranker received 2 docs. KP-High (0.95) and KP-Mid (0.75) should
+	// be the top-2 by raw score, not KP-Low and KP-High (search order).
+	if len(reranker.capturedDocs) != 2 {
+		t.Fatalf("expected 2 docs sent to reranker, got %d", len(reranker.capturedDocs))
+	}
+	// First doc should be KP-High (highest raw score).
+	if !strings.Contains(reranker.capturedDocs[0], "KP-High") {
+		t.Errorf("expected first rerank doc to be KP-High, got %s", reranker.capturedDocs[0])
+	}
+}

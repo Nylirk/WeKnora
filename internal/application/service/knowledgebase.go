@@ -25,20 +25,18 @@ var ErrInvalidTenantID = errors.New("invalid tenant ID")
 
 // knowledgeBaseService implements the knowledge base service interface
 type knowledgeBaseService struct {
-	repo            interfaces.KnowledgeBaseRepository
-	kgRepo          interfaces.KnowledgeRepository
-	chunkRepo       interfaces.ChunkRepository
-	shareRepo       interfaces.KBShareRepository
-	kbShareService  interfaces.KBShareService
-	modelService    interfaces.ModelService
-	retrieveEngine  interfaces.RetrieveEngineRegistry
-	ownership       retriever.TenantStoreOwnership
-	tenantRepo      interfaces.TenantRepository
-	fileSvc         interfaces.FileService
-	graphEngine     interfaces.RetrieveGraphRepository
-	asynqClient     interfaces.TaskEnqueuer
-	questionRepo    interfaces.QuestionRepository
-	qsReprocessor   interfaces.QuestionSetReprocessor
+	repo           interfaces.KnowledgeBaseRepository
+	kgRepo         interfaces.KnowledgeRepository
+	chunkRepo      interfaces.ChunkRepository
+	shareRepo      interfaces.KBShareRepository
+	kbShareService interfaces.KBShareService
+	modelService   interfaces.ModelService
+	retrieveEngine interfaces.RetrieveEngineRegistry
+	ownership      retriever.TenantStoreOwnership
+	tenantRepo     interfaces.TenantRepository
+	fileSvc        interfaces.FileService
+	graphEngine    interfaces.RetrieveGraphRepository
+	asynqClient    interfaces.TaskEnqueuer
 }
 
 // NewKnowledgeBaseService creates a new knowledge base service
@@ -54,24 +52,20 @@ func NewKnowledgeBaseService(repo interfaces.KnowledgeBaseRepository,
 	fileSvc interfaces.FileService,
 	graphEngine interfaces.RetrieveGraphRepository,
 	asynqClient interfaces.TaskEnqueuer,
-	questionRepo interfaces.QuestionRepository,
-	qsReprocessor interfaces.QuestionSetReprocessor,
 ) interfaces.KnowledgeBaseService {
 	return &knowledgeBaseService{
-		repo:            repo,
-		kgRepo:          kgRepo,
-		chunkRepo:       chunkRepo,
-		shareRepo:       shareRepo,
-		kbShareService:  kbShareService,
-		modelService:    modelService,
-		retrieveEngine:  retrieveEngine,
-		ownership:       ownership,
-		tenantRepo:      tenantRepo,
-		fileSvc:         fileSvc,
-		graphEngine:     graphEngine,
-		asynqClient:     asynqClient,
-		questionRepo:    questionRepo,
-		qsReprocessor:   qsReprocessor,
+		repo:           repo,
+		kgRepo:         kgRepo,
+		chunkRepo:      chunkRepo,
+		shareRepo:      shareRepo,
+		kbShareService: kbShareService,
+		modelService:   modelService,
+		retrieveEngine: retrieveEngine,
+		ownership:      ownership,
+		tenantRepo:     tenantRepo,
+		fileSvc:        fileSvc,
+		graphEngine:    graphEngine,
+		asynqClient:    asynqClient,
 	}
 }
 
@@ -525,9 +519,6 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 		return nil, err
 	}
 
-	// Snapshot the old question bank config before applying any changes.
-	oldQBCfg := cloneQuestionBankConfig(kb.QuestionBankConfig)
-
 	// Validate name
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -591,14 +582,26 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 		if kb.QuestionBankConfig == nil {
 			kb.QuestionBankConfig = &types.QuestionBankConfig{}
 		}
-		// Save the full set of auto-tagging config fields from the request.
+		// KnowledgePointKnowledgeBaseID is always controlled by the KB update path.
 		// SyllabusKnowledgeBaseID is managed by the syllabus upload API
 		// and must NOT be overwritten here.
 		kb.QuestionBankConfig.KnowledgePointKnowledgeBaseID = questionBankConfig.KnowledgePointKnowledgeBaseID
-		kb.QuestionBankConfig.KnowledgePointRerankModelID = questionBankConfig.KnowledgePointRerankModelID
-		kb.QuestionBankConfig.KnowledgePointRerankEnabled = questionBankConfig.KnowledgePointRerankEnabled
-		kb.QuestionBankConfig.KnowledgePointRerankTopK = questionBankConfig.KnowledgePointRerankTopK
-		kb.QuestionBankConfig.KnowledgePointRerankThreshold = questionBankConfig.KnowledgePointRerankThreshold
+		// Rerank config fields are only overwritten when the request explicitly
+		// provides non-zero values. The current frontend only sends
+		// knowledge_point_knowledge_base_id, so we preserve existing rerank
+		// config to avoid clearing it on every save.
+		if questionBankConfig.KnowledgePointRerankModelID != "" {
+			kb.QuestionBankConfig.KnowledgePointRerankModelID = questionBankConfig.KnowledgePointRerankModelID
+		}
+		if questionBankConfig.KnowledgePointRerankEnabled {
+			kb.QuestionBankConfig.KnowledgePointRerankEnabled = questionBankConfig.KnowledgePointRerankEnabled
+		}
+		if questionBankConfig.KnowledgePointRerankTopK > 0 {
+			kb.QuestionBankConfig.KnowledgePointRerankTopK = questionBankConfig.KnowledgePointRerankTopK
+		}
+		if questionBankConfig.KnowledgePointRerankThreshold > 0 {
+			kb.QuestionBankConfig.KnowledgePointRerankThreshold = questionBankConfig.KnowledgePointRerankThreshold
+		}
 	}
 	kb.UpdatedAt = time.Now()
 	kb.EnsureDefaults()
@@ -609,14 +612,6 @@ func (s *knowledgeBaseService) UpdateKnowledgeBase(ctx context.Context,
 			"knowledge_base_id": id,
 		})
 		return nil, err
-	}
-
-	// Only trigger knowledge point reprocess after a successful save AND only
-	// when the auto-tagging config fields actually changed. This prevents
-	// spurious reprocess triggers from name-only edits or no-op config submits.
-	if questionBankConfig != nil && kb.IsQuestionBank() &&
-		questionBankAutoTaggingConfigChanged(oldQBCfg, kb.QuestionBankConfig) {
-		s.scheduleKnowledgePointReprocessForKB(ctx, kb)
 	}
 
 	logger.Infof(ctx, "Knowledge base updated successfully, ID: %s, name: %s", kb.ID, kb.Name)
@@ -650,20 +645,13 @@ func (s *knowledgeBaseService) UpdateQuestionBankSyllabusKnowledgeBaseID(
 	return nil
 }
 
-// cloneQuestionBankConfig returns a deep copy of cfg. A nil input returns nil.
-func cloneQuestionBankConfig(cfg *types.QuestionBankConfig) *types.QuestionBankConfig {
-	if cfg == nil {
-		return nil
-	}
-	cp := *cfg
-	return &cp
-}
-
-// questionBankAutoTaggingConfigChanged compares only the auto-tagging related
+// normalizeQBCfgForCompare returns a string fingerprint for nil-vs-empty
 // fields between old and new configs. It normalizes string fields with
 // TrimSpace and treats nil configs as equivalent to empty configs.
 // Returns true only when one of the monitored fields actually changed.
-func questionBankAutoTaggingConfigChanged(oldCfg, newCfg *types.QuestionBankConfig) bool {
+// Exported so the handler layer can decide whether to trigger reprocess
+// without creating a service-to-service dependency.
+func QuestionBankAutoTaggingConfigChanged(oldCfg, newCfg *types.QuestionBankConfig) bool {
 	oldNorm := normalizeQBCfgForCompare(oldCfg)
 	newNorm := normalizeQBCfgForCompare(newCfg)
 	if oldCfg == nil && newCfg == nil {
@@ -706,53 +694,6 @@ func normalizeQBCfgForCompare(cfg *types.QuestionBankConfig) string {
 	return strings.TrimSpace(cfg.KnowledgePointKnowledgeBaseID) + "|" +
 		strings.TrimSpace(cfg.KnowledgePointRerankModelID) + "|" +
 		fmt.Sprintf("%v|%d|%f", cfg.KnowledgePointRerankEnabled, cfg.KnowledgePointRerankTopK, cfg.KnowledgePointRerankThreshold)
-}
-
-// scheduleKnowledgePointReprocessForKB iterates all question sets under the
-// given question bank KB and triggers auto_tagging reprocess for each.
-// It reads the current persisted KB config at execution time rather than
-// capturing the config from the save path, so consecutive saves A→B will
-// reprocess with the final config.
-func (s *knowledgeBaseService) scheduleKnowledgePointReprocessForKB(ctx context.Context, kb *types.KnowledgeBase) {
-	if s.questionRepo == nil || s.qsReprocessor == nil {
-		logger.Warnf(ctx, "[auto_tagging] cannot schedule reprocess for KB %s: questionRepo or qsReprocessor not configured", kb.ID)
-		return
-	}
-	tenantID, ok := types.TenantIDFromContext(ctx)
-	if !ok {
-		logger.Warnf(ctx, "[auto_tagging] cannot schedule reprocess for KB %s: tenant ID missing from context", kb.ID)
-		return
-	}
-	go func() {
-		bgCtx := logger.CloneContext(ctx)
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Errorf(bgCtx, "panic in scheduleKnowledgePointReprocessForKB for KB %s: %v", kb.ID, r)
-			}
-		}()
-		page := &types.Pagination{Page: 1, PageSize: 500}
-		for {
-			result, err := s.questionRepo.ListQuestionSets(bgCtx, tenantID, kb.ID, page)
-			if err != nil {
-				logger.Warnf(bgCtx, "[auto_tagging] failed to list question sets for KB %s: %v", kb.ID, err)
-				return
-			}
-			sets, ok := result.Data.([]*types.QuestionSet)
-			if !ok {
-				logger.Warnf(bgCtx, "[auto_tagging] unexpected question set page data type for KB %s", kb.ID)
-				return
-			}
-			for _, qs := range sets {
-				if err := s.qsReprocessor.ReprocessQuestionSet(bgCtx, kb.ID, qs.ID, "auto_tagging"); err != nil {
-					logger.Warnf(bgCtx, "[auto_tagging] reprocess failed for set %s in KB %s: %v", qs.ID, kb.ID, err)
-				}
-			}
-			if len(sets) < page.PageSize {
-				return
-			}
-			page.Page++
-		}
-	}()
 }
 
 // TogglePinKnowledgeBase toggles whether the calling user has pinned
